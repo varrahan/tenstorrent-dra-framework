@@ -1,0 +1,43 @@
+# Compiled binaries and package files
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.prof
+
+# Common Go binary output directories
+bin/
+obj/
+
+# Core dumps
+gmon.out
+
+# Architecture-specific build outputs (if built locally)
+linux_amd64/
+darwin_amd64/
+windows_amd64/
+
+# Go tool-related exclusions
+.go/
+vendor/
+
+# Test coverage artifacts
+*.out
+*.coverprofile
+coverage.txt
+
+# Local environment configuration variables
+.env
+.env.local
+.env.*.local
+
+# IDE and Editor configurations (Optional but highly recommended)
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
