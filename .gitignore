@@ -23,6 +23,12 @@ windows_amd64/
 .go/
 vendor/
 
+# Python cache and virtual environment output
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
 # Test coverage artifacts
 *.out
 *.coverprofile
