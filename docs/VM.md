@@ -266,6 +266,15 @@ kind version
 kubectl version --client 2>/dev/null || true
 ```
 
+If this repository is available inside the VM, the checked-in validation wrapper
+runs the `tt-kmd`, kind, DRA API, and pod device-visibility checks:
+
+```bash
+make -C test/vm vm-validate
+```
+
+Use the inline commands below when debugging a specific validation step.
+
 Create a DRA-capable smoke-test kind cluster when needed. Kubernetes v1.34+ is
 required for this project, so pin the kind node image instead of relying on the
 default image. This check assumes `tt-kmd` is loaded and
