@@ -101,7 +101,16 @@ The username and SSH keys are controlled by the cloud-init seed ISO at:
 /home/varrahan/images/seed.iso
 ```
 
-Inspect it from the host when the VM is not relying on a mounted seed directory:
+Inspect it from the host when the VM is not relying on a mounted seed directory.
+Prefer `isoinfo` when it is available, because it does not require sudo:
+
+```bash
+isoinfo -R -i /home/varrahan/images/seed.iso -f
+isoinfo -R -i /home/varrahan/images/seed.iso -x /user-data
+isoinfo -R -i /home/varrahan/images/seed.iso -x /meta-data
+```
+
+If `isoinfo` is not available, mount the ISO temporarily:
 
 ```bash
 mkdir -p /tmp/ttsim-seed
@@ -120,7 +129,16 @@ ssh_authorized_keys:
   - ssh-ed25519 ...
 ```
 
-Use that `<vm_user>` in SSH commands. Do not assume a password is available; prefer key-based SSH configured by cloud-init.
+The current seed image enables SSH password authentication:
+
+```yaml
+password: ubuntu
+ssh_pwauth: True
+```
+
+It does not define a custom user, so use the Ubuntu cloud image default user
+`ubuntu` unless the seed ISO is changed. Prefer key-based SSH when the seed
+configures keys; otherwise use the seed-provided password.
 
 ---
 
@@ -129,7 +147,7 @@ Use that `<vm_user>` in SSH commands. Do not assume a password is available; pre
 After the VM reaches the login prompt or cloud-init finishes, connect from the host:
 
 ```bash
-ssh -p 2222 <vm_user>@127.0.0.1
+ssh -p 2222 ubuntu@127.0.0.1
 ```
 
 Recommended SSH config entry on the host:
@@ -138,7 +156,7 @@ Recommended SSH config entry on the host:
 Host ttsim-vm
   HostName 127.0.0.1
   Port 2222
-  User <vm_user>
+  User ubuntu
   StrictHostKeyChecking accept-new
 ```
 
@@ -151,13 +169,13 @@ ssh ttsim-vm 'hostname && uptime'
 Copy files into the VM:
 
 ```bash
-scp -P 2222 ./local-file <vm_user>@127.0.0.1:/tmp/
+scp -P 2222 ./local-file ubuntu@127.0.0.1:/tmp/
 ```
 
 Run a command inside the VM:
 
 ```bash
-ssh -p 2222 <vm_user>@127.0.0.1 'bash -lc "docker version && kind version"'
+ssh -p 2222 ubuntu@127.0.0.1 'bash -lc "docker version && kind version"'
 ```
 
 If the host key changes after rebuilding the image, clear the old key entry:
@@ -179,7 +197,7 @@ docker run --rm -it --network host <agent-image> bash
 Then inside the agent container:
 
 ```bash
-ssh -p 2222 <vm_user>@127.0.0.1
+ssh -p 2222 ubuntu@127.0.0.1
 ```
 
 For remote agents that cannot run on the QEMU host, create an SSH tunnel to the host first:
@@ -191,7 +209,7 @@ ssh -N -L 2222:127.0.0.1:2222 <host_user>@<qemu_host>
 Then, from the remote agent machine:
 
 ```bash
-ssh -p 2222 <vm_user>@127.0.0.1
+ssh -p 2222 ubuntu@127.0.0.1
 ```
 
 ---
@@ -215,7 +233,7 @@ Prefer these shutdown methods in order:
 sudo shutdown -h now
 
 # From the host through SSH:
-ssh -p 2222 <vm_user>@127.0.0.1 'sudo shutdown -h now'
+ssh -p 2222 ubuntu@127.0.0.1 'sudo shutdown -h now'
 ```
 
 Use `Ctrl-a x` only when graceful shutdown is not possible.
@@ -250,7 +268,9 @@ kubectl version --client 2>/dev/null || true
 
 Create a DRA-capable smoke-test kind cluster when needed. Kubernetes v1.34+ is
 required for this project, so pin the kind node image instead of relying on the
-default image:
+default image. This check assumes `tt-kmd` is loaded and
+`/dev/tenstorrent/<device>` exists; if it does not, complete the `tt-kmd`
+verification section first.
 
 ```bash
 KINDEST_NODE_IMAGE="${KINDEST_NODE_IMAGE:-kindest/node:v1.34.0}"
@@ -261,6 +281,7 @@ if [ ! -e "$TT_DEVICE_PATH" ]; then
 fi
 test -n "$TT_DEVICE_PATH"
 test -e "$TT_DEVICE_PATH"
+find "$TT_DEVICE_PATH" -maxdepth 1 -type c -print -quit | grep -q .
 
 cat >/tmp/ttsim-kind.yaml <<EOF
 kind: Cluster
@@ -276,12 +297,12 @@ EOF
 
 kind create cluster --name agent-smoke --config /tmp/ttsim-kind.yaml --wait 120s
 kubectl cluster-info --context kind-agent-smoke
-kubectl version
-kubectl api-resources --api-group=resource.k8s.io
-kubectl api-resources --api-group=resource.k8s.io | grep -E '^(deviceclasses|resourceclaims|resourceslices)[[:space:]]'
+kubectl --context kind-agent-smoke version
+kubectl --context kind-agent-smoke api-resources --api-group=resource.k8s.io
+kubectl --context kind-agent-smoke api-resources --api-group=resource.k8s.io | grep --color=never -E '^(deviceclasses|resourceclaims|resourceslices)[[:space:]]'
 
 docker exec agent-smoke-control-plane test -e "$TT_DEVICE_PATH"
-docker exec agent-smoke-control-plane ls -l "$TT_DEVICE_PATH"
+docker exec agent-smoke-control-plane find "$TT_DEVICE_PATH" -maxdepth 1 -type c -ls
 ```
 
 Verify that a pod can see the mounted device path through a `hostPath` mount:
@@ -299,7 +320,7 @@ spec:
       containers:
       - name: check
         image: busybox:1.36
-        command: ["sh", "-c", "ls -l ${TT_DEVICE_PATH} && test -e ${TT_DEVICE_PATH}"]
+        command: ["sh", "-c", "find ${TT_DEVICE_PATH} -maxdepth 1 -type c -print -quit | grep -q ."]
         securityContext:
           privileged: true
         volumeMounts:
@@ -309,12 +330,13 @@ spec:
       - name: ttsim-device
         hostPath:
           path: ${TT_DEVICE_PATH}
+          type: Directory
 EOF
 
-kubectl apply -f /tmp/ttsim-device-check.yaml
-kubectl wait --for=condition=complete job/ttsim-device-check --timeout=120s
-kubectl logs job/ttsim-device-check
-kubectl delete job ttsim-device-check --ignore-not-found
+kubectl --context kind-agent-smoke apply -f /tmp/ttsim-device-check.yaml
+kubectl --context kind-agent-smoke wait --for=condition=complete job/ttsim-device-check --timeout=120s
+kubectl --context kind-agent-smoke logs job/ttsim-device-check
+kubectl --context kind-agent-smoke delete job ttsim-device-check --ignore-not-found
 kind delete cluster --name agent-smoke
 ```
 
@@ -330,21 +352,29 @@ the guest image uses a non-`/dev/tenstorrent*` device name, set
 Inside the VM, check for the simulated PCI device and driver state:
 
 ```bash
-lspci -nn | grep -i -E 'tenstorrent|tt|device' || lspci -nn
-lsmod | grep -i -E 'tenstorrent|tt' || true
-dmesg | grep -i -E 'tenstorrent|ttsim|tt-kmd|tt' | tail -100 || true
-ls -l /dev/tenstorrent* /dev/tt* 2>/dev/null || true
+lspci -nn | grep --color=never -i -E 'tenstorrent|device' || lspci -nn
+lspci -nnk -d 1e52:
+lsmod | grep --color=never -i tenstorrent || true
+sudo dmesg | grep --color=never -i -E 'tenstorrent|ttsim|tt-kmd' | tail -100 || true
+find /dev/tenstorrent -maxdepth 1 -mindepth 0 -ls 2>/dev/null || true
 ```
 
-If the kernel module is present but not loaded, try:
+In the current VM image, the `tt-kmd` source tree and built kernel module are at
+`/home/ubuntu/tt-kmd`, but the module is not installed under `/lib/modules`.
+Load it directly if `/dev/tenstorrent/0` is missing:
 
 ```bash
-sudo modprobe tenstorrent || true
-lsmod | grep -i -E 'tenstorrent|tt' || true
-dmesg | tail -100
+modinfo /home/ubuntu/tt-kmd/tenstorrent.ko | sed -n '1,80p'
+sudo insmod /home/ubuntu/tt-kmd/tenstorrent.ko || true
+lsmod | grep --color=never -i tenstorrent || true
+lspci -nnk -d 1e52:
+find /dev/tenstorrent -maxdepth 1 -type c -ls
 ```
 
-The exact module and device-node names depend on the installed `tt-kmd` version and guest image configuration, so use `dmesg`, `lspci`, `lsmod`, and `/dev` discovery as the source of truth.
+Use `sudo modprobe tenstorrent` only after the module is installed into the
+running kernel's module tree. The exact module and device-node names depend on
+the installed `tt-kmd` version and guest image configuration, so use `sudo
+dmesg`, `lspci`, `lsmod`, and `/dev` discovery as the source of truth.
 
 ---
 
@@ -353,7 +383,7 @@ The exact module and device-node names depend on the installed `tt-kmd` version 
 For a temporary service inside the VM, prefer SSH forwarding instead of adding more QEMU ports:
 
 ```bash
-ssh -p 2222 -N -L 8080:127.0.0.1:8080 <vm_user>@127.0.0.1
+ssh -p 2222 -N -L 8080:127.0.0.1:8080 ubuntu@127.0.0.1
 ```
 
 For a service running inside kind, port-forward from Kubernetes to the VM first:
@@ -414,7 +444,7 @@ ss -ltnp | grep ':2222 ' || true
 Try:
 
 ```bash
-ssh -vvv -p 2222 <vm_user>@127.0.0.1
+ssh -vvv -p 2222 ubuntu@127.0.0.1
 ```
 
 Then check the VM console for boot, cloud-init, or network issues.
@@ -479,20 +509,20 @@ Fill this in when handing the VM to another agent:
 QEMU host:                  <hostname or ssh target for the physical host>
 VM SSH host from QEMU host:  127.0.0.1
 VM SSH port:                2222
-VM SSH user:                <vm_user from seed.iso>
-VM auth method:             <ssh key path or agent-provided key>
+VM SSH user:                ubuntu
+VM auth method:             seed ISO password unless SSH keys are configured
 QEMU tmux session:           ttsim-vm
 Disk image:                 /home/varrahan/images/ubuntu-24.04-minimal-cloudimg-amd64.img
 Cloud-init seed:             /home/varrahan/images/seed.iso
 ttsim library:               /home/varrahan/sim/libttsim_wh.so
 Expected guest tools:        docker, kind, kubectl, tt-kmd
-Shutdown command:            ssh -p 2222 <vm_user>@127.0.0.1 'sudo shutdown -h now'
+Shutdown command:            ssh -p 2222 ubuntu@127.0.0.1 'sudo shutdown -h now'
 ```
 
 Agents should begin by running:
 
 ```bash
-ssh -p 2222 <vm_user>@127.0.0.1 'bash -lc "hostname; uptime; docker version || sudo docker version; kind version; lspci -nn | head"'
+ssh -p 2222 ubuntu@127.0.0.1 'bash -lc "hostname; uptime; docker version || sudo docker version; kind version; lspci -nn | head"'
 ```
 
 ---
