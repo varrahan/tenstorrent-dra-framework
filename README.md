@@ -122,10 +122,17 @@ The VM workflow supports:
 ## Repository Status
 
 This repository is currently in an early architecture and environment-validation
-stage. The existing documentation focuses on booting and accessing the QEMU
-`ttsim` VM. Implementation code, Kubernetes manifests, and driver components
-will be added as the DRA driver, telemetry service, topology discovery, and
-hardware janitor components are built out.
+stage. The existing documentation and validation assets focus on booting and
+accessing the QEMU `ttsim` VM. Initial source scaffolds now exist for the Go
+DRA driver and Python telemetry service; Kubernetes API integration, topology
+discovery, and hardware janitor flows will be added as the implementation is
+built out.
+
+## Source Layout
+
+- `src/dra/`: Go implementation of the Kubernetes DRA driver.
+- `src/telemetry/`: Python/FastAPI telemetry service.
+- `test/vm/`: VM validation scripts and kind smoke-test manifests.
 
 ## Documentation
 

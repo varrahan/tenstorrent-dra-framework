@@ -38,6 +38,13 @@ make -C test/vm kind-smoke
 make -C test/vm kind-clean
 ```
 
+## Source Layout
+
+Runtime source code is split by component and language:
+
+- `src/dra/`: Go implementation of the Kubernetes DRA driver.
+- `src/telemetry/`: Python/FastAPI telemetry service.
+
 ## Documents
 
 - [VM.md](VM.md): Booting and accessing the QEMU `ttsim` VM, validating Docker
