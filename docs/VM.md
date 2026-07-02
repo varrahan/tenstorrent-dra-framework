@@ -6,7 +6,8 @@ The VM is launched with a custom QEMU binary and a simulated Tenstorrent device:
 
 - Guest OS image: Ubuntu 24.04 minimal cloud image
 - Runtime device: `-device ttsim,lib=/home/varrahan/sim/libttsim_wh.so,bar4-size=32M`
-- Guest tooling already expected in the image: Docker, kind, and `tt-kmd`
+- Guest tooling already expected in the image: Docker, kind, `kubectl`, and
+  `tt-kmd`
 - Console mode: `-nographic`
 - Recommended access path: SSH from host to guest through QEMU user-networking port forwarding
 
@@ -16,7 +17,8 @@ The VM is launched with a custom QEMU binary and a simulated Tenstorrent device:
 
 ## 1. Host prerequisites
 
-Run these checks from the QEMU host before starting the VM:
+Run these checks from the QEMU build directory on the QEMU host before starting
+the VM:
 
 ```bash
 test -x ./build/qemu-system-x86_64
@@ -39,7 +41,8 @@ If port `2222` is already in use, pick another host port such as `2223` and use 
 
 ## 2. Recommended launch command with SSH access
 
-Start the VM from the repository/root directory where `./build/qemu-system-x86_64` exists:
+Start the VM from the QEMU build directory where
+`./build/qemu-system-x86_64` exists:
 
 ```bash
 cd ~/emulators/ttsim-qemu
@@ -238,20 +241,87 @@ docker ps || sudo docker ps
 sudo systemctl status docker --no-pager
 ```
 
-Verify kind:
+Verify kind and `kubectl`:
 
 ```bash
 kind version
 kubectl version --client 2>/dev/null || true
 ```
 
-Create a smoke-test kind cluster when needed:
+Create a DRA-capable smoke-test kind cluster when needed. Kubernetes v1.34+ is
+required for this project, so pin the kind node image instead of relying on the
+default image:
 
 ```bash
-kind create cluster --name agent-smoke --wait 120s
+KINDEST_NODE_IMAGE="${KINDEST_NODE_IMAGE:-kindest/node:v1.34.0}"
+
+TT_DEVICE_PATH="${TT_DEVICE_PATH:-/dev/tenstorrent}"
+if [ ! -e "$TT_DEVICE_PATH" ]; then
+  TT_DEVICE_PATH="$(find /dev -maxdepth 1 -name 'tenstorrent*' -print | sort | head -n 1)"
+fi
+test -n "$TT_DEVICE_PATH"
+test -e "$TT_DEVICE_PATH"
+
+cat >/tmp/ttsim-kind.yaml <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  image: ${KINDEST_NODE_IMAGE}
+  extraMounts:
+  - hostPath: ${TT_DEVICE_PATH}
+    containerPath: ${TT_DEVICE_PATH}
+    propagation: HostToContainer
+EOF
+
+kind create cluster --name agent-smoke --config /tmp/ttsim-kind.yaml --wait 120s
 kubectl cluster-info --context kind-agent-smoke
+kubectl version
+kubectl api-resources --api-group=resource.k8s.io
+kubectl api-resources --api-group=resource.k8s.io | grep -E '^(deviceclasses|resourceclaims|resourceslices)[[:space:]]'
+
+docker exec agent-smoke-control-plane test -e "$TT_DEVICE_PATH"
+docker exec agent-smoke-control-plane ls -l "$TT_DEVICE_PATH"
+```
+
+Verify that a pod can see the mounted device path through a `hostPath` mount:
+
+```bash
+cat >/tmp/ttsim-device-check.yaml <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ttsim-device-check
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: check
+        image: busybox:1.36
+        command: ["sh", "-c", "ls -l ${TT_DEVICE_PATH} && test -e ${TT_DEVICE_PATH}"]
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: ttsim-device
+          mountPath: ${TT_DEVICE_PATH}
+      volumes:
+      - name: ttsim-device
+        hostPath:
+          path: ${TT_DEVICE_PATH}
+EOF
+
+kubectl apply -f /tmp/ttsim-device-check.yaml
+kubectl wait --for=condition=complete job/ttsim-device-check --timeout=120s
+kubectl logs job/ttsim-device-check
+kubectl delete job ttsim-device-check --ignore-not-found
 kind delete cluster --name agent-smoke
 ```
+
+If `tt-kmd` exposes multiple device paths, repeat the `extraMounts`, `hostPath`,
+and `volumeMounts` entries for each path needed by the workflow under test. If
+the guest image uses a non-`/dev/tenstorrent*` device name, set
+`TT_DEVICE_PATH` explicitly before creating the cluster.
 
 ---
 

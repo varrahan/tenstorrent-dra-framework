@@ -129,6 +129,8 @@ hardware janitor components are built out.
 
 ## Documentation
 
+- [docs/README.md](docs/README.md): required documentation entry point with
+  project-wide DRA, Kubernetes version, and `kind` device-mount constraints.
 - [docs/VM.md](docs/VM.md): QEMU `ttsim` VM boot, SSH access, kind validation,
   and troubleshooting guide.
 - [AGENTS.md](AGENTS.md): project architecture notes and required agent workflow
