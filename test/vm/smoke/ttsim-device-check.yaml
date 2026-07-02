@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ttsim-device-check
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: check
+        image: busybox:1.36
+        command: ["sh", "-c", "find /dev/tenstorrent -maxdepth 1 -type c -print -quit | grep -q ."]
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: ttsim-device
+          mountPath: /dev/tenstorrent
+      volumes:
+      - name: ttsim-device
+        hostPath:
+          path: /dev/tenstorrent
+          type: Directory
