@@ -31,6 +31,25 @@ find /docs -type f \
 
 Codex should not rely on stale memory of the project. Re-read the relevant `/docs` README files at the start of each new task, and re-read any README whose surrounding files are modified during the task.
 
+## Workspace and Runtime Assumptions
+
+This repository is the implementation workspace. Source code, documentation,
+tests, and validation scripts are edited here.
+
+The operational target is the QEMU `ttsim` Ubuntu VM. Unless explicit user
+instructions say otherwise, commands that depend on Docker, `kind`, `tt-kmd`,
+`/dev/tenstorrent*`, Kubernetes DRA APIs, kernel modules, or hardware smoke
+validation must be written and verified from the VM perspective.
+
+Host-side execution is acceptable for lightweight repository checks that do not
+require the VM hardware environment, such as formatting, Go unit tests, Python
+syntax checks, pure Python unit tests, documentation checks, and dry-run
+Makefile expansion. Do not assume the host exposes Tenstorrent device paths or a
+usable Kubernetes-in-`kind` runtime.
+
+Validation-only VM assets belong under `test/vm/`. Documentation should make it
+clear when a command is expected to run inside the VM.
+
 ## System Purpose
 
 The purpose of this system is to bridge the gap between Tenstorrent ASIC hardware and Kubernetes container orchestration through a hardware-software co-design approach.
