@@ -1,132 +1,67 @@
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: tenstorrent-wormhole-n150d
+  name: tenstorrent-wormhole-n150
   labels:
     app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-device-class
     tenstorrent.com/chip-series: wormhole
     tenstorrent.com/card-series: n150
-    tenstorrent.com/card-model: n150d
 spec:
   selectors:
   - cel:
       expression: |-
         device.driver == "tenstorrent.com/dra" &&
         device.attributes["tenstorrent.com"].chipSeries == "wormhole" &&
-        device.attributes["tenstorrent.com"].cardSeries == "n150" &&
-        device.attributes["tenstorrent.com"].cardModel == "n150d"
+        device.attributes["tenstorrent.com"].cardSeries == "n150"
 ---
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: tenstorrent-wormhole-n150s
-  labels:
-    app.kubernetes.io/name: tt-dra-driver
-    app.kubernetes.io/component: dra-device-class
-    tenstorrent.com/chip-series: wormhole
-    tenstorrent.com/card-series: n150
-    tenstorrent.com/card-model: n150s
-spec:
-  selectors:
-  - cel:
-      expression: |-
-        device.driver == "tenstorrent.com/dra" &&
-        device.attributes["tenstorrent.com"].chipSeries == "wormhole" &&
-        device.attributes["tenstorrent.com"].cardSeries == "n150" &&
-        device.attributes["tenstorrent.com"].cardModel == "n150s"
----
-apiVersion: resource.k8s.io/v1
-kind: DeviceClass
-metadata:
-  name: tenstorrent-wormhole-n300d
+  name: tenstorrent-wormhole-n300
   labels:
     app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-device-class
     tenstorrent.com/chip-series: wormhole
     tenstorrent.com/card-series: n300
-    tenstorrent.com/card-model: n300d
 spec:
   selectors:
   - cel:
       expression: |-
         device.driver == "tenstorrent.com/dra" &&
         device.attributes["tenstorrent.com"].chipSeries == "wormhole" &&
-        device.attributes["tenstorrent.com"].cardSeries == "n300" &&
-        device.attributes["tenstorrent.com"].cardModel == "n300d"
+        device.attributes["tenstorrent.com"].cardSeries == "n300"
 ---
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: tenstorrent-wormhole-n300s
-  labels:
-    app.kubernetes.io/name: tt-dra-driver
-    app.kubernetes.io/component: dra-device-class
-    tenstorrent.com/chip-series: wormhole
-    tenstorrent.com/card-series: n300
-    tenstorrent.com/card-model: n300s
-spec:
-  selectors:
-  - cel:
-      expression: |-
-        device.driver == "tenstorrent.com/dra" &&
-        device.attributes["tenstorrent.com"].chipSeries == "wormhole" &&
-        device.attributes["tenstorrent.com"].cardSeries == "n300" &&
-        device.attributes["tenstorrent.com"].cardModel == "n300s"
----
-apiVersion: resource.k8s.io/v1
-kind: DeviceClass
-metadata:
-  name: tenstorrent-blackhole-p100a
+  name: tenstorrent-blackhole-p100
   labels:
     app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-device-class
     tenstorrent.com/chip-series: blackhole
     tenstorrent.com/card-series: p100
-    tenstorrent.com/card-model: p100a
 spec:
   selectors:
   - cel:
       expression: |-
         device.driver == "tenstorrent.com/dra" &&
         device.attributes["tenstorrent.com"].chipSeries == "blackhole" &&
-        device.attributes["tenstorrent.com"].cardSeries == "p100" &&
-        device.attributes["tenstorrent.com"].cardModel == "p100a"
+        device.attributes["tenstorrent.com"].cardSeries == "p100"
 ---
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: tenstorrent-blackhole-p150a
+  name: tenstorrent-blackhole-p150
   labels:
     app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-device-class
     tenstorrent.com/chip-series: blackhole
     tenstorrent.com/card-series: p150
-    tenstorrent.com/card-model: p150a
 spec:
   selectors:
   - cel:
       expression: |-
         device.driver == "tenstorrent.com/dra" &&
         device.attributes["tenstorrent.com"].chipSeries == "blackhole" &&
-        device.attributes["tenstorrent.com"].cardSeries == "p150" &&
-        device.attributes["tenstorrent.com"].cardModel == "p150a"
----
-apiVersion: resource.k8s.io/v1
-kind: DeviceClass
-metadata:
-  name: tenstorrent-blackhole-p150b
-  labels:
-    app.kubernetes.io/name: tt-dra-driver
-    app.kubernetes.io/component: dra-device-class
-    tenstorrent.com/chip-series: blackhole
-    tenstorrent.com/card-series: p150
-    tenstorrent.com/card-model: p150b
-spec:
-  selectors:
-  - cel:
-      expression: |-
-        device.driver == "tenstorrent.com/dra" &&
-        device.attributes["tenstorrent.com"].chipSeries == "blackhole" &&
-        device.attributes["tenstorrent.com"].cardSeries == "p150" &&
-        device.attributes["tenstorrent.com"].cardModel == "p150b"
+        device.attributes["tenstorrent.com"].cardSeries == "p150"

@@ -40,7 +40,6 @@ func TestResourceSliceModelMapsOptionalChipAttributes(t *testing.T) {
 			Minor:      0,
 			ChipSeries: "blackhole",
 			CardSeries: "p150",
-			CardModel:  "p150a",
 		},
 	})
 
@@ -51,28 +50,23 @@ func TestResourceSliceModelMapsOptionalChipAttributes(t *testing.T) {
 	if got[dra.DeviceAttributeCardSeries] != "p150" {
 		t.Fatalf("card series attribute = %q, want p150", got[dra.DeviceAttributeCardSeries])
 	}
-	if got[dra.DeviceAttributeCardModel] != "p150a" {
-		t.Fatalf("card model attribute = %q, want p150a", got[dra.DeviceAttributeCardModel])
-	}
 }
 
-func TestResourceSliceModelAddsCardSpecCapacity(t *testing.T) {
+func TestResourceSliceModelAddsComputeClassCapacity(t *testing.T) {
 	model := dra.NewResourceSliceModel("", "node-a", []device.Node{
 		{
-			ID:        "0",
-			Path:      "/dev/tenstorrent/0",
-			Major:     241,
-			Minor:     0,
-			CardModel: "n300d",
+			ID:         "0",
+			Path:       "/dev/tenstorrent/0",
+			Major:      241,
+			Minor:      0,
+			ChipSeries: "wormhole",
+			CardSeries: "n300",
 		},
 	})
 
 	got := model.Devices[0]
 	if got.Attributes[dra.DeviceAttributeChipSeries] != "wormhole" {
 		t.Fatalf("chip series = %q, want wormhole", got.Attributes[dra.DeviceAttributeChipSeries])
-	}
-	if got.Attributes[dra.DeviceAttributePartNumber] != "TC-02004" {
-		t.Fatalf("part number = %q, want TC-02004", got.Attributes[dra.DeviceAttributePartNumber])
 	}
 	if got.Capacity[dra.DeviceCapacityTensixCores] != "128" {
 		t.Fatalf("tensix capacity = %q, want 128", got.Capacity[dra.DeviceCapacityTensixCores])

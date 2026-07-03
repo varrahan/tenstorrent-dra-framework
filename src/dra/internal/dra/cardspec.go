@@ -16,13 +16,12 @@ const (
 	DeviceCapacityBoardPowerWatts            = DeviceAttributeDomain + "/board-power-watts"
 )
 
-// CardSpec captures the static card-level specifications published by
-// Tenstorrent's Wormhole and Blackhole PCIe card documentation.
+// CardSpec captures compute-relevant specifications for a Tenstorrent card
+// class. It intentionally ignores physical variants such as cooling, dimensions,
+// and power connectors because those do not change DRA scheduling capability.
 type CardSpec struct {
 	ChipSeries              string `json:"chipSeries"`
 	CardSeries              string `json:"cardSeries"`
-	CardModel               string `json:"cardModel"`
-	PartNumber              string `json:"partNumber"`
 	ASICCount               int    `json:"asicCount"`
 	TensixCores             int    `json:"tensixCores"`
 	BigRISCV                int    `json:"bigRiscv,omitempty"`
@@ -36,21 +35,15 @@ type CardSpec struct {
 	FP16TeraFLOPS           int    `json:"fp16TeraFLOPS,omitempty"`
 	BlockFP8TeraFLOPS       int    `json:"blockFP8TeraFLOPS"`
 	TBPWatts                int    `json:"tbpWatts"`
-	ExternalPower           string `json:"externalPower"`
-	PowerSupplyRequirement  string `json:"powerSupplyRequirement,omitempty"`
 	Connectivity            string `json:"connectivity"`
 	InternalChipToChip      string `json:"internalChipToChip,omitempty"`
 	SystemInterface         string `json:"systemInterface"`
-	Cooling                 string `json:"cooling"`
-	Dimensions              string `json:"dimensions"`
 }
 
 var SupportedCardSpecs = []CardSpec{
 	{
 		ChipSeries:              "wormhole",
 		CardSeries:              "n150",
-		CardModel:               "n150d",
-		PartNumber:              "TC-02002",
 		ASICCount:               1,
 		TensixCores:             72,
 		AIClock:                 "1 GHz",
@@ -63,40 +56,12 @@ var SupportedCardSpecs = []CardSpec{
 		FP16TeraFLOPS:           74,
 		BlockFP8TeraFLOPS:       148,
 		TBPWatts:                160,
-		ExternalPower:           "1x 4+4-pin EPS12V",
 		Connectivity:            "2x Warp 100; 2x QSFP-DD 200G active",
 		SystemInterface:         "PCIe 4.0 x16",
-		Cooling:                 "Active axial fan",
-		Dimensions:              "52.2mm x 256mm x 111mm",
-	},
-	{
-		ChipSeries:              "wormhole",
-		CardSeries:              "n150",
-		CardModel:               "n150s",
-		PartNumber:              "TC-02001",
-		ASICCount:               1,
-		TensixCores:             72,
-		AIClock:                 "1 GHz",
-		SRAMMB:                  108,
-		MemoryGB:                12,
-		MemoryType:              "GDDR6",
-		MemorySpeedGTPerSecond:  12,
-		MemoryBandwidthGBPerSec: 288,
-		FP8TeraFLOPS:            262,
-		FP16TeraFLOPS:           74,
-		BlockFP8TeraFLOPS:       148,
-		TBPWatts:                160,
-		ExternalPower:           "1x 4+4-pin EPS12V",
-		Connectivity:            "2x Warp 100; 2x QSFP-DD 200G active",
-		SystemInterface:         "PCIe 4.0 x16",
-		Cooling:                 "Passive",
-		Dimensions:              "36mm x 254mm x 111mm",
 	},
 	{
 		ChipSeries:              "wormhole",
 		CardSeries:              "n300",
-		CardModel:               "n300d",
-		PartNumber:              "TC-02004",
 		ASICCount:               2,
 		TensixCores:             128,
 		AIClock:                 "1 GHz",
@@ -109,42 +74,13 @@ var SupportedCardSpecs = []CardSpec{
 		FP16TeraFLOPS:           131,
 		BlockFP8TeraFLOPS:       262,
 		TBPWatts:                300,
-		ExternalPower:           "1x 4+4-pin EPS12V",
 		Connectivity:            "2x Warp 100; 2x QSFP-DD 200G active",
 		InternalChipToChip:      "200G",
 		SystemInterface:         "PCIe 4.0 x16",
-		Cooling:                 "Active axial fan",
-		Dimensions:              "52.2mm x 256mm x 111mm",
-	},
-	{
-		ChipSeries:              "wormhole",
-		CardSeries:              "n300",
-		CardModel:               "n300s",
-		PartNumber:              "TC-02003",
-		ASICCount:               2,
-		TensixCores:             128,
-		AIClock:                 "1 GHz",
-		SRAMMB:                  192,
-		MemoryGB:                24,
-		MemoryType:              "GDDR6",
-		MemorySpeedGTPerSecond:  12,
-		MemoryBandwidthGBPerSec: 576,
-		FP8TeraFLOPS:            466,
-		FP16TeraFLOPS:           131,
-		BlockFP8TeraFLOPS:       262,
-		TBPWatts:                300,
-		ExternalPower:           "1x 4+4-pin EPS12V",
-		Connectivity:            "2x Warp 100; 2x QSFP-DD 200G active",
-		InternalChipToChip:      "200G",
-		SystemInterface:         "PCIe 4.0 x16",
-		Cooling:                 "Passive",
-		Dimensions:              "36mm x 254mm x 111mm",
 	},
 	{
 		ChipSeries:              "blackhole",
 		CardSeries:              "p100",
-		CardModel:               "p100a",
-		PartNumber:              "TC-03008",
 		ASICCount:               1,
 		TensixCores:             120,
 		BigRISCV:                16,
@@ -156,18 +92,12 @@ var SupportedCardSpecs = []CardSpec{
 		MemoryBandwidthGBPerSec: 448,
 		BlockFP8TeraFLOPS:       664,
 		TBPWatts:                300,
-		ExternalPower:           "1x 12+4-pin 12V-2x6",
-		PowerSupplyRequirement:  "ATX 3.1 Certified or better",
 		Connectivity:            "none",
 		SystemInterface:         "PCIe 5.0 x16",
-		Cooling:                 "Active",
-		Dimensions:              "42mm x 270mm x 111mm",
 	},
 	{
 		ChipSeries:              "blackhole",
 		CardSeries:              "p150",
-		CardModel:               "p150a",
-		PartNumber:              "TC-03003",
 		ASICCount:               1,
 		TensixCores:             120,
 		BigRISCV:                16,
@@ -179,41 +109,14 @@ var SupportedCardSpecs = []CardSpec{
 		MemoryBandwidthGBPerSec: 512,
 		BlockFP8TeraFLOPS:       664,
 		TBPWatts:                300,
-		ExternalPower:           "1x 12+4-pin 12V-2x6",
-		PowerSupplyRequirement:  "ATX 3.1 Certified or better",
-		Connectivity:            "4x QSFP-DD 800G passive",
+		Connectivity:            "4x QSFP-DD 800G",
 		SystemInterface:         "PCIe 5.0 x16",
-		Cooling:                 "Active",
-		Dimensions:              "42mm x 270mm x 111mm",
-	},
-	{
-		ChipSeries:              "blackhole",
-		CardSeries:              "p150",
-		CardModel:               "p150b",
-		PartNumber:              "TC-03002",
-		ASICCount:               1,
-		TensixCores:             120,
-		BigRISCV:                16,
-		AIClock:                 "Up to 1.35 GHz",
-		SRAMMB:                  180,
-		MemoryGB:                32,
-		MemoryType:              "GDDR6",
-		MemorySpeedGTPerSecond:  16,
-		MemoryBandwidthGBPerSec: 512,
-		BlockFP8TeraFLOPS:       664,
-		TBPWatts:                300,
-		ExternalPower:           "1x 12+4-pin 12V-2x6",
-		PowerSupplyRequirement:  "ATX 3.1 Certified or better",
-		Connectivity:            "4x QSFP-DD 800G passive",
-		SystemInterface:         "PCIe 5.0 x16",
-		Cooling:                 "Passive",
-		Dimensions:              "42mm x 270mm x 111mm",
 	},
 }
 
-func CardSpecForModel(cardModel string) (CardSpec, bool) {
+func CardSpecForClass(chipSeries, cardSeries string) (CardSpec, bool) {
 	for _, spec := range SupportedCardSpecs {
-		if spec.CardModel == cardModel {
+		if spec.ChipSeries == chipSeries && spec.CardSeries == cardSeries {
 			return spec, true
 		}
 	}
@@ -224,18 +127,10 @@ func (spec CardSpec) Attributes() map[string]string {
 	attributes := map[string]string{
 		DeviceAttributeChipSeries:      spec.ChipSeries,
 		DeviceAttributeCardSeries:      spec.CardSeries,
-		DeviceAttributeCardModel:       spec.CardModel,
-		DeviceAttributePartNumber:      spec.PartNumber,
 		DeviceAttributeAIClock:         spec.AIClock,
 		DeviceAttributeMemoryType:      spec.MemoryType,
-		DeviceAttributeExternalPower:   spec.ExternalPower,
 		DeviceAttributeConnectivity:    spec.Connectivity,
 		DeviceAttributeSystemInterface: spec.SystemInterface,
-		DeviceAttributeCooling:         spec.Cooling,
-		DeviceAttributeDimensions:      spec.Dimensions,
-	}
-	if spec.PowerSupplyRequirement != "" {
-		attributes[DeviceAttributePowerSupplyRequirement] = spec.PowerSupplyRequirement
 	}
 	if spec.InternalChipToChip != "" {
 		attributes[DeviceAttributeInternalChipToChip] = spec.InternalChipToChip

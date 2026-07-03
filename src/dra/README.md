@@ -23,16 +23,15 @@ separate from the implementation packages.
 The static Kubernetes `resource.k8s.io/v1` DeviceClass manifest lives at
 [`manifests/deviceclasses.yaml`](manifests/deviceclasses.yaml). It defines:
 
-- `tenstorrent-wormhole-n150d`
-- `tenstorrent-wormhole-n150s`
-- `tenstorrent-wormhole-n300d`
-- `tenstorrent-wormhole-n300s`
-- `tenstorrent-blackhole-p100a`
-- `tenstorrent-blackhole-p150a`
-- `tenstorrent-blackhole-p150b`
+- `tenstorrent-wormhole-n150`
+- `tenstorrent-wormhole-n300`
+- `tenstorrent-blackhole-p100`
+- `tenstorrent-blackhole-p150`
 
-There is no `blackhole-p300` DeviceClass. The Blackhole PCIe card
-documentation lists p100a, p150a, and p150b cards.
+The classes intentionally group physical card variants that are equivalent from
+a compute scheduling perspective. Wormhole d/s variants differ in cooling and
+form factor, not DRA class. Blackhole p150a and p150b have equivalent compute
+specs and share `tenstorrent-blackhole-p150`.
 
 Apply it from inside the Kubernetes v1.34+ VM validation environment:
 
@@ -42,9 +41,9 @@ kubectl apply -f src/dra/manifests/deviceclasses.yaml
 
 These classes select devices managed by `tenstorrent.com/dra` and require
 ResourceSlices to publish `tenstorrent.com/chipSeries` and
-`tenstorrent.com/cardSeries` and `tenstorrent.com/cardModel` attributes.
+`tenstorrent.com/cardSeries` attributes.
 
 [`manifests/resourceslices.yaml`](manifests/resourceslices.yaml) is a reference
-manifest that captures the card attributes and capacities that the DRA driver
-should publish from node-specific discovery. It is not live inventory for a
-single VM node.
+manifest that captures the compute-relevant attributes and capacities that the
+DRA driver should publish from node-specific discovery. It is not live inventory
+for a single VM node.

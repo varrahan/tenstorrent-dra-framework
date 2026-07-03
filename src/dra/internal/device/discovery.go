@@ -18,7 +18,6 @@ type Node struct {
 	Mode       string `json:"mode"`
 	ChipSeries string `json:"chipSeries,omitempty"`
 	CardSeries string `json:"cardSeries,omitempty"`
-	CardModel  string `json:"cardModel,omitempty"`
 }
 
 type classifier func(path string, info fs.FileInfo) (Node, bool, error)

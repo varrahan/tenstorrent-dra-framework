@@ -40,12 +40,9 @@ func NewResourceSliceModel(driverName, nodeName string, nodes []device.Node) Res
 		if node.CardSeries != "" {
 			attributes[DeviceAttributeCardSeries] = node.CardSeries
 		}
-		if node.CardModel != "" {
-			attributes[DeviceAttributeCardModel] = node.CardModel
-		}
 
 		capacity := map[string]string(nil)
-		if spec, ok := CardSpecForModel(node.CardModel); ok {
+		if spec, ok := CardSpecForClass(node.ChipSeries, node.CardSeries); ok {
 			for key, value := range spec.Attributes() {
 				attributes[key] = value
 			}

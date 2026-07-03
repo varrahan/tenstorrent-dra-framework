@@ -3,30 +3,23 @@ package dra
 import "fmt"
 
 const (
-	DeviceAttributeDomain                 = "tenstorrent.com"
-	DeviceAttributeDeviceID               = DeviceAttributeDomain + "/device-id"
-	DeviceAttributePath                   = DeviceAttributeDomain + "/path"
-	DeviceAttributeChipSeries             = DeviceAttributeDomain + "/chipSeries"
-	DeviceAttributeCardSeries             = DeviceAttributeDomain + "/cardSeries"
-	DeviceAttributeCardModel              = DeviceAttributeDomain + "/cardModel"
-	DeviceAttributePartNumber             = DeviceAttributeDomain + "/partNumber"
-	DeviceAttributeAIClock                = DeviceAttributeDomain + "/aiClock"
-	DeviceAttributeMemoryType             = DeviceAttributeDomain + "/memoryType"
-	DeviceAttributeExternalPower          = DeviceAttributeDomain + "/externalPower"
-	DeviceAttributePowerSupplyRequirement = DeviceAttributeDomain + "/powerSupplyRequirement"
-	DeviceAttributeConnectivity           = DeviceAttributeDomain + "/connectivity"
-	DeviceAttributeInternalChipToChip     = DeviceAttributeDomain + "/internalChipToChip"
-	DeviceAttributeSystemInterface        = DeviceAttributeDomain + "/systemInterface"
-	DeviceAttributeCooling                = DeviceAttributeDomain + "/cooling"
-	DeviceAttributeDimensions             = DeviceAttributeDomain + "/dimensions"
+	DeviceAttributeDomain             = "tenstorrent.com"
+	DeviceAttributeDeviceID           = DeviceAttributeDomain + "/device-id"
+	DeviceAttributePath               = DeviceAttributeDomain + "/path"
+	DeviceAttributeChipSeries         = DeviceAttributeDomain + "/chipSeries"
+	DeviceAttributeCardSeries         = DeviceAttributeDomain + "/cardSeries"
+	DeviceAttributeAIClock            = DeviceAttributeDomain + "/aiClock"
+	DeviceAttributeMemoryType         = DeviceAttributeDomain + "/memoryType"
+	DeviceAttributeConnectivity       = DeviceAttributeDomain + "/connectivity"
+	DeviceAttributeInternalChipToChip = DeviceAttributeDomain + "/internalChipToChip"
+	DeviceAttributeSystemInterface    = DeviceAttributeDomain + "/systemInterface"
 )
 
-// DeviceClassVariant describes a Tenstorrent chip, card series, and card model
-// pairing that can be exposed through a Kubernetes DeviceClass.
+// DeviceClassVariant describes a compute-equivalent Tenstorrent chip and card
+// series pairing that can be exposed through a Kubernetes DeviceClass.
 type DeviceClassVariant struct {
 	ChipSeries string `json:"chipSeries"`
 	CardSeries string `json:"cardSeries"`
-	CardModel  string `json:"cardModel"`
 }
 
 // DeviceClassModel is a dependency-light representation of the DeviceClass
@@ -36,7 +29,6 @@ type DeviceClassModel struct {
 	DriverName         string `json:"driverName"`
 	ChipSeries         string `json:"chipSeries"`
 	CardSeries         string `json:"cardSeries"`
-	CardModel          string `json:"cardModel"`
 	SelectorExpression string `json:"selectorExpression"`
 }
 
@@ -48,7 +40,6 @@ func DeviceClassVariantsFromCardSpecs(specs []CardSpec) []DeviceClassVariant {
 		variants = append(variants, DeviceClassVariant{
 			ChipSeries: spec.ChipSeries,
 			CardSeries: spec.CardSeries,
-			CardModel:  spec.CardModel,
 		})
 	}
 	return variants
@@ -68,17 +59,16 @@ func NewDeviceClassModel(driverName string, variant DeviceClassVariant) DeviceCl
 	}
 
 	return DeviceClassModel{
-		Name:               DeviceClassName(variant.ChipSeries, variant.CardModel),
+		Name:               DeviceClassName(variant.ChipSeries, variant.CardSeries),
 		DriverName:         driverName,
 		ChipSeries:         variant.ChipSeries,
 		CardSeries:         variant.CardSeries,
-		CardModel:          variant.CardModel,
 		SelectorExpression: DeviceClassSelectorExpression(driverName, variant),
 	}
 }
 
-func DeviceClassName(chipSeries, cardModel string) string {
-	return fmt.Sprintf("tenstorrent-%s-%s", chipSeries, cardModel)
+func DeviceClassName(chipSeries, cardSeries string) string {
+	return fmt.Sprintf("tenstorrent-%s-%s", chipSeries, cardSeries)
 }
 
 func DeviceClassSelectorExpression(driverName string, variant DeviceClassVariant) string {
@@ -89,14 +79,11 @@ func DeviceClassSelectorExpression(driverName string, variant DeviceClassVariant
 	return fmt.Sprintf(
 		"device.driver == %q &&\n"+
 			"device.attributes[%q].chipSeries == %q &&\n"+
-			"device.attributes[%q].cardSeries == %q &&\n"+
-			"device.attributes[%q].cardModel == %q",
+			"device.attributes[%q].cardSeries == %q",
 		driverName,
 		DeviceAttributeDomain,
 		variant.ChipSeries,
 		DeviceAttributeDomain,
 		variant.CardSeries,
-		DeviceAttributeDomain,
-		variant.CardModel,
 	)
 }
