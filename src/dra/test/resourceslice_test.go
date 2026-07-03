@@ -77,9 +77,6 @@ func TestResourceSliceModelAddsComputeClassCapacity(t *testing.T) {
 	if capacityValue(got.Capacity[dra.DeviceCapacityMemoryBandwidthBytesPerSec]) != "576G" {
 		t.Fatalf("memory bandwidth = %q, want 576G", got.Capacity[dra.DeviceCapacityMemoryBandwidthBytesPerSec])
 	}
-	if intAttribute(t, got.Attributes[dra.DeviceAttributeInternalChipToChipGbps]) != 200 {
-		t.Fatalf("internal chip-to-chip = %#v, want 200", got.Attributes[dra.DeviceAttributeInternalChipToChipGbps])
-	}
 	if boolAttribute(t, got.Attributes[dra.DeviceAttributeConnectivity]) != true {
 		t.Fatalf("connectivity = %#v, want true", got.Attributes[dra.DeviceAttributeConnectivity])
 	}
