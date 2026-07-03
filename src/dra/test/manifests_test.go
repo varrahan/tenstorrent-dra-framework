@@ -32,9 +32,8 @@ func TestManifestsUseSupportedComputeClasses(t *testing.T) {
 		}
 	}
 	for _, key := range []string{
-		"aiClockGHz",
+		"aiClockMHz",
 		"connectivity",
-		"internalChipToChipGbps",
 		"systemInterfaceType",
 		"systemInterfaceCount",
 	} {
@@ -42,8 +41,8 @@ func TestManifestsUseSupportedComputeClasses(t *testing.T) {
 			t.Fatalf("resourceslices manifest is missing %q", key)
 		}
 	}
-	if !strings.Contains(resourceSlices, "aiClockGHz:\n        string:") {
-		t.Fatal("resourceslices manifest must publish aiClockGHz as a string DeviceAttribute")
+	if !strings.Contains(resourceSlices, "aiClockMHz:\n        int:") {
+		t.Fatal("resourceslices manifest must publish aiClockMHz as an int DeviceAttribute")
 	}
 	if strings.Contains(resourceSlices, "systemInterface:\n        string:") {
 		t.Fatal("resourceslices manifest still uses combined systemInterface string")

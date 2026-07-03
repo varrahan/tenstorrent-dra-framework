@@ -22,19 +22,19 @@ const (
 type CardSpec struct {
 	ChipSeries              string `json:"chipSeries"`
 	CardSeries              string `json:"cardSeries"`
-	ASICCount               int    `json:"asicCount"`
-	TensixCores             int    `json:"tensixCores"`
-	BigRISCV                int    `json:"bigRiscv,omitempty"`
-	AIClockGHz              string `json:"aiClockGHz"`
-	SRAMMB                  int    `json:"sramMB"`
-	MemoryGB                int    `json:"memoryGB"`
+	ASICCount               int64  `json:"asicCount"`
+	TensixCores             int64  `json:"tensixCores"`
+	BigRISCV                int64  `json:"bigRiscv,omitempty"`
+	AIClockMHz              int64  `json:"aiClockMHz"`
+	SRAMMB                  int64  `json:"sramMB"`
+	MemoryGB                int64  `json:"memoryGB"`
 	MemoryType              string `json:"memoryType"`
-	MemorySpeedGTPerSecond  int    `json:"memorySpeedGTPerSecond"`
-	MemoryBandwidthGBPerSec int    `json:"memoryBandwidthGBPerSecond"`
-	FP8TeraFLOPS            int    `json:"fp8TeraFLOPS,omitempty"`
-	FP16TeraFLOPS           int    `json:"fp16TeraFLOPS,omitempty"`
-	BlockFP8TeraFLOPS       int    `json:"blockFP8TeraFLOPS"`
-	TBPWatts                int    `json:"tbpWatts"`
+	MemorySpeedGTPerSecond  int64  `json:"memorySpeedGTPerSecond"`
+	MemoryBandwidthGBPerSec int64  `json:"memoryBandwidthGBPerSecond"`
+	FP8TeraFLOPS            int64  `json:"fp8TeraFLOPS,omitempty"`
+	FP16TeraFLOPS           int64  `json:"fp16TeraFLOPS,omitempty"`
+	BlockFP8TeraFLOPS       int64  `json:"blockFP8TeraFLOPS"`
+	TBPWatts                int64  `json:"tbpWatts"`
 	Connectivity            bool   `json:"connectivity"`
 	WarpInterfaceCount      int64  `json:"warpInterfaceCount,omitempty"`
 	WarpSpeedGbps           int64  `json:"warpSpeedGbps,omitempty"`
@@ -50,7 +50,7 @@ var SupportedCardSpecs = []CardSpec{
 		CardSeries:              "n150",
 		ASICCount:               1,
 		TensixCores:             72,
-		AIClockGHz:              "1",
+		AIClockMHz:              1000,
 		SRAMMB:                  108,
 		MemoryGB:                12,
 		MemoryType:              "GDDR6",
@@ -73,7 +73,7 @@ var SupportedCardSpecs = []CardSpec{
 		CardSeries:              "n300",
 		ASICCount:               2,
 		TensixCores:             128,
-		AIClockGHz:              "1",
+		AIClockMHz:              1000,
 		SRAMMB:                  192,
 		MemoryGB:                24,
 		MemoryType:              "GDDR6",
@@ -97,7 +97,7 @@ var SupportedCardSpecs = []CardSpec{
 		ASICCount:               1,
 		TensixCores:             120,
 		BigRISCV:                16,
-		AIClockGHz:              "1.35",
+		AIClockMHz:              1350,
 		SRAMMB:                  180,
 		MemoryGB:                28,
 		MemoryType:              "GDDR6",
@@ -115,7 +115,7 @@ var SupportedCardSpecs = []CardSpec{
 		ASICCount:               1,
 		TensixCores:             120,
 		BigRISCV:                16,
-		AIClockGHz:              "1.35",
+		AIClockMHz:              1350,
 		SRAMMB:                  180,
 		MemoryGB:                32,
 		MemoryType:              "GDDR6",
@@ -144,7 +144,7 @@ func (spec CardSpec) Attributes() map[string]DeviceAttribute {
 	attributes := map[string]DeviceAttribute{
 		DeviceAttributeChipSeries:           StringAttribute(spec.ChipSeries),
 		DeviceAttributeCardSeries:           StringAttribute(spec.CardSeries),
-		DeviceAttributeAIClockGHz:           StringAttribute(spec.AIClockGHz),
+	DeviceAttributeAIClockMHz:           IntAttribute(spec.AIClockMHz),
 		DeviceAttributeMemoryType:           StringAttribute(spec.MemoryType),
 		DeviceAttributeConnectivity:         BoolAttribute(spec.Connectivity),
 		DeviceAttributeSystemInterfaceType:  StringAttribute(spec.SystemInterfaceType),

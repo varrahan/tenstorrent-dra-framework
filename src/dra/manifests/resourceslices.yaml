@@ -205,7 +205,7 @@ spec:
       tenstorrent.com/cardSeries:
         string: p150
       tenstorrent.com/aiClockMHz:
-        float: 1350
+        int: 1350
       tenstorrent.com/memoryType:
         string: GDDR6
       tenstorrent.com/connectivity:

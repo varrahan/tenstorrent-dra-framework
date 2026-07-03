@@ -1,13 +1,6 @@
 package dra
 
-import (
-	"math"
-	"strconv"
-
-	"github.com/varrahan/tt-kind-dra/src/dra/internal/device"
-)
-
-const aiClockMHzAttribute = DeviceAttributeDomain + "/aiClockMHz"
+import "github.com/varrahan/tt-kind-dra/src/dra/internal/device"
 
 const DefaultDriverName = "tenstorrent.com/dra"
 
@@ -69,7 +62,6 @@ func NewResourceSliceModel(driverName, nodeName string, nodes []device.Node) Res
 			for key, value := range spec.Attributes() {
 				attributes[key] = value
 			}
-			normalizeAIClockAttribute(attributes)
 			capacity = spec.Capacity()
 		}
 
@@ -88,33 +80,6 @@ func NewResourceSliceModel(driverName, nodeName string, nodes []device.Node) Res
 		NodeName:   nodeName,
 		Devices:    devices,
 	}
-}
-
-func normalizeAIClockAttribute(attributes map[string]DeviceAttribute) {
-	clockGHz, ok := attributes[DeviceAttributeAIClockGHz]
-	if !ok {
-		return
-	}
-	delete(attributes, DeviceAttributeAIClockGHz)
-
-	if clockGHz.String == nil {
-		return
-	}
-
-	mhz, ok := parseAIClockMHz(*clockGHz.String)
-	if !ok {
-		attributes[aiClockMHzAttribute] = clockGHz
-		return
-	}
-	attributes[aiClockMHzAttribute] = IntAttribute(mhz)
-}
-
-func parseAIClockMHz(value string) (int64, bool) {
-	mhz, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return 0, false
-	}
-	return int64(math.Round(mhz * 1000)), true
 }
 
 func StringAttribute(value string) DeviceAttribute {

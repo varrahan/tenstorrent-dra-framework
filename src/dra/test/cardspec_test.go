@@ -10,10 +10,10 @@ func TestSupportedCardSpecsMatchComputeEquivalentTenstorrentRows(t *testing.T) {
 	want := []struct {
 		chip                 string
 		series               string
-		tensix               int
-		memoryGB             int
-		bandwidth            int
-		powerWatts           int
+		tensix               int64
+		memoryGB             int64
+		bandwidth            int64
+		powerWatts           int64
 		systemInterfaceType  string
 		systemInterfaceCount int64
 		connectivity         bool

@@ -9,6 +9,7 @@ const (
 	DeviceAttributeChipSeries             = DeviceAttributeDomain + "/chipSeries"
 	DeviceAttributeCardSeries             = DeviceAttributeDomain + "/cardSeries"
 	DeviceAttributeAIClockGHz             = DeviceAttributeDomain + "/aiClockGHz"
+	DeviceAttributeAIClockMHz             = DeviceAttributeDomain + "/aiClockMHz"
 	DeviceAttributeMemoryType             = DeviceAttributeDomain + "/memoryType"
 	DeviceAttributeConnectivity           = DeviceAttributeDomain + "/connectivity"
 	DeviceAttributeWarpInterfaceCount     = DeviceAttributeDomain + "/warpInterfaceCount"
@@ -17,6 +18,7 @@ const (
 	DeviceAttributeQSFPSpeedGbps          = DeviceAttributeDomain + "/qsfpSpeedGbps"
 	DeviceAttributeSystemInterfaceType    = DeviceAttributeDomain + "/systemInterfaceType"
 	DeviceAttributeSystemInterfaceCount   = DeviceAttributeDomain + "/systemInterfaceCount"
+	DeviceAttributeInternalChipToChipGbps  = DeviceAttributeDomain + "/internalChipToChipGbps"
 )
 
 // DeviceClassVariant describes a compute-equivalent Tenstorrent chip and card
