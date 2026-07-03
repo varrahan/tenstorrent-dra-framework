@@ -1,11 +1,18 @@
 package dra
 
-import "fmt"
+import (
+	"fmt"
+
+	resourceapi "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 const (
 	DeviceAttributeDomain               = "tenstorrent.com"
-	DeviceAttributeDeviceID             = DeviceAttributeDomain + "/device-id"
+	DeviceAttributeDeviceID             = DeviceAttributeDomain + "/deviceID"
 	DeviceAttributePath                 = DeviceAttributeDomain + "/path"
+	DeviceAttributeMajor                = DeviceAttributeDomain + "/major"
+	DeviceAttributeMinor                = DeviceAttributeDomain + "/minor"
 	DeviceAttributeChipSeries           = DeviceAttributeDomain + "/chipSeries"
 	DeviceAttributeCardSeries           = DeviceAttributeDomain + "/cardSeries"
 	DeviceAttributeAIClockMHz           = DeviceAttributeDomain + "/aiClockMHz"
@@ -26,16 +33,6 @@ type DeviceClassVariant struct {
 	CardSeries string `json:"cardSeries"`
 }
 
-// DeviceClassModel is a dependency-light representation of the DeviceClass
-// selector data this driver can publish or install.
-type DeviceClassModel struct {
-	Name               string `json:"name"`
-	DriverName         string `json:"driverName"`
-	ChipSeries         string `json:"chipSeries"`
-	CardSeries         string `json:"cardSeries"`
-	SelectorExpression string `json:"selectorExpression"`
-}
-
 var SupportedDeviceClassVariants = DeviceClassVariantsFromCardSpecs(SupportedCardSpecs)
 
 func DeviceClassVariantsFromCardSpecs(specs []CardSpec) []DeviceClassVariant {
@@ -49,23 +46,35 @@ func DeviceClassVariantsFromCardSpecs(specs []CardSpec) []DeviceClassVariant {
 	return variants
 }
 
-func NewDeviceClassModels(driverName string) []DeviceClassModel {
-	models := make([]DeviceClassModel, 0, len(SupportedDeviceClassVariants))
+func NewDeviceClasses(driverName string) []resourceapi.DeviceClass {
+	classes := make([]resourceapi.DeviceClass, 0, len(SupportedDeviceClassVariants))
 	for _, variant := range SupportedDeviceClassVariants {
-		models = append(models, NewDeviceClassModel(driverName, variant))
+		classes = append(classes, NewDeviceClass(driverName, variant))
 	}
-	return models
+	return classes
 }
 
-func NewDeviceClassModel(driverName string, variant DeviceClassVariant) DeviceClassModel {
+func NewDeviceClass(driverName string, variant DeviceClassVariant) resourceapi.DeviceClass {
 	driverName = defaultDriverName(driverName)
 
-	return DeviceClassModel{
-		Name:               DeviceClassName(variant.ChipSeries, variant.CardSeries),
-		DriverName:         driverName,
-		ChipSeries:         variant.ChipSeries,
-		CardSeries:         variant.CardSeries,
-		SelectorExpression: DeviceClassSelectorExpression(driverName, variant),
+	return resourceapi.DeviceClass{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: resourceapi.SchemeGroupVersion.String(),
+			Kind:       "DeviceClass",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   DeviceClassName(variant.ChipSeries, variant.CardSeries),
+			Labels: deviceClassLabels(variant),
+		},
+		Spec: resourceapi.DeviceClassSpec{
+			Selectors: []resourceapi.DeviceSelector{
+				{
+					CEL: &resourceapi.CELDeviceSelector{
+						Expression: DeviceClassSelectorExpression(driverName, variant),
+					},
+				},
+			},
+		},
 	}
 }
 
@@ -86,4 +95,13 @@ func DeviceClassSelectorExpression(driverName string, variant DeviceClassVariant
 		DeviceAttributeDomain,
 		variant.CardSeries,
 	)
+}
+
+func deviceClassLabels(variant DeviceClassVariant) map[string]string {
+	return map[string]string{
+		"app.kubernetes.io/name":      "tt-dra-driver",
+		"app.kubernetes.io/component": "dra-device-class",
+		"tenstorrent.com/chip-series": variant.ChipSeries,
+		"tenstorrent.com/card-series": variant.CardSeries,
+	}
 }

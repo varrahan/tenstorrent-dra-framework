@@ -1,12 +1,12 @@
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: tenstorrent-wormhole-n150
   labels:
-    app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-device-class
-    tenstorrent.com/chip-series: wormhole
+    app.kubernetes.io/name: tt-dra-driver
     tenstorrent.com/card-series: n150
+    tenstorrent.com/chip-series: wormhole
+  name: tenstorrent-wormhole-n150
 spec:
   selectors:
   - cel:
@@ -18,12 +18,12 @@ spec:
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: tenstorrent-wormhole-n300
   labels:
-    app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-device-class
-    tenstorrent.com/chip-series: wormhole
+    app.kubernetes.io/name: tt-dra-driver
     tenstorrent.com/card-series: n300
+    tenstorrent.com/chip-series: wormhole
+  name: tenstorrent-wormhole-n300
 spec:
   selectors:
   - cel:
@@ -35,12 +35,12 @@ spec:
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: tenstorrent-blackhole-p100
   labels:
-    app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-device-class
-    tenstorrent.com/chip-series: blackhole
+    app.kubernetes.io/name: tt-dra-driver
     tenstorrent.com/card-series: p100
+    tenstorrent.com/chip-series: blackhole
+  name: tenstorrent-blackhole-p100
 spec:
   selectors:
   - cel:
@@ -52,12 +52,12 @@ spec:
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: tenstorrent-blackhole-p150
   labels:
-    app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-device-class
-    tenstorrent.com/chip-series: blackhole
+    app.kubernetes.io/name: tt-dra-driver
     tenstorrent.com/card-series: p150
+    tenstorrent.com/chip-series: blackhole
+  name: tenstorrent-blackhole-p150
 spec:
   selectors:
   - cel:

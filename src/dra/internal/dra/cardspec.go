@@ -1,19 +1,21 @@
 package dra
 
-import "fmt"
+import (
+	resourceapi "k8s.io/api/resource/v1"
+)
 
 const (
 	DeviceCapacityASICs                      = DeviceAttributeDomain + "/asics"
-	DeviceCapacityTensixCores                = DeviceAttributeDomain + "/tensix-cores"
-	DeviceCapacityBigRISCV                   = DeviceAttributeDomain + "/big-riscv-cores"
-	DeviceCapacitySRAMBytes                  = DeviceAttributeDomain + "/sram-bytes"
-	DeviceCapacityMemoryBytes                = DeviceAttributeDomain + "/memory-bytes"
-	DeviceCapacityMemorySpeedGTPerSecond     = DeviceAttributeDomain + "/memory-speed-gtps"
-	DeviceCapacityMemoryBandwidthBytesPerSec = DeviceAttributeDomain + "/memory-bandwidth-bytes-per-second"
-	DeviceCapacityFP8TeraFLOPS               = DeviceAttributeDomain + "/fp8-teraflops"
-	DeviceCapacityFP16TeraFLOPS              = DeviceAttributeDomain + "/fp16-teraflops"
-	DeviceCapacityBlockFP8TeraFLOPS          = DeviceAttributeDomain + "/blockfp8-teraflops"
-	DeviceCapacityBoardPowerWatts            = DeviceAttributeDomain + "/board-power-watts"
+	DeviceCapacityTensixCores                = DeviceAttributeDomain + "/tensixCores"
+	DeviceCapacityBigRISCV                   = DeviceAttributeDomain + "/bigRISCV"
+	DeviceCapacitySRAMBytes                  = DeviceAttributeDomain + "/sramBytes"
+	DeviceCapacityMemoryBytes                = DeviceAttributeDomain + "/memoryBytes"
+	DeviceCapacityMemorySpeedGTPerSecond     = DeviceAttributeDomain + "/memorySpeedGTPerSecond"
+	DeviceCapacityMemoryBandwidthBytesPerSec = DeviceAttributeDomain + "/memoryBandwidthBytesPerSecond"
+	DeviceCapacityFP8TeraFLOPS               = DeviceAttributeDomain + "/fp8TeraFLOPS"
+	DeviceCapacityFP16TeraFLOPS              = DeviceAttributeDomain + "/fp16TeraFLOPS"
+	DeviceCapacityBlockFP8TeraFLOPS          = DeviceAttributeDomain + "/blockFP8TeraFLOPS"
+	DeviceCapacityBoardPowerWatts            = DeviceAttributeDomain + "/boardPowerWatts"
 )
 
 // CardSpec captures compute-relevant specifications for a Tenstorrent card
@@ -140,8 +142,8 @@ func CardSpecForClass(chipSeries, cardSeries string) (CardSpec, bool) {
 	return CardSpec{}, false
 }
 
-func (spec CardSpec) Attributes() map[string]DeviceAttribute {
-	attributes := map[string]DeviceAttribute{
+func (spec CardSpec) Attributes() map[resourceapi.QualifiedName]resourceapi.DeviceAttribute {
+	attributes := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
 		DeviceAttributeChipSeries:           StringAttribute(spec.ChipSeries),
 		DeviceAttributeCardSeries:           StringAttribute(spec.CardSeries),
 		DeviceAttributeAIClockMHz:           IntAttribute(spec.AIClockMHz),
@@ -165,25 +167,25 @@ func (spec CardSpec) Attributes() map[string]DeviceAttribute {
 	return attributes
 }
 
-func (spec CardSpec) Capacity() map[string]DeviceCapacity {
-	capacity := map[string]DeviceCapacity{
-		DeviceCapacityASICs:                      CapacityValue(fmt.Sprint(spec.ASICCount)),
-		DeviceCapacityTensixCores:                CapacityValue(fmt.Sprint(spec.TensixCores)),
-		DeviceCapacitySRAMBytes:                  CapacityValue(fmt.Sprintf("%dM", spec.SRAMMB)),
-		DeviceCapacityMemoryBytes:                CapacityValue(fmt.Sprintf("%dG", spec.MemoryGB)),
-		DeviceCapacityMemorySpeedGTPerSecond:     CapacityValue(fmt.Sprint(spec.MemorySpeedGTPerSecond)),
-		DeviceCapacityMemoryBandwidthBytesPerSec: CapacityValue(fmt.Sprintf("%dG", spec.MemoryBandwidthGBPerSec)),
-		DeviceCapacityBlockFP8TeraFLOPS:          CapacityValue(fmt.Sprint(spec.BlockFP8TeraFLOPS)),
-		DeviceCapacityBoardPowerWatts:            CapacityValue(fmt.Sprint(spec.TBPWatts)),
+func (spec CardSpec) Capacity() map[resourceapi.QualifiedName]resourceapi.DeviceCapacity {
+	capacity := map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+		DeviceCapacityASICs:                      CapacityValue(spec.ASICCount),
+		DeviceCapacityTensixCores:                CapacityValue(spec.TensixCores),
+		DeviceCapacitySRAMBytes:                  CapacityValueFromString(spec.SRAMMB, "M"),
+		DeviceCapacityMemoryBytes:                CapacityValueFromString(spec.MemoryGB, "G"),
+		DeviceCapacityMemorySpeedGTPerSecond:     CapacityValue(spec.MemorySpeedGTPerSecond),
+		DeviceCapacityMemoryBandwidthBytesPerSec: CapacityValueFromString(spec.MemoryBandwidthGBPerSec, "G"),
+		DeviceCapacityBlockFP8TeraFLOPS:          CapacityValue(spec.BlockFP8TeraFLOPS),
+		DeviceCapacityBoardPowerWatts:            CapacityValue(spec.TBPWatts),
 	}
 	if spec.BigRISCV > 0 {
-		capacity[DeviceCapacityBigRISCV] = CapacityValue(fmt.Sprint(spec.BigRISCV))
+		capacity[DeviceCapacityBigRISCV] = CapacityValue(spec.BigRISCV)
 	}
 	if spec.FP8TeraFLOPS > 0 {
-		capacity[DeviceCapacityFP8TeraFLOPS] = CapacityValue(fmt.Sprint(spec.FP8TeraFLOPS))
+		capacity[DeviceCapacityFP8TeraFLOPS] = CapacityValue(spec.FP8TeraFLOPS)
 	}
 	if spec.FP16TeraFLOPS > 0 {
-		capacity[DeviceCapacityFP16TeraFLOPS] = CapacityValue(fmt.Sprint(spec.FP16TeraFLOPS))
+		capacity[DeviceCapacityFP16TeraFLOPS] = CapacityValue(spec.FP16TeraFLOPS)
 	}
 	return capacity
 }

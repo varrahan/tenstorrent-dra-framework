@@ -1,17 +1,21 @@
 # DRA Resource Model
 
-This package contains the DRA-facing resource model.
+This package contains the DRA-facing resource builders.
 
-The current code maps discovered Tenstorrent device nodes into a lightweight
-internal model. The next implementation step is converting that model into
-Kubernetes `resource.k8s.io/v1` objects, starting with `ResourceSlice`.
+The current code maps discovered Tenstorrent device nodes and supported card
+specs into real Kubernetes `resource.k8s.io/v1` objects. Go source in this
+package is the source of truth for generated manifests under
+`src/dra/manifests/`.
 
-The package also carries dependency-light DeviceClass and compute-class spec
-models for the supported Tenstorrent PCIe card classes. Keep selector
-attributes aligned with the attributes emitted by `ResourceSliceModel`:
+Keep DeviceClass selector attributes aligned with attributes emitted by
+ResourceSlice device builders:
 
 - `tenstorrent.com/chipSeries`
 - `tenstorrent.com/cardSeries`
+
+Attribute and capacity names must remain valid Kubernetes DRA
+`QualifiedName` identifiers. Use camelCase identifiers after the
+`tenstorrent.com/` prefix, not hyphenated names.
 
 The supported card set is based on Tenstorrent's Wormhole and Blackhole PCIe
 card specification tables, collapsed to compute-equivalent classes:

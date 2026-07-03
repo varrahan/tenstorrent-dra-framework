@@ -1,239 +1,235 @@
-# Reference ResourceSlices for Tenstorrent compute-equivalent card classes.
-# The DRA driver must publish node-specific ResourceSlices from discovered
-# hardware inventory; do not treat this file as proof that one node has all
-# listed devices.
 apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
 metadata:
-  name: ttsim-wormhole-n150
   labels:
-    app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-resource-slice
-    tenstorrent.com/chip-series: wormhole
+    app.kubernetes.io/name: tt-dra-driver
     tenstorrent.com/card-series: n150
+    tenstorrent.com/chip-series: wormhole
+  name: ttsim-wormhole-n150
 spec:
-  driver: tenstorrent.com/dra
-  nodeName: ttsim-node
-  pool:
-    name: ttsim-node/wormhole-n150
-    generation: 1
-    resourceSliceCount: 1
   devices:
-  - name: tt-wormhole-n150-0
-    attributes:
-      tenstorrent.com/chipSeries:
-        string: wormhole
-      tenstorrent.com/cardSeries:
-        string: n150
+  - attributes:
       tenstorrent.com/aiClockMHz:
         int: 1000
-      tenstorrent.com/memoryType:
-        string: GDDR6
+      tenstorrent.com/cardSeries:
+        string: n150
+      tenstorrent.com/chipSeries:
+        string: wormhole
       tenstorrent.com/connectivity:
         bool: true
-      tenstorrent.com/warpInterfaceCount:
-        int: 2
-      tenstorrent.com/warpSpeedGbps:
-        int: 100
+      tenstorrent.com/memoryType:
+        string: GDDR6
       tenstorrent.com/qsfpInterfaceCount:
         int: 2
       tenstorrent.com/qsfpSpeedGbps:
         int: 200
-      tenstorrent.com/systemInterfaceType:
-        string: "PCIe 4.0"
       tenstorrent.com/systemInterfaceCount:
         int: 16
+      tenstorrent.com/systemInterfaceType:
+        string: PCIe 4.0
+      tenstorrent.com/warpInterfaceCount:
+        int: 2
+      tenstorrent.com/warpSpeedGbps:
+        int: 100
     capacity:
       tenstorrent.com/asics:
         value: "1"
-      tenstorrent.com/tensix-cores:
-        value: "72"
-      tenstorrent.com/sram-bytes:
-        value: "108M"
-      tenstorrent.com/memory-bytes:
-        value: "12G"
-      tenstorrent.com/memory-speed-gtps:
-        value: "12"
-      tenstorrent.com/memory-bandwidth-bytes-per-second:
-        value: "288G"
-      tenstorrent.com/fp8-teraflops:
-        value: "262"
-      tenstorrent.com/fp16-teraflops:
-        value: "74"
-      tenstorrent.com/blockfp8-teraflops:
+      tenstorrent.com/blockFP8TeraFLOPS:
         value: "148"
-      tenstorrent.com/board-power-watts:
+      tenstorrent.com/boardPowerWatts:
         value: "160"
+      tenstorrent.com/fp8TeraFLOPS:
+        value: "262"
+      tenstorrent.com/fp16TeraFLOPS:
+        value: "74"
+      tenstorrent.com/memoryBandwidthBytesPerSecond:
+        value: 288G
+      tenstorrent.com/memoryBytes:
+        value: 12G
+      tenstorrent.com/memorySpeedGTPerSecond:
+        value: "12"
+      tenstorrent.com/sramBytes:
+        value: 108M
+      tenstorrent.com/tensixCores:
+        value: "72"
+    name: tt-wormhole-n150-0
+  driver: tenstorrent.com/dra
+  nodeName: ttsim-node
+  pool:
+    generation: 1
+    name: ttsim-node/wormhole-n150
+    resourceSliceCount: 1
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
 metadata:
-  name: ttsim-wormhole-n300
   labels:
-    app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-resource-slice
-    tenstorrent.com/chip-series: wormhole
+    app.kubernetes.io/name: tt-dra-driver
     tenstorrent.com/card-series: n300
+    tenstorrent.com/chip-series: wormhole
+  name: ttsim-wormhole-n300
 spec:
-  driver: tenstorrent.com/dra
-  nodeName: ttsim-node
-  pool:
-    name: ttsim-node/wormhole-n300
-    generation: 1
-    resourceSliceCount: 1
   devices:
-  - name: tt-wormhole-n300-0
-    attributes:
-      tenstorrent.com/chipSeries:
-        string: wormhole
-      tenstorrent.com/cardSeries:
-        string: n300
+  - attributes:
       tenstorrent.com/aiClockMHz:
         int: 1000
-      tenstorrent.com/memoryType:
-        string: GDDR6
+      tenstorrent.com/cardSeries:
+        string: n300
+      tenstorrent.com/chipSeries:
+        string: wormhole
       tenstorrent.com/connectivity:
         bool: true
-      tenstorrent.com/warpInterfaceCount:
-        int: 2
-      tenstorrent.com/warpSpeedGbps:
-        int: 100
+      tenstorrent.com/memoryType:
+        string: GDDR6
       tenstorrent.com/qsfpInterfaceCount:
         int: 2
       tenstorrent.com/qsfpSpeedGbps:
         int: 200
-      tenstorrent.com/systemInterfaceType:
-        string: "PCIe 4.0"
       tenstorrent.com/systemInterfaceCount:
         int: 16
+      tenstorrent.com/systemInterfaceType:
+        string: PCIe 4.0
+      tenstorrent.com/warpInterfaceCount:
+        int: 2
+      tenstorrent.com/warpSpeedGbps:
+        int: 100
     capacity:
       tenstorrent.com/asics:
         value: "2"
-      tenstorrent.com/tensix-cores:
-        value: "128"
-      tenstorrent.com/sram-bytes:
-        value: "192M"
-      tenstorrent.com/memory-bytes:
-        value: "24G"
-      tenstorrent.com/memory-speed-gtps:
-        value: "12"
-      tenstorrent.com/memory-bandwidth-bytes-per-second:
-        value: "576G"
-      tenstorrent.com/fp8-teraflops:
-        value: "466"
-      tenstorrent.com/fp16-teraflops:
-        value: "131"
-      tenstorrent.com/blockfp8-teraflops:
+      tenstorrent.com/blockFP8TeraFLOPS:
         value: "262"
-      tenstorrent.com/board-power-watts:
+      tenstorrent.com/boardPowerWatts:
         value: "300"
+      tenstorrent.com/fp8TeraFLOPS:
+        value: "466"
+      tenstorrent.com/fp16TeraFLOPS:
+        value: "131"
+      tenstorrent.com/memoryBandwidthBytesPerSecond:
+        value: 576G
+      tenstorrent.com/memoryBytes:
+        value: 24G
+      tenstorrent.com/memorySpeedGTPerSecond:
+        value: "12"
+      tenstorrent.com/sramBytes:
+        value: 192M
+      tenstorrent.com/tensixCores:
+        value: "128"
+    name: tt-wormhole-n300-0
+  driver: tenstorrent.com/dra
+  nodeName: ttsim-node
+  pool:
+    generation: 1
+    name: ttsim-node/wormhole-n300
+    resourceSliceCount: 1
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
 metadata:
-  name: ttsim-blackhole-p100
   labels:
-    app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-resource-slice
-    tenstorrent.com/chip-series: blackhole
+    app.kubernetes.io/name: tt-dra-driver
     tenstorrent.com/card-series: p100
+    tenstorrent.com/chip-series: blackhole
+  name: ttsim-blackhole-p100
 spec:
-  driver: tenstorrent.com/dra
-  nodeName: ttsim-node
-  pool:
-    name: ttsim-node/blackhole-p100
-    generation: 1
-    resourceSliceCount: 1
   devices:
-  - name: tt-blackhole-p100-0
-    attributes:
-      tenstorrent.com/chipSeries:
-        string: blackhole
-      tenstorrent.com/cardSeries:
-        string: p100
+  - attributes:
       tenstorrent.com/aiClockMHz:
         int: 1350
-      tenstorrent.com/memoryType:
-        string: GDDR6
+      tenstorrent.com/cardSeries:
+        string: p100
+      tenstorrent.com/chipSeries:
+        string: blackhole
       tenstorrent.com/connectivity:
         bool: false
-      tenstorrent.com/systemInterfaceType:
-        string: "PCIe 5.0"
+      tenstorrent.com/memoryType:
+        string: GDDR6
       tenstorrent.com/systemInterfaceCount:
         int: 16
+      tenstorrent.com/systemInterfaceType:
+        string: PCIe 5.0
     capacity:
       tenstorrent.com/asics:
         value: "1"
-      tenstorrent.com/tensix-cores:
-        value: "120"
-      tenstorrent.com/big-riscv-cores:
+      tenstorrent.com/bigRISCV:
         value: "16"
-      tenstorrent.com/sram-bytes:
-        value: "180M"
-      tenstorrent.com/memory-bytes:
-        value: "28G"
-      tenstorrent.com/memory-speed-gtps:
-        value: "16"
-      tenstorrent.com/memory-bandwidth-bytes-per-second:
-        value: "448G"
-      tenstorrent.com/blockfp8-teraflops:
+      tenstorrent.com/blockFP8TeraFLOPS:
         value: "664"
-      tenstorrent.com/board-power-watts:
+      tenstorrent.com/boardPowerWatts:
         value: "300"
+      tenstorrent.com/memoryBandwidthBytesPerSecond:
+        value: 448G
+      tenstorrent.com/memoryBytes:
+        value: 28G
+      tenstorrent.com/memorySpeedGTPerSecond:
+        value: "16"
+      tenstorrent.com/sramBytes:
+        value: 180M
+      tenstorrent.com/tensixCores:
+        value: "120"
+    name: tt-blackhole-p100-0
+  driver: tenstorrent.com/dra
+  nodeName: ttsim-node
+  pool:
+    generation: 1
+    name: ttsim-node/blackhole-p100
+    resourceSliceCount: 1
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
 metadata:
-  name: ttsim-blackhole-p150
   labels:
-    app.kubernetes.io/name: tt-dra-driver
     app.kubernetes.io/component: dra-resource-slice
-    tenstorrent.com/chip-series: blackhole
+    app.kubernetes.io/name: tt-dra-driver
     tenstorrent.com/card-series: p150
+    tenstorrent.com/chip-series: blackhole
+  name: ttsim-blackhole-p150
 spec:
-  driver: tenstorrent.com/dra
-  nodeName: ttsim-node
-  pool:
-    name: ttsim-node/blackhole-p150
-    generation: 1
-    resourceSliceCount: 1
   devices:
-  - name: tt-blackhole-p150-0
-    attributes:
-      tenstorrent.com/chipSeries:
-        string: blackhole
-      tenstorrent.com/cardSeries:
-        string: p150
+  - attributes:
       tenstorrent.com/aiClockMHz:
         int: 1350
-      tenstorrent.com/memoryType:
-        string: GDDR6
+      tenstorrent.com/cardSeries:
+        string: p150
+      tenstorrent.com/chipSeries:
+        string: blackhole
       tenstorrent.com/connectivity:
         bool: true
+      tenstorrent.com/memoryType:
+        string: GDDR6
       tenstorrent.com/qsfpInterfaceCount:
         int: 4
       tenstorrent.com/qsfpSpeedGbps:
         int: 800
-      tenstorrent.com/systemInterfaceType:
-        string: "PCIe 5.0"
       tenstorrent.com/systemInterfaceCount:
         int: 16
+      tenstorrent.com/systemInterfaceType:
+        string: PCIe 5.0
     capacity:
       tenstorrent.com/asics:
         value: "1"
-      tenstorrent.com/tensix-cores:
-        value: "120"
-      tenstorrent.com/big-riscv-cores:
+      tenstorrent.com/bigRISCV:
         value: "16"
-      tenstorrent.com/sram-bytes:
-        value: "180M"
-      tenstorrent.com/memory-bytes:
-        value: "32G"
-      tenstorrent.com/memory-speed-gtps:
-        value: "16"
-      tenstorrent.com/memory-bandwidth-bytes-per-second:
-        value: "512G"
-      tenstorrent.com/blockfp8-teraflops:
+      tenstorrent.com/blockFP8TeraFLOPS:
         value: "664"
-      tenstorrent.com/board-power-watts:
+      tenstorrent.com/boardPowerWatts:
         value: "300"
+      tenstorrent.com/memoryBandwidthBytesPerSecond:
+        value: 512G
+      tenstorrent.com/memoryBytes:
+        value: 32G
+      tenstorrent.com/memorySpeedGTPerSecond:
+        value: "16"
+      tenstorrent.com/sramBytes:
+        value: 180M
+      tenstorrent.com/tensixCores:
+        value: "120"
+    name: tt-blackhole-p150-0
+  driver: tenstorrent.com/dra
+  nodeName: ttsim-node
+  pool:
+    generation: 1
+    name: ttsim-node/blackhole-p150
+    resourceSliceCount: 1

@@ -5,34 +5,47 @@ import (
 
 	"github.com/varrahan/tt-kind-dra/src/dra/internal/device"
 	"github.com/varrahan/tt-kind-dra/src/dra/internal/dra"
+	resourceapi "k8s.io/api/resource/v1"
 )
 
-func TestResourceSliceModelUsesDefaultsAndMapsDevices(t *testing.T) {
-	model := dra.NewResourceSliceModel("", "node-a", []device.Node{
+func TestResourceSliceUsesDefaultsAndMapsDevices(t *testing.T) {
+	slice := dra.NewResourceSliceForNodes("", "slice-a", "node-a", "node-a", []device.Node{
 		{ID: "0", Path: "/dev/tenstorrent/0", Major: 241, Minor: 0},
 	})
 
-	if model.DriverName != dra.DefaultDriverName {
-		t.Fatalf("DriverName = %q, want %q", model.DriverName, dra.DefaultDriverName)
+	if slice.APIVersion != "resource.k8s.io/v1" || slice.Kind != "ResourceSlice" {
+		t.Fatalf("resource slice type = %s/%s, want resource.k8s.io/v1/ResourceSlice", slice.APIVersion, slice.Kind)
 	}
-	if model.NodeName != "node-a" {
-		t.Fatalf("NodeName = %q, want node-a", model.NodeName)
+	if slice.Spec.Driver != dra.DefaultDriverName {
+		t.Fatalf("driver = %q, want %q", slice.Spec.Driver, dra.DefaultDriverName)
 	}
-	if len(model.Devices) != 1 {
-		t.Fatalf("Devices length = %d, want 1", len(model.Devices))
+	if slice.Spec.NodeName == nil || *slice.Spec.NodeName != "node-a" {
+		t.Fatalf("node name = %#v, want node-a", slice.Spec.NodeName)
+	}
+	if len(slice.Spec.Devices) != 1 {
+		t.Fatalf("devices length = %d, want 1", len(slice.Spec.Devices))
 	}
 
-	got := model.Devices[0]
-	if got.Name != "tt-0" || got.Path != "/dev/tenstorrent/0" || got.Major != 241 || got.Minor != 0 {
+	got := slice.Spec.Devices[0]
+	if got.Name != "tt-0" {
 		t.Fatalf("device mapping = %#v", got)
 	}
 	if stringAttribute(t, got.Attributes[dra.DeviceAttributeDeviceID]) != "0" {
 		t.Fatalf("device-id attribute = %#v, want 0", got.Attributes[dra.DeviceAttributeDeviceID])
 	}
+	if stringAttribute(t, got.Attributes[dra.DeviceAttributePath]) != "/dev/tenstorrent/0" {
+		t.Fatalf("path attribute = %#v, want /dev/tenstorrent/0", got.Attributes[dra.DeviceAttributePath])
+	}
+	if intAttribute(t, got.Attributes[dra.DeviceAttributeMajor]) != 241 {
+		t.Fatalf("major attribute = %#v, want 241", got.Attributes[dra.DeviceAttributeMajor])
+	}
+	if intAttribute(t, got.Attributes[dra.DeviceAttributeMinor]) != 0 {
+		t.Fatalf("minor attribute = %#v, want 0", got.Attributes[dra.DeviceAttributeMinor])
+	}
 }
 
-func TestResourceSliceModelMapsOptionalChipAttributes(t *testing.T) {
-	model := dra.NewResourceSliceModel("", "node-a", []device.Node{
+func TestResourceSliceMapsOptionalChipAttributes(t *testing.T) {
+	slice := dra.NewResourceSliceForNodes("", "slice-a", "node-a", "node-a", []device.Node{
 		{
 			ID:         "0",
 			Path:       "/dev/tenstorrent/0",
@@ -43,7 +56,7 @@ func TestResourceSliceModelMapsOptionalChipAttributes(t *testing.T) {
 		},
 	})
 
-	got := model.Devices[0].Attributes
+	got := slice.Spec.Devices[0].Attributes
 	if stringAttribute(t, got[dra.DeviceAttributeChipSeries]) != "blackhole" {
 		t.Fatalf("chip series attribute = %#v, want blackhole", got[dra.DeviceAttributeChipSeries])
 	}
@@ -52,8 +65,8 @@ func TestResourceSliceModelMapsOptionalChipAttributes(t *testing.T) {
 	}
 }
 
-func TestResourceSliceModelAddsComputeClassCapacity(t *testing.T) {
-	model := dra.NewResourceSliceModel("", "node-a", []device.Node{
+func TestResourceSliceAddsComputeClassCapacity(t *testing.T) {
+	slice := dra.NewResourceSliceForNodes("", "slice-a", "node-a", "node-a", []device.Node{
 		{
 			ID:         "0",
 			Path:       "/dev/tenstorrent/0",
@@ -64,9 +77,9 @@ func TestResourceSliceModelAddsComputeClassCapacity(t *testing.T) {
 		},
 	})
 
-	got := model.Devices[0]
+	got := slice.Spec.Devices[0]
 
-	for key, want := range map[string]string{
+	for key, want := range map[resourceapi.QualifiedName]string{
 		dra.DeviceAttributeChipSeries:          "wormhole",
 		dra.DeviceAttributeSystemInterfaceType: "PCIe 4.0",
 	} {
@@ -75,7 +88,7 @@ func TestResourceSliceModelAddsComputeClassCapacity(t *testing.T) {
 		}
 	}
 
-	for key, want := range map[string]int64{
+	for key, want := range map[resourceapi.QualifiedName]int64{
 		dra.DeviceAttributeWarpInterfaceCount:   2,
 		dra.DeviceAttributeWarpSpeedGbps:        100,
 		dra.DeviceAttributeQSFPInterfaceCount:   2,
@@ -87,7 +100,7 @@ func TestResourceSliceModelAddsComputeClassCapacity(t *testing.T) {
 		}
 	}
 
-	for key, want := range map[string]bool{
+	for key, want := range map[resourceapi.QualifiedName]bool{
 		dra.DeviceAttributeConnectivity: true,
 	} {
 		if got := boolAttribute(t, got.Attributes[key]); got != want {
@@ -95,7 +108,7 @@ func TestResourceSliceModelAddsComputeClassCapacity(t *testing.T) {
 		}
 	}
 
-	for key, want := range map[string]string{
+	for key, want := range map[resourceapi.QualifiedName]string{
 		dra.DeviceCapacityTensixCores:                "128",
 		dra.DeviceCapacityMemoryBytes:                "24G",
 		dra.DeviceCapacityMemoryBandwidthBytesPerSec: "576G",
@@ -106,30 +119,30 @@ func TestResourceSliceModelAddsComputeClassCapacity(t *testing.T) {
 	}
 }
 
-func stringAttribute(t *testing.T, attribute dra.DeviceAttribute) string {
+func stringAttribute(t *testing.T, attribute resourceapi.DeviceAttribute) string {
 	t.Helper()
-	if attribute.String == nil {
+	if attribute.StringValue == nil {
 		t.Fatalf("attribute %#v has nil String", attribute)
 	}
-	return *attribute.String
+	return *attribute.StringValue
 }
 
-func intAttribute(t *testing.T, attribute dra.DeviceAttribute) int64 {
+func intAttribute(t *testing.T, attribute resourceapi.DeviceAttribute) int64 {
 	t.Helper()
-	if attribute.Int == nil {
+	if attribute.IntValue == nil {
 		t.Fatalf("attribute %#v has nil Int", attribute)
 	}
-	return *attribute.Int
+	return *attribute.IntValue
 }
 
-func boolAttribute(t *testing.T, attribute dra.DeviceAttribute) bool {
+func boolAttribute(t *testing.T, attribute resourceapi.DeviceAttribute) bool {
 	t.Helper()
-	if attribute.Bool == nil {
+	if attribute.BoolValue == nil {
 		t.Fatalf("attribute %#v has nil Bool", attribute)
 	}
-	return *attribute.Bool
+	return *attribute.BoolValue
 }
 
-func capacityValue(capacity dra.DeviceCapacity) string {
-	return capacity.Value
+func capacityValue(capacity resourceapi.DeviceCapacity) string {
+	return capacity.Value.String()
 }
