@@ -11,7 +11,7 @@ import (
 
 func main() {
 	outputDir := flag.String("output-dir", "", "directory to write generated manifest files; stdout is used when empty")
-	kind := flag.String("kind", "all", "manifest kind to generate: all, deviceclasses, or resourceslices")
+	kind := flag.String("kind", "all", "manifest kind to generate: all, deviceclass, resourceslice, or resourceclaim")
 	nodeName := flag.String("node-name", dra.ReferenceNodeName, "node name for reference ResourceSlice manifests")
 	driverName := flag.String("driver-name", dra.DefaultDriverName, "DRA driver name")
 	flag.Parse()
@@ -36,7 +36,7 @@ func generate(kind, driverName, nodeName string) (map[string][]byte, error) {
 	manifests := map[string][]byte{}
 
 	switch kind {
-	case "all", "deviceclasses":
+	case "all", "deviceclass", "deviceclasses":
 		data, err := dra.DeviceClassManifestYAML(driverName)
 		if err != nil {
 			return nil, err
@@ -45,12 +45,21 @@ func generate(kind, driverName, nodeName string) (map[string][]byte, error) {
 	}
 
 	switch kind {
-	case "all", "resourceslices":
+	case "all", "resourceslice", "resourceslices":
 		data, err := dra.ReferenceResourceSliceManifestYAML(driverName, nodeName)
 		if err != nil {
 			return nil, err
 		}
 		manifests["resourceslices.yaml"] = data
+	}
+
+	switch kind {
+	case "all", "resourceclaim", "resourceclaims":
+		data, err := dra.ReferenceResourceClaimManifestYAML()
+		if err != nil {
+			return nil, err
+		}
+		manifests["resourceclaims.yaml"] = data
 	}
 
 	if len(manifests) == 0 {
@@ -60,7 +69,7 @@ func generate(kind, driverName, nodeName string) (map[string][]byte, error) {
 }
 
 func writeStdout(manifests map[string][]byte) {
-	for _, name := range []string{"deviceclasses.yaml", "resourceslices.yaml"} {
+	for _, name := range []string{"deviceclasses.yaml", "resourceslices.yaml", "resourceclaims.yaml"} {
 		data, ok := manifests[name]
 		if !ok {
 			continue

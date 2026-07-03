@@ -2,9 +2,9 @@
 
 This package contains the DRA-facing resource builders.
 
-The current code maps discovered Tenstorrent device nodes and supported card
-specs into real Kubernetes `resource.k8s.io/v1` objects. Go source in this
-package is the source of truth for generated manifests under
+The current code maps discovered Tenstorrent device nodes, supported card specs,
+and example workload requests into real Kubernetes `resource.k8s.io/v1` objects.
+Go source in this package is the source of truth for generated manifests under
 `src/dra/manifests/`.
 
 Keep DeviceClass selector attributes aligned with attributes emitted by

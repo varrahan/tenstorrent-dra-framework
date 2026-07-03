@@ -10,6 +10,8 @@ Initial scope:
 - Publish `ResourceSlice` objects for Kubernetes v1.34+ clusters.
 - Provide cluster-scoped `DeviceClass` definitions for supported Tenstorrent
   chip and card series.
+- Provide generated reference `ResourceClaim` manifests that workloads can use
+  to request one device from a supported DeviceClass.
 
 The first implementation milestone is local device discovery from
 `/dev/tenstorrent`. Kubernetes API writes are intentionally kept out of the
@@ -18,12 +20,12 @@ initial discovery package so that hardware detection can be tested independently
 Go tests for this component live under [`test/`](test/) so test code stays
 separate from the implementation packages.
 
-## DeviceClasses And ResourceSlices
+## DeviceClasses, ResourceSlices, And ResourceClaims
 
 Go source under [`internal/dra`](internal/dra/) is the source of truth for
-Kubernetes `resource.k8s.io/v1` DeviceClass and ResourceSlice objects. The
-checked-in YAML manifests are generated artifacts. Regenerate them after
-changing card specs, selectors, attributes, capacities, labels, or object
+Kubernetes `resource.k8s.io/v1` DeviceClass, ResourceSlice, and ResourceClaim
+objects. The checked-in YAML manifests are generated artifacts. Regenerate them
+after changing card specs, selectors, attributes, capacities, labels, or object
 builders:
 
 ```bash
@@ -57,3 +59,8 @@ ResourceSlices to publish `tenstorrent.com/chipSeries` and
 reference manifest that captures the compute-relevant attributes and capacities
 that the DRA driver should publish from node-specific discovery. It is not live
 inventory for a single VM node.
+
+[`manifests/resourceclaims.yaml`](manifests/resourceclaims.yaml) contains
+generated namespaced reference claims. Each claim asks for one exact-count
+device from one supported DeviceClass. These are intended for Kubernetes v1.34+
+VM smoke validation and example workload manifests, not as cluster-wide policy.

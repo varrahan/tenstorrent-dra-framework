@@ -1,0 +1,67 @@
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  labels:
+    app.kubernetes.io/component: dra-resource-claim
+    app.kubernetes.io/name: tt-dra-driver
+    tenstorrent.com/device-class: tenstorrent-wormhole-n150
+  name: claim-wormhole-n150
+spec:
+  devices:
+    requests:
+    - exactly:
+        allocationMode: ExactCount
+        count: 1
+        deviceClassName: tenstorrent-wormhole-n150
+      name: accelerator
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  labels:
+    app.kubernetes.io/component: dra-resource-claim
+    app.kubernetes.io/name: tt-dra-driver
+    tenstorrent.com/device-class: tenstorrent-wormhole-n300
+  name: claim-wormhole-n300
+spec:
+  devices:
+    requests:
+    - exactly:
+        allocationMode: ExactCount
+        count: 1
+        deviceClassName: tenstorrent-wormhole-n300
+      name: accelerator
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  labels:
+    app.kubernetes.io/component: dra-resource-claim
+    app.kubernetes.io/name: tt-dra-driver
+    tenstorrent.com/device-class: tenstorrent-blackhole-p100
+  name: claim-blackhole-p100
+spec:
+  devices:
+    requests:
+    - exactly:
+        allocationMode: ExactCount
+        count: 1
+        deviceClassName: tenstorrent-blackhole-p100
+      name: accelerator
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  labels:
+    app.kubernetes.io/component: dra-resource-claim
+    app.kubernetes.io/name: tt-dra-driver
+    tenstorrent.com/device-class: tenstorrent-blackhole-p150
+  name: claim-blackhole-p150
+spec:
+  devices:
+    requests:
+    - exactly:
+        allocationMode: ExactCount
+        count: 1
+        deviceClassName: tenstorrent-blackhole-p150
+      name: accelerator
