@@ -65,38 +65,44 @@ func TestResourceSliceModelAddsComputeClassCapacity(t *testing.T) {
 	})
 
 	got := model.Devices[0]
-	if stringAttribute(t, got.Attributes[dra.DeviceAttributeChipSeries]) != "wormhole" {
-		t.Fatalf("chip series = %#v, want wormhole", got.Attributes[dra.DeviceAttributeChipSeries])
+
+	for key, want := range map[string]string{
+		dra.DeviceAttributeChipSeries:          "wormhole",
+		dra.DeviceAttributeSystemInterfaceType: "PCIe 4.0",
+	} {
+		if got := stringAttribute(t, got.Attributes[key]); got != want {
+			t.Fatalf("string attribute %q = %q, want %q", key, got, want)
+		}
 	}
-	if capacityValue(got.Capacity[dra.DeviceCapacityTensixCores]) != "128" {
-		t.Fatalf("tensix capacity = %q, want 128", got.Capacity[dra.DeviceCapacityTensixCores])
+
+	for key, want := range map[string]int64{
+		dra.DeviceAttributeWarpInterfaceCount:   2,
+		dra.DeviceAttributeWarpSpeedGbps:        100,
+		dra.DeviceAttributeQSFPInterfaceCount:   2,
+		dra.DeviceAttributeQSFPSpeedGbps:        200,
+		dra.DeviceAttributeSystemInterfaceCount: 16,
+	} {
+		if got := intAttribute(t, got.Attributes[key]); got != want {
+			t.Fatalf("int attribute %q = %d, want %d", key, got, want)
+		}
 	}
-	if capacityValue(got.Capacity[dra.DeviceCapacityMemoryBytes]) != "24G" {
-		t.Fatalf("memory capacity = %q, want 24G", got.Capacity[dra.DeviceCapacityMemoryBytes])
+
+	for key, want := range map[string]bool{
+		dra.DeviceAttributeConnectivity: true,
+	} {
+		if got := boolAttribute(t, got.Attributes[key]); got != want {
+			t.Fatalf("bool attribute %q = %t, want %t", key, got, want)
+		}
 	}
-	if capacityValue(got.Capacity[dra.DeviceCapacityMemoryBandwidthBytesPerSec]) != "576G" {
-		t.Fatalf("memory bandwidth = %q, want 576G", got.Capacity[dra.DeviceCapacityMemoryBandwidthBytesPerSec])
-	}
-	if boolAttribute(t, got.Attributes[dra.DeviceAttributeConnectivity]) != true {
-		t.Fatalf("connectivity = %#v, want true", got.Attributes[dra.DeviceAttributeConnectivity])
-	}
-	if intAttribute(t, got.Attributes[dra.DeviceAttributeWarpInterfaceCount]) != 2 {
-		t.Fatalf("warp interface count = %#v, want 2", got.Attributes[dra.DeviceAttributeWarpInterfaceCount])
-	}
-	if intAttribute(t, got.Attributes[dra.DeviceAttributeWarpSpeedGbps]) != 100 {
-		t.Fatalf("warp speed = %#v, want 100", got.Attributes[dra.DeviceAttributeWarpSpeedGbps])
-	}
-	if intAttribute(t, got.Attributes[dra.DeviceAttributeQSFPInterfaceCount]) != 2 {
-		t.Fatalf("qsfp interface count = %#v, want 2", got.Attributes[dra.DeviceAttributeQSFPInterfaceCount])
-	}
-	if intAttribute(t, got.Attributes[dra.DeviceAttributeQSFPSpeedGbps]) != 200 {
-		t.Fatalf("qsfp speed = %#v, want 200", got.Attributes[dra.DeviceAttributeQSFPSpeedGbps])
-	}
-	if stringAttribute(t, got.Attributes[dra.DeviceAttributeSystemInterfaceType]) != "PCIe 4.0" {
-		t.Fatalf("system interface type = %#v, want PCIe 4.0", got.Attributes[dra.DeviceAttributeSystemInterfaceType])
-	}
-	if intAttribute(t, got.Attributes[dra.DeviceAttributeSystemInterfaceCount]) != 16 {
-		t.Fatalf("system interface count = %#v, want 16", got.Attributes[dra.DeviceAttributeSystemInterfaceCount])
+
+	for key, want := range map[string]string{
+		dra.DeviceCapacityTensixCores:                "128",
+		dra.DeviceCapacityMemoryBytes:                "24G",
+		dra.DeviceCapacityMemoryBandwidthBytesPerSec: "576G",
+	} {
+		if got := capacityValue(got.Capacity[key]); got != want {
+			t.Fatalf("capacity %q = %q, want %q", key, got, want)
+		}
 	}
 }
 

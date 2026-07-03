@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"syscall"
 )
 
@@ -20,38 +19,21 @@ type Node struct {
 	CardSeries string `json:"cardSeries,omitempty"`
 }
 
-type classifier func(path string, info fs.FileInfo) (Node, bool, error)
-
 // Discover scans a Tenstorrent device root and returns character devices.
 func Discover(root string) ([]Node, error) {
-	return discover(root, classifyCharacterDevice)
-}
-
-func discover(root string, classify classifier) ([]Node, error) {
 	info, err := os.Lstat(root)
 	if err != nil {
 		return nil, fmt.Errorf("stat device root %q: %w", root, err)
 	}
 
 	if !info.IsDir() {
-		node, ok, err := classify(root, info)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, nil
-		}
-		return []Node{node}, nil
+		return discoverSingle(root, info)
 	}
 
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, fmt.Errorf("read device root %q: %w", root, err)
 	}
-
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Name() < entries[j].Name()
-	})
 
 	nodes := make([]Node, 0, len(entries))
 	for _, entry := range entries {
@@ -61,7 +43,7 @@ func discover(root string, classify classifier) ([]Node, error) {
 			return nil, fmt.Errorf("stat device entry %q: %w", path, err)
 		}
 
-		node, ok, err := classify(path, info)
+		node, ok, err := classifyCharacterDevice(path, info)
 		if err != nil {
 			return nil, err
 		}
@@ -71,6 +53,14 @@ func discover(root string, classify classifier) ([]Node, error) {
 	}
 
 	return nodes, nil
+}
+
+func discoverSingle(path string, info fs.FileInfo) ([]Node, error) {
+	node, ok, err := classifyCharacterDevice(path, info)
+	if err != nil || !ok {
+		return nil, err
+	}
+	return []Node{node}, nil
 }
 
 func classifyCharacterDevice(path string, info fs.FileInfo) (Node, bool, error) {

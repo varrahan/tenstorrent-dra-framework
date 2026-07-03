@@ -36,43 +36,11 @@ type ResourceSliceModel struct {
 }
 
 func NewResourceSliceModel(driverName, nodeName string, nodes []device.Node) ResourceSliceModel {
-	if driverName == "" {
-		driverName = DefaultDriverName
-	}
+	driverName = defaultDriverName(driverName)
 
 	devices := make([]DeviceResource, 0, len(nodes))
 	for _, node := range nodes {
-		name := "tt-" + node.ID
-		if node.ChipSeries != "" && node.CardSeries != "" {
-			name = "tt-" + node.ChipSeries + "-" + node.CardSeries + "-" + node.ID
-		}
-		attributes := map[string]DeviceAttribute{
-			DeviceAttributeDeviceID: StringAttribute(node.ID),
-			DeviceAttributePath:     StringAttribute(node.Path),
-		}
-		if node.ChipSeries != "" {
-			attributes[DeviceAttributeChipSeries] = StringAttribute(node.ChipSeries)
-		}
-		if node.CardSeries != "" {
-			attributes[DeviceAttributeCardSeries] = StringAttribute(node.CardSeries)
-		}
-
-		capacity := map[string]DeviceCapacity(nil)
-		if spec, ok := CardSpecForClass(node.ChipSeries, node.CardSeries); ok {
-			for key, value := range spec.Attributes() {
-				attributes[key] = value
-			}
-			capacity = spec.Capacity()
-		}
-
-		devices = append(devices, DeviceResource{
-			Name:       name,
-			Path:       node.Path,
-			Major:      node.Major,
-			Minor:      node.Minor,
-			Attributes: attributes,
-			Capacity:   capacity,
-		})
+		devices = append(devices, newDeviceResource(node))
 	}
 
 	return ResourceSliceModel{
@@ -80,6 +48,55 @@ func NewResourceSliceModel(driverName, nodeName string, nodes []device.Node) Res
 		NodeName:   nodeName,
 		Devices:    devices,
 	}
+}
+
+func defaultDriverName(driverName string) string {
+	if driverName != "" {
+		return driverName
+	}
+	return DefaultDriverName
+}
+
+func newDeviceResource(node device.Node) DeviceResource {
+	attributes := nodeAttributes(node)
+	capacity := map[string]DeviceCapacity(nil)
+
+	if spec, ok := CardSpecForClass(node.ChipSeries, node.CardSeries); ok {
+		for key, value := range spec.Attributes() {
+			attributes[key] = value
+		}
+		capacity = spec.Capacity()
+	}
+
+	return DeviceResource{
+		Name:       deviceResourceName(node),
+		Path:       node.Path,
+		Major:      node.Major,
+		Minor:      node.Minor,
+		Attributes: attributes,
+		Capacity:   capacity,
+	}
+}
+
+func deviceResourceName(node device.Node) string {
+	if node.ChipSeries != "" && node.CardSeries != "" {
+		return "tt-" + node.ChipSeries + "-" + node.CardSeries + "-" + node.ID
+	}
+	return "tt-" + node.ID
+}
+
+func nodeAttributes(node device.Node) map[string]DeviceAttribute {
+	attributes := map[string]DeviceAttribute{
+		DeviceAttributeDeviceID: StringAttribute(node.ID),
+		DeviceAttributePath:     StringAttribute(node.Path),
+	}
+	if node.ChipSeries != "" {
+		attributes[DeviceAttributeChipSeries] = StringAttribute(node.ChipSeries)
+	}
+	if node.CardSeries != "" {
+		attributes[DeviceAttributeCardSeries] = StringAttribute(node.CardSeries)
+	}
+	return attributes
 }
 
 func StringAttribute(value string) DeviceAttribute {

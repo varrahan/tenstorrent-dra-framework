@@ -95,11 +95,13 @@ func TestDeviceClassManifestMatchesModels(t *testing.T) {
 			"name: " + model.Name,
 			"tenstorrent.com/chip-series: " + model.ChipSeries,
 			"tenstorrent.com/card-series: " + model.CardSeries,
-			model.SelectorExpression,
 		} {
 			if !strings.Contains(block, want) {
 				t.Fatalf("DeviceClass manifest block for %q is missing %q", model.Name, want)
 			}
+		}
+		if !strings.Contains(unindentManifestBlock(block), model.SelectorExpression) {
+			t.Fatalf("DeviceClass manifest block for %q is missing selector expression %q", model.Name, model.SelectorExpression)
 		}
 	}
 }
@@ -189,6 +191,14 @@ func manifestSectionKeys(t *testing.T, block, sectionName, nextSectionName strin
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func unindentManifestBlock(block string) string {
+	lines := strings.Split(block, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimLeft(line, " ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func mapKeys[V any](values map[string]V) []string {

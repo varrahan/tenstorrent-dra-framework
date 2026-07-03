@@ -8,7 +8,6 @@ const (
 	DeviceAttributePath                 = DeviceAttributeDomain + "/path"
 	DeviceAttributeChipSeries           = DeviceAttributeDomain + "/chipSeries"
 	DeviceAttributeCardSeries           = DeviceAttributeDomain + "/cardSeries"
-	DeviceAttributeAIClockGHz           = DeviceAttributeDomain + "/aiClockGHz"
 	DeviceAttributeAIClockMHz           = DeviceAttributeDomain + "/aiClockMHz"
 	DeviceAttributeMemoryType           = DeviceAttributeDomain + "/memoryType"
 	DeviceAttributeConnectivity         = DeviceAttributeDomain + "/connectivity"
@@ -59,9 +58,7 @@ func NewDeviceClassModels(driverName string) []DeviceClassModel {
 }
 
 func NewDeviceClassModel(driverName string, variant DeviceClassVariant) DeviceClassModel {
-	if driverName == "" {
-		driverName = DefaultDriverName
-	}
+	driverName = defaultDriverName(driverName)
 
 	return DeviceClassModel{
 		Name:               DeviceClassName(variant.ChipSeries, variant.CardSeries),
@@ -77,9 +74,7 @@ func DeviceClassName(chipSeries, cardSeries string) string {
 }
 
 func DeviceClassSelectorExpression(driverName string, variant DeviceClassVariant) string {
-	if driverName == "" {
-		driverName = DefaultDriverName
-	}
+	driverName = defaultDriverName(driverName)
 
 	return fmt.Sprintf(
 		"device.driver == %q &&\n"+

@@ -144,7 +144,7 @@ func (spec CardSpec) Attributes() map[string]DeviceAttribute {
 	attributes := map[string]DeviceAttribute{
 		DeviceAttributeChipSeries:           StringAttribute(spec.ChipSeries),
 		DeviceAttributeCardSeries:           StringAttribute(spec.CardSeries),
-	DeviceAttributeAIClockMHz:           IntAttribute(spec.AIClockMHz),
+		DeviceAttributeAIClockMHz:           IntAttribute(spec.AIClockMHz),
 		DeviceAttributeMemoryType:           StringAttribute(spec.MemoryType),
 		DeviceAttributeConnectivity:         BoolAttribute(spec.Connectivity),
 		DeviceAttributeSystemInterfaceType:  StringAttribute(spec.SystemInterfaceType),
