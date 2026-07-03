@@ -1,0 +1,67 @@
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  labels:
+    app.kubernetes.io/component: dra-device-class
+    app.kubernetes.io/name: tt-dra-driver
+    tenstorrent.com/card-series: n150
+    tenstorrent.com/chip-series: wormhole
+  name: tenstorrent-wormhole-n150
+spec:
+  selectors:
+  - cel:
+      expression: |-
+        device.driver == "tenstorrent.com/dra" &&
+        device.attributes["tenstorrent.com"].chipSeries == "wormhole" &&
+        device.attributes["tenstorrent.com"].cardSeries == "n150"
+---
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  labels:
+    app.kubernetes.io/component: dra-device-class
+    app.kubernetes.io/name: tt-dra-driver
+    tenstorrent.com/card-series: n300
+    tenstorrent.com/chip-series: wormhole
+  name: tenstorrent-wormhole-n300
+spec:
+  selectors:
+  - cel:
+      expression: |-
+        device.driver == "tenstorrent.com/dra" &&
+        device.attributes["tenstorrent.com"].chipSeries == "wormhole" &&
+        device.attributes["tenstorrent.com"].cardSeries == "n300"
+---
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  labels:
+    app.kubernetes.io/component: dra-device-class
+    app.kubernetes.io/name: tt-dra-driver
+    tenstorrent.com/card-series: p100
+    tenstorrent.com/chip-series: blackhole
+  name: tenstorrent-blackhole-p100
+spec:
+  selectors:
+  - cel:
+      expression: |-
+        device.driver == "tenstorrent.com/dra" &&
+        device.attributes["tenstorrent.com"].chipSeries == "blackhole" &&
+        device.attributes["tenstorrent.com"].cardSeries == "p100"
+---
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  labels:
+    app.kubernetes.io/component: dra-device-class
+    app.kubernetes.io/name: tt-dra-driver
+    tenstorrent.com/card-series: p150
+    tenstorrent.com/chip-series: blackhole
+  name: tenstorrent-blackhole-p150
+spec:
+  selectors:
+  - cel:
+      expression: |-
+        device.driver == "tenstorrent.com/dra" &&
+        device.attributes["tenstorrent.com"].chipSeries == "blackhole" &&
+        device.attributes["tenstorrent.com"].cardSeries == "p150"
