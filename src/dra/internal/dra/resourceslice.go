@@ -12,6 +12,7 @@ type DeviceResource struct {
 	Major      uint64            `json:"major"`
 	Minor      uint64            `json:"minor"`
 	Attributes map[string]string `json:"attributes"`
+	Capacity   map[string]string `json:"capacity,omitempty"`
 }
 
 // ResourceSliceModel is an internal, dependency-light representation of the
@@ -29,15 +30,35 @@ func NewResourceSliceModel(driverName, nodeName string, nodes []device.Node) Res
 
 	devices := make([]DeviceResource, 0, len(nodes))
 	for _, node := range nodes {
+		attributes := map[string]string{
+			DeviceAttributeDeviceID: node.ID,
+			DeviceAttributePath:     node.Path,
+		}
+		if node.ChipSeries != "" {
+			attributes[DeviceAttributeChipSeries] = node.ChipSeries
+		}
+		if node.CardSeries != "" {
+			attributes[DeviceAttributeCardSeries] = node.CardSeries
+		}
+		if node.CardModel != "" {
+			attributes[DeviceAttributeCardModel] = node.CardModel
+		}
+
+		capacity := map[string]string(nil)
+		if spec, ok := CardSpecForModel(node.CardModel); ok {
+			for key, value := range spec.Attributes() {
+				attributes[key] = value
+			}
+			capacity = spec.Capacity()
+		}
+
 		devices = append(devices, DeviceResource{
-			Name:  "tt-" + node.ID,
-			Path:  node.Path,
-			Major: node.Major,
-			Minor: node.Minor,
-			Attributes: map[string]string{
-				"tenstorrent.com/device-id": node.ID,
-				"tenstorrent.com/path":      node.Path,
-			},
+			Name:       "tt-" + node.ID,
+			Path:       node.Path,
+			Major:      node.Major,
+			Minor:      node.Minor,
+			Attributes: attributes,
+			Capacity:   capacity,
 		})
 	}
 

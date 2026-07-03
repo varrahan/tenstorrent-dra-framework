@@ -11,11 +11,14 @@ import (
 
 // Node describes a character device exposed by tt-kmd.
 type Node struct {
-	ID    string `json:"id"`
-	Path  string `json:"path"`
-	Major uint64 `json:"major"`
-	Minor uint64 `json:"minor"`
-	Mode  string `json:"mode"`
+	ID         string `json:"id"`
+	Path       string `json:"path"`
+	Major      uint64 `json:"major"`
+	Minor      uint64 `json:"minor"`
+	Mode       string `json:"mode"`
+	ChipSeries string `json:"chipSeries,omitempty"`
+	CardSeries string `json:"cardSeries,omitempty"`
+	CardModel  string `json:"cardModel,omitempty"`
 }
 
 type classifier func(path string, info fs.FileInfo) (Node, bool, error)
