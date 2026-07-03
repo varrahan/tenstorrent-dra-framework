@@ -1,6 +1,8 @@
 package dra
 
 import (
+	"strconv"
+
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -16,6 +18,7 @@ type ResourceClaimRequest struct {
 
 func NewResourceClaim(name string, request ResourceClaimRequest) resourceapi.ResourceClaim {
 	request = defaultResourceClaimRequest(request)
+	selectors := append(SpatialAllocationSelectors(), request.Selectors...)
 
 	return resourceapi.ResourceClaim{
 		TypeMeta: metav1.TypeMeta{
@@ -33,7 +36,7 @@ func NewResourceClaim(name string, request ResourceClaimRequest) resourceapi.Res
 						Name: request.Name,
 						Exactly: &resourceapi.ExactDeviceRequest{
 							DeviceClassName: request.DeviceClassName,
-							Selectors:       request.Selectors,
+							Selectors:       selectors,
 							AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 							Count:           request.Count,
 						},
@@ -44,16 +47,70 @@ func NewResourceClaim(name string, request ResourceClaimRequest) resourceapi.Res
 	}
 }
 
+func SpatialAllocationSelectors() []resourceapi.DeviceSelector {
+	return []resourceapi.DeviceSelector{
+		{
+			CEL: &resourceapi.CELDeviceSelector{
+				Expression: SpatialAllocationSelectorExpression(),
+			},
+		},
+	}
+}
+
+func SpatialAllocationSelectorExpression() string {
+	return `device.attributes["tenstorrent.com"].tensixTopology == "2dMesh" && ` +
+		`device.attributes["tenstorrent.com"].tensixAllocation == "contiguousRegion" && ` +
+		`device.attributes["tenstorrent.com"].gddrControllerLayout == "localizedControllers"`
+}
+
 func NewReferenceResourceClaims() []resourceapi.ResourceClaim {
 	claims := make([]resourceapi.ResourceClaim, 0, len(SupportedDeviceClassVariants))
 	for _, variant := range SupportedDeviceClassVariants {
-		className := DeviceClassName(variant.ChipSeries, variant.CardSeries)
 		claims = append(claims, NewResourceClaim(
 			ReferenceResourceClaimName(variant),
-			ResourceClaimRequest{DeviceClassName: className},
+			ReferenceResourceClaimRequest(variant),
 		))
 	}
 	return claims
+}
+
+func ReferenceResourceClaimRequest(variant DeviceClassVariant) ResourceClaimRequest {
+	spec, _ := CardSpecForClass(variant.ChipSeries, variant.CardSeries)
+
+	return ResourceClaimRequest{
+		DeviceClassName: DeviceClassName(variant.ChipSeries, variant.CardSeries),
+		Selectors:       DeviceClassVariantSelectors(spec),
+	}
+}
+
+func DeviceClassVariantSelectors(spec CardSpec) []resourceapi.DeviceSelector {
+	selectors := []resourceapi.DeviceSelector{
+		{
+			CEL: &resourceapi.CELDeviceSelector{
+				Expression: GDDRControllerSelectorExpression(spec),
+			},
+		},
+	}
+	if spec.BigRISCV > 0 {
+		selectors = append(selectors, resourceapi.DeviceSelector{
+			CEL: &resourceapi.CELDeviceSelector{
+				Expression: BigRISCVSelectorExpression(spec.BigRISCV),
+			},
+		})
+	}
+	return selectors
+}
+
+func GDDRControllerSelectorExpression(spec CardSpec) string {
+	return `device.attributes["tenstorrent.com"].gddrControllersPerASIC == ` + intString(spec.GDDRControllersPerASIC)
+}
+
+func BigRISCVSelectorExpression(minimumCoreCount int64) string {
+	return `device.attributes["tenstorrent.com"].bigRISCVCoreCount >= ` + intString(minimumCoreCount)
+}
+
+func intString(value int64) string {
+	return strconv.FormatInt(value, 10)
 }
 
 func ReferenceResourceClaimName(variant DeviceClassVariant) string {

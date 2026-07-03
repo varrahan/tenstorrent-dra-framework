@@ -18,6 +18,12 @@ spec:
         string: wormhole
       tenstorrent.com/connectivity:
         bool: true
+      tenstorrent.com/gddrControllerCount:
+        int: 6
+      tenstorrent.com/gddrControllerLayout:
+        string: localizedControllers
+      tenstorrent.com/gddrControllersPerASIC:
+        int: 6
       tenstorrent.com/memoryType:
         string: GDDR6
       tenstorrent.com/qsfpInterfaceCount:
@@ -28,6 +34,12 @@ spec:
         int: 16
       tenstorrent.com/systemInterfaceType:
         string: PCIe 4.0
+      tenstorrent.com/tensixAllocation:
+        string: contiguousRegion
+      tenstorrent.com/tensixCoreCount:
+        int: 72
+      tenstorrent.com/tensixTopology:
+        string: 2dMesh
       tenstorrent.com/warpInterfaceCount:
         int: 2
       tenstorrent.com/warpSpeedGbps:
@@ -51,8 +63,6 @@ spec:
         value: "12"
       tenstorrent.com/sramBytes:
         value: 108M
-      tenstorrent.com/tensixCores:
-        value: "72"
     name: tt-wormhole-n150-0
   driver: tenstorrent.com/dra
   nodeName: ttsim-node
@@ -81,6 +91,12 @@ spec:
         string: wormhole
       tenstorrent.com/connectivity:
         bool: true
+      tenstorrent.com/gddrControllerCount:
+        int: 12
+      tenstorrent.com/gddrControllerLayout:
+        string: localizedControllers
+      tenstorrent.com/gddrControllersPerASIC:
+        int: 6
       tenstorrent.com/memoryType:
         string: GDDR6
       tenstorrent.com/qsfpInterfaceCount:
@@ -91,6 +107,12 @@ spec:
         int: 16
       tenstorrent.com/systemInterfaceType:
         string: PCIe 4.0
+      tenstorrent.com/tensixAllocation:
+        string: contiguousRegion
+      tenstorrent.com/tensixCoreCount:
+        int: 128
+      tenstorrent.com/tensixTopology:
+        string: 2dMesh
       tenstorrent.com/warpInterfaceCount:
         int: 2
       tenstorrent.com/warpSpeedGbps:
@@ -114,8 +136,6 @@ spec:
         value: "12"
       tenstorrent.com/sramBytes:
         value: 192M
-      tenstorrent.com/tensixCores:
-        value: "128"
     name: tt-wormhole-n300-0
   driver: tenstorrent.com/dra
   nodeName: ttsim-node
@@ -138,23 +158,35 @@ spec:
   - attributes:
       tenstorrent.com/aiClockMHz:
         int: 1350
+      tenstorrent.com/bigRISCVCoreCount:
+        int: 16
       tenstorrent.com/cardSeries:
         string: p100
       tenstorrent.com/chipSeries:
         string: blackhole
       tenstorrent.com/connectivity:
         bool: false
+      tenstorrent.com/gddrControllerCount:
+        int: 8
+      tenstorrent.com/gddrControllerLayout:
+        string: localizedControllers
+      tenstorrent.com/gddrControllersPerASIC:
+        int: 8
       tenstorrent.com/memoryType:
         string: GDDR6
       tenstorrent.com/systemInterfaceCount:
         int: 16
       tenstorrent.com/systemInterfaceType:
         string: PCIe 5.0
+      tenstorrent.com/tensixAllocation:
+        string: contiguousRegion
+      tenstorrent.com/tensixCoreCount:
+        int: 120
+      tenstorrent.com/tensixTopology:
+        string: 2dMesh
     capacity:
       tenstorrent.com/asics:
         value: "1"
-      tenstorrent.com/bigRISCV:
-        value: "16"
       tenstorrent.com/blockFP8TeraFLOPS:
         value: "664"
       tenstorrent.com/boardPowerWatts:
@@ -167,8 +199,6 @@ spec:
         value: "16"
       tenstorrent.com/sramBytes:
         value: 180M
-      tenstorrent.com/tensixCores:
-        value: "120"
     name: tt-blackhole-p100-0
   driver: tenstorrent.com/dra
   nodeName: ttsim-node
@@ -191,12 +221,20 @@ spec:
   - attributes:
       tenstorrent.com/aiClockMHz:
         int: 1350
+      tenstorrent.com/bigRISCVCoreCount:
+        int: 16
       tenstorrent.com/cardSeries:
         string: p150
       tenstorrent.com/chipSeries:
         string: blackhole
       tenstorrent.com/connectivity:
         bool: true
+      tenstorrent.com/gddrControllerCount:
+        int: 8
+      tenstorrent.com/gddrControllerLayout:
+        string: localizedControllers
+      tenstorrent.com/gddrControllersPerASIC:
+        int: 8
       tenstorrent.com/memoryType:
         string: GDDR6
       tenstorrent.com/qsfpInterfaceCount:
@@ -207,11 +245,15 @@ spec:
         int: 16
       tenstorrent.com/systemInterfaceType:
         string: PCIe 5.0
+      tenstorrent.com/tensixAllocation:
+        string: contiguousRegion
+      tenstorrent.com/tensixCoreCount:
+        int: 120
+      tenstorrent.com/tensixTopology:
+        string: 2dMesh
     capacity:
       tenstorrent.com/asics:
         value: "1"
-      tenstorrent.com/bigRISCV:
-        value: "16"
       tenstorrent.com/blockFP8TeraFLOPS:
         value: "664"
       tenstorrent.com/boardPowerWatts:
@@ -224,8 +266,6 @@ spec:
         value: "16"
       tenstorrent.com/sramBytes:
         value: 180M
-      tenstorrent.com/tensixCores:
-        value: "120"
     name: tt-blackhole-p150-0
   driver: tenstorrent.com/dra
   nodeName: ttsim-node

@@ -60,6 +60,17 @@ reference manifest that captures the compute-relevant attributes and capacities
 that the DRA driver should publish from node-specific discovery. It is not live
 inventory for a single VM node.
 
+Tensix cores are not exposed as an independently consumable scalar capacity.
+They are modeled as a 2D mesh with contiguous-region allocation requirements.
+ResourceSlice devices publish mesh and GDDR-controller locality attributes, and
+ResourceClaims select only devices that advertise contiguous 2D mesh allocation
+with localized GDDR controller layout.
+
+GDDR controller topology is also published explicitly. Wormhole devices expose
+six GDDR6 controllers per ASIC, while Blackhole devices expose eight per ASIC.
+Blackhole devices also publish the larger RISC-V core count as a scheduling
+attribute, and generated Blackhole ResourceClaims select for that capability.
+
 [`manifests/resourceclaims.yaml`](manifests/resourceclaims.yaml) contains
 generated namespaced reference claims. Each claim asks for one exact-count
 device from one supported DeviceClass. These are intended for Kubernetes v1.34+

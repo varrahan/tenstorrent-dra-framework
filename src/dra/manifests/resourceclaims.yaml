@@ -13,6 +13,14 @@ spec:
         allocationMode: ExactCount
         count: 1
         deviceClassName: tenstorrent-wormhole-n150
+        selectors:
+        - cel:
+            expression: device.attributes["tenstorrent.com"].tensixTopology == "2dMesh"
+              && device.attributes["tenstorrent.com"].tensixAllocation == "contiguousRegion"
+              && device.attributes["tenstorrent.com"].gddrControllerLayout == "localizedControllers"
+        - cel:
+            expression: device.attributes["tenstorrent.com"].gddrControllersPerASIC
+              == 6
       name: accelerator
 ---
 apiVersion: resource.k8s.io/v1
@@ -30,6 +38,14 @@ spec:
         allocationMode: ExactCount
         count: 1
         deviceClassName: tenstorrent-wormhole-n300
+        selectors:
+        - cel:
+            expression: device.attributes["tenstorrent.com"].tensixTopology == "2dMesh"
+              && device.attributes["tenstorrent.com"].tensixAllocation == "contiguousRegion"
+              && device.attributes["tenstorrent.com"].gddrControllerLayout == "localizedControllers"
+        - cel:
+            expression: device.attributes["tenstorrent.com"].gddrControllersPerASIC
+              == 6
       name: accelerator
 ---
 apiVersion: resource.k8s.io/v1
@@ -47,6 +63,17 @@ spec:
         allocationMode: ExactCount
         count: 1
         deviceClassName: tenstorrent-blackhole-p100
+        selectors:
+        - cel:
+            expression: device.attributes["tenstorrent.com"].tensixTopology == "2dMesh"
+              && device.attributes["tenstorrent.com"].tensixAllocation == "contiguousRegion"
+              && device.attributes["tenstorrent.com"].gddrControllerLayout == "localizedControllers"
+        - cel:
+            expression: device.attributes["tenstorrent.com"].gddrControllersPerASIC
+              == 8
+        - cel:
+            expression: device.attributes["tenstorrent.com"].bigRISCVCoreCount >=
+              16
       name: accelerator
 ---
 apiVersion: resource.k8s.io/v1
@@ -64,4 +91,15 @@ spec:
         allocationMode: ExactCount
         count: 1
         deviceClassName: tenstorrent-blackhole-p150
+        selectors:
+        - cel:
+            expression: device.attributes["tenstorrent.com"].tensixTopology == "2dMesh"
+              && device.attributes["tenstorrent.com"].tensixAllocation == "contiguousRegion"
+              && device.attributes["tenstorrent.com"].gddrControllerLayout == "localizedControllers"
+        - cel:
+            expression: device.attributes["tenstorrent.com"].gddrControllersPerASIC
+              == 8
+        - cel:
+            expression: device.attributes["tenstorrent.com"].bigRISCVCoreCount >=
+              16
       name: accelerator

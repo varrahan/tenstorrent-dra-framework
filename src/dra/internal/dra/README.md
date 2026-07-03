@@ -17,6 +17,21 @@ Attribute and capacity names must remain valid Kubernetes DRA
 `QualifiedName` identifiers. Use camelCase identifiers after the
 `tenstorrent.com/` prefix, not hyphenated names.
 
+Do not model Tensix cores as independently allocatable scalar capacity.
+Tenstorrent workloads need spatial allocation over contiguous regions of the 2D
+Tensix mesh. ResourceSlice objects should publish topology attributes such as
+`tenstorrent.com/tensixTopology`,
+`tenstorrent.com/tensixAllocation`, and
+`tenstorrent.com/gddrControllerLayout`; ResourceClaims should select for those
+capabilities. Actual placement of subregions and GDDR-local blocks belongs in
+the allocator/kubelet plugin, using device-discovered topology as the source of
+truth.
+
+ResourceSlice objects also publish GDDR controller counts. Wormhole chips have
+six GDDR6 controllers per ASIC, and Blackhole chips have eight per ASIC.
+Blackhole big RISC-V cores are represented as a scheduling attribute
+(`tenstorrent.com/bigRISCVCoreCount`), not as scalar capacity.
+
 The supported card set is based on Tenstorrent's Wormhole and Blackhole PCIe
 card specification tables, collapsed to compute-equivalent classes:
 

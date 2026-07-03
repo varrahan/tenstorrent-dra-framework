@@ -14,14 +14,15 @@ func TestSupportedCardSpecsMatchComputeEquivalentTenstorrentRows(t *testing.T) {
 		memoryGB             int64
 		bandwidth            int64
 		powerWatts           int64
+		gddrControllers      int64
 		systemInterfaceType  string
 		systemInterfaceCount int64
 		connectivity         bool
 	}{
-		{"wormhole", "n150", 72, 12, 288, 160, "PCIe 4.0", 16, true},
-		{"wormhole", "n300", 128, 24, 576, 300, "PCIe 4.0", 16, true},
-		{"blackhole", "p100", 120, 28, 448, 300, "PCIe 5.0", 16, false},
-		{"blackhole", "p150", 120, 32, 512, 300, "PCIe 5.0", 16, true},
+		{"wormhole", "n150", 72, 12, 288, 160, 6, "PCIe 4.0", 16, true},
+		{"wormhole", "n300", 128, 24, 576, 300, 6, "PCIe 4.0", 16, true},
+		{"blackhole", "p100", 120, 28, 448, 300, 8, "PCIe 5.0", 16, false},
+		{"blackhole", "p150", 120, 32, 512, 300, 8, "PCIe 5.0", 16, true},
 	}
 
 	if len(dra.SupportedCardSpecs) != len(want) {
@@ -36,6 +37,7 @@ func TestSupportedCardSpecsMatchComputeEquivalentTenstorrentRows(t *testing.T) {
 			spec.MemoryGB != expected.memoryGB ||
 			spec.MemoryBandwidthGBPerSec != expected.bandwidth ||
 			spec.TBPWatts != expected.powerWatts ||
+			spec.GDDRControllersPerASIC != expected.gddrControllers ||
 			spec.SystemInterfaceType != expected.systemInterfaceType ||
 			spec.SystemInterfaceCount != expected.systemInterfaceCount ||
 			spec.Connectivity != expected.connectivity {

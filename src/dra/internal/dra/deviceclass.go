@@ -8,22 +8,35 @@ import (
 )
 
 const (
-	DeviceAttributeDomain               = "tenstorrent.com"
-	DeviceAttributeDeviceID             = DeviceAttributeDomain + "/deviceID"
-	DeviceAttributePath                 = DeviceAttributeDomain + "/path"
-	DeviceAttributeMajor                = DeviceAttributeDomain + "/major"
-	DeviceAttributeMinor                = DeviceAttributeDomain + "/minor"
-	DeviceAttributeChipSeries           = DeviceAttributeDomain + "/chipSeries"
-	DeviceAttributeCardSeries           = DeviceAttributeDomain + "/cardSeries"
-	DeviceAttributeAIClockMHz           = DeviceAttributeDomain + "/aiClockMHz"
-	DeviceAttributeMemoryType           = DeviceAttributeDomain + "/memoryType"
-	DeviceAttributeConnectivity         = DeviceAttributeDomain + "/connectivity"
-	DeviceAttributeWarpInterfaceCount   = DeviceAttributeDomain + "/warpInterfaceCount"
-	DeviceAttributeWarpSpeedGbps        = DeviceAttributeDomain + "/warpSpeedGbps"
-	DeviceAttributeQSFPInterfaceCount   = DeviceAttributeDomain + "/qsfpInterfaceCount"
-	DeviceAttributeQSFPSpeedGbps        = DeviceAttributeDomain + "/qsfpSpeedGbps"
-	DeviceAttributeSystemInterfaceType  = DeviceAttributeDomain + "/systemInterfaceType"
-	DeviceAttributeSystemInterfaceCount = DeviceAttributeDomain + "/systemInterfaceCount"
+	DeviceAttributeDomain                 = "tenstorrent.com"
+	DeviceAttributeDeviceID               = DeviceAttributeDomain + "/deviceID"
+	DeviceAttributePath                   = DeviceAttributeDomain + "/path"
+	DeviceAttributeMajor                  = DeviceAttributeDomain + "/major"
+	DeviceAttributeMinor                  = DeviceAttributeDomain + "/minor"
+	DeviceAttributeChipSeries             = DeviceAttributeDomain + "/chipSeries"
+	DeviceAttributeCardSeries             = DeviceAttributeDomain + "/cardSeries"
+	DeviceAttributeTensixCoreCount        = DeviceAttributeDomain + "/tensixCoreCount"
+	DeviceAttributeTensixTopology         = DeviceAttributeDomain + "/tensixTopology"
+	DeviceAttributeTensixAllocation       = DeviceAttributeDomain + "/tensixAllocation"
+	DeviceAttributeGDDRControllerLayout   = DeviceAttributeDomain + "/gddrControllerLayout"
+	DeviceAttributeGDDRControllerCount    = DeviceAttributeDomain + "/gddrControllerCount"
+	DeviceAttributeGDDRControllersPerASIC = DeviceAttributeDomain + "/gddrControllersPerASIC"
+	DeviceAttributeBigRISCVCoreCount      = DeviceAttributeDomain + "/bigRISCVCoreCount"
+	DeviceAttributeAIClockMHz             = DeviceAttributeDomain + "/aiClockMHz"
+	DeviceAttributeMemoryType             = DeviceAttributeDomain + "/memoryType"
+	DeviceAttributeConnectivity           = DeviceAttributeDomain + "/connectivity"
+	DeviceAttributeWarpInterfaceCount     = DeviceAttributeDomain + "/warpInterfaceCount"
+	DeviceAttributeWarpSpeedGbps          = DeviceAttributeDomain + "/warpSpeedGbps"
+	DeviceAttributeQSFPInterfaceCount     = DeviceAttributeDomain + "/qsfpInterfaceCount"
+	DeviceAttributeQSFPSpeedGbps          = DeviceAttributeDomain + "/qsfpSpeedGbps"
+	DeviceAttributeSystemInterfaceType    = DeviceAttributeDomain + "/systemInterfaceType"
+	DeviceAttributeSystemInterfaceCount   = DeviceAttributeDomain + "/systemInterfaceCount"
+)
+
+const (
+	TensixTopology2DMesh          = "2dMesh"
+	TensixAllocationContiguous    = "contiguousRegion"
+	GDDRControllerLayoutLocalized = "localizedControllers"
 )
 
 // DeviceClassVariant describes a compute-equivalent Tenstorrent chip and card

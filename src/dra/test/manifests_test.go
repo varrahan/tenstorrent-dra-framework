@@ -31,6 +31,7 @@ func TestManifestsUseSupportedComputeClasses(t *testing.T) {
 	deviceClasses := readManifest(t, "../manifests/deviceclasses.yaml")
 	resourceSlices := readManifest(t, "../manifests/resourceslices.yaml")
 	resourceClaims := readManifest(t, "../manifests/resourceclaims.yaml")
+	normalizedResourceClaims := normalizeWhitespace(resourceClaims)
 
 	for _, className := range []string{
 		"tenstorrent-wormhole-n150",
@@ -51,7 +52,12 @@ func TestManifestsUseSupportedComputeClasses(t *testing.T) {
 		"connectivity",
 		"systemInterfaceType",
 		"systemInterfaceCount",
-		"tensixCores",
+		"tensixCoreCount",
+		"tensixTopology",
+		"tensixAllocation",
+		"gddrControllerLayout",
+		"gddrControllerCount",
+		"gddrControllersPerASIC",
 		"memoryBandwidthBytesPerSecond",
 	} {
 		if !strings.Contains(resourceSlices, key) {
@@ -61,11 +67,38 @@ func TestManifestsUseSupportedComputeClasses(t *testing.T) {
 	if strings.Contains(resourceSlices, "tensix-cores") {
 		t.Fatal("resourceslices manifest uses an invalid hyphenated QualifiedName identifier")
 	}
+	if strings.Contains(resourceSlices, "tenstorrent.com/tensixCores:\n        value:") {
+		t.Fatal("resourceslices manifest exposes Tensix cores as scalar capacity")
+	}
+	if strings.Contains(resourceSlices, "tenstorrent.com/bigRISCV:\n        value:") {
+		t.Fatal("resourceslices manifest exposes big RISC-V cores as scalar capacity")
+	}
+	for _, want := range []string{
+		"gddrControllersPerASIC:\n        int: 6",
+		"gddrControllersPerASIC:\n        int: 8",
+		"bigRISCVCoreCount:\n        int: 16",
+	} {
+		if !strings.Contains(resourceSlices, want) {
+			t.Fatalf("resourceslices manifest is missing %q", want)
+		}
+	}
 	if !strings.Contains(resourceClaims, "kind: ResourceClaim") {
 		t.Fatal("resourceclaims manifest is missing ResourceClaim documents")
 	}
 	if !strings.Contains(resourceClaims, "allocationMode: ExactCount") {
 		t.Fatal("resourceclaims manifest is missing ExactCount allocation mode")
+	}
+	for _, selectorTerm := range []string{
+		"tensixTopology == \"2dMesh\"",
+		"tensixAllocation == \"contiguousRegion\"",
+		"gddrControllerLayout == \"localizedControllers\"",
+		"gddrControllersPerASIC == 6",
+		"gddrControllersPerASIC == 8",
+		"bigRISCVCoreCount >= 16",
+	} {
+		if !strings.Contains(normalizedResourceClaims, selectorTerm) {
+			t.Fatalf("resourceclaims manifest is missing spatial selector term %q", selectorTerm)
+		}
 	}
 
 	for _, redundant := range []string{
@@ -102,4 +135,8 @@ func readManifest(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func normalizeWhitespace(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }

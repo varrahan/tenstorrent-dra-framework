@@ -80,8 +80,11 @@ func TestResourceSliceAddsComputeClassCapacity(t *testing.T) {
 	got := slice.Spec.Devices[0]
 
 	for key, want := range map[resourceapi.QualifiedName]string{
-		dra.DeviceAttributeChipSeries:          "wormhole",
-		dra.DeviceAttributeSystemInterfaceType: "PCIe 4.0",
+		dra.DeviceAttributeChipSeries:           "wormhole",
+		dra.DeviceAttributeSystemInterfaceType:  "PCIe 4.0",
+		dra.DeviceAttributeTensixTopology:       dra.TensixTopology2DMesh,
+		dra.DeviceAttributeTensixAllocation:     dra.TensixAllocationContiguous,
+		dra.DeviceAttributeGDDRControllerLayout: dra.GDDRControllerLayoutLocalized,
 	} {
 		if got := stringAttribute(t, got.Attributes[key]); got != want {
 			t.Fatalf("string attribute %q = %q, want %q", key, got, want)
@@ -89,11 +92,14 @@ func TestResourceSliceAddsComputeClassCapacity(t *testing.T) {
 	}
 
 	for key, want := range map[resourceapi.QualifiedName]int64{
-		dra.DeviceAttributeWarpInterfaceCount:   2,
-		dra.DeviceAttributeWarpSpeedGbps:        100,
-		dra.DeviceAttributeQSFPInterfaceCount:   2,
-		dra.DeviceAttributeQSFPSpeedGbps:        200,
-		dra.DeviceAttributeSystemInterfaceCount: 16,
+		dra.DeviceAttributeTensixCoreCount:        128,
+		dra.DeviceAttributeGDDRControllersPerASIC: 6,
+		dra.DeviceAttributeGDDRControllerCount:    12,
+		dra.DeviceAttributeWarpInterfaceCount:     2,
+		dra.DeviceAttributeWarpSpeedGbps:          100,
+		dra.DeviceAttributeQSFPInterfaceCount:     2,
+		dra.DeviceAttributeQSFPSpeedGbps:          200,
+		dra.DeviceAttributeSystemInterfaceCount:   16,
 	} {
 		if got := intAttribute(t, got.Attributes[key]); got != want {
 			t.Fatalf("int attribute %q = %d, want %d", key, got, want)
@@ -109,13 +115,18 @@ func TestResourceSliceAddsComputeClassCapacity(t *testing.T) {
 	}
 
 	for key, want := range map[resourceapi.QualifiedName]string{
-		dra.DeviceCapacityTensixCores:                "128",
 		dra.DeviceCapacityMemoryBytes:                "24G",
 		dra.DeviceCapacityMemoryBandwidthBytesPerSec: "576G",
 	} {
 		if got := capacityValue(got.Capacity[key]); got != want {
 			t.Fatalf("capacity %q = %q, want %q", key, got, want)
 		}
+	}
+	if _, ok := got.Capacity[dra.DeviceAttributeTensixCoreCount]; ok {
+		t.Fatal("tensix core count must not be exposed as scalar capacity")
+	}
+	if _, ok := got.Capacity[dra.DeviceAttributeBigRISCVCoreCount]; ok {
+		t.Fatal("big RISC-V core count must not be exposed as scalar capacity")
 	}
 }
 

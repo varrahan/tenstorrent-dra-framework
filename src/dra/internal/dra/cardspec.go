@@ -6,8 +6,6 @@ import (
 
 const (
 	DeviceCapacityASICs                      = DeviceAttributeDomain + "/asics"
-	DeviceCapacityTensixCores                = DeviceAttributeDomain + "/tensixCores"
-	DeviceCapacityBigRISCV                   = DeviceAttributeDomain + "/bigRISCV"
 	DeviceCapacitySRAMBytes                  = DeviceAttributeDomain + "/sramBytes"
 	DeviceCapacityMemoryBytes                = DeviceAttributeDomain + "/memoryBytes"
 	DeviceCapacityMemorySpeedGTPerSecond     = DeviceAttributeDomain + "/memorySpeedGTPerSecond"
@@ -27,6 +25,7 @@ type CardSpec struct {
 	ASICCount               int64  `json:"asicCount"`
 	TensixCores             int64  `json:"tensixCores"`
 	BigRISCV                int64  `json:"bigRiscv,omitempty"`
+	GDDRControllersPerASIC  int64  `json:"gddrControllersPerASIC"`
 	AIClockMHz              int64  `json:"aiClockMHz"`
 	SRAMMB                  int64  `json:"sramMB"`
 	MemoryGB                int64  `json:"memoryGB"`
@@ -52,6 +51,7 @@ var SupportedCardSpecs = []CardSpec{
 		CardSeries:              "n150",
 		ASICCount:               1,
 		TensixCores:             72,
+		GDDRControllersPerASIC:  6,
 		AIClockMHz:              1000,
 		SRAMMB:                  108,
 		MemoryGB:                12,
@@ -75,6 +75,7 @@ var SupportedCardSpecs = []CardSpec{
 		CardSeries:              "n300",
 		ASICCount:               2,
 		TensixCores:             128,
+		GDDRControllersPerASIC:  6,
 		AIClockMHz:              1000,
 		SRAMMB:                  192,
 		MemoryGB:                24,
@@ -99,6 +100,7 @@ var SupportedCardSpecs = []CardSpec{
 		ASICCount:               1,
 		TensixCores:             120,
 		BigRISCV:                16,
+		GDDRControllersPerASIC:  8,
 		AIClockMHz:              1350,
 		SRAMMB:                  180,
 		MemoryGB:                28,
@@ -117,6 +119,7 @@ var SupportedCardSpecs = []CardSpec{
 		ASICCount:               1,
 		TensixCores:             120,
 		BigRISCV:                16,
+		GDDRControllersPerASIC:  8,
 		AIClockMHz:              1350,
 		SRAMMB:                  180,
 		MemoryGB:                32,
@@ -144,13 +147,19 @@ func CardSpecForClass(chipSeries, cardSeries string) (CardSpec, bool) {
 
 func (spec CardSpec) Attributes() map[resourceapi.QualifiedName]resourceapi.DeviceAttribute {
 	attributes := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-		DeviceAttributeChipSeries:           StringAttribute(spec.ChipSeries),
-		DeviceAttributeCardSeries:           StringAttribute(spec.CardSeries),
-		DeviceAttributeAIClockMHz:           IntAttribute(spec.AIClockMHz),
-		DeviceAttributeMemoryType:           StringAttribute(spec.MemoryType),
-		DeviceAttributeConnectivity:         BoolAttribute(spec.Connectivity),
-		DeviceAttributeSystemInterfaceType:  StringAttribute(spec.SystemInterfaceType),
-		DeviceAttributeSystemInterfaceCount: IntAttribute(spec.SystemInterfaceCount),
+		DeviceAttributeChipSeries:             StringAttribute(spec.ChipSeries),
+		DeviceAttributeCardSeries:             StringAttribute(spec.CardSeries),
+		DeviceAttributeTensixCoreCount:        IntAttribute(spec.TensixCores),
+		DeviceAttributeTensixTopology:         StringAttribute(TensixTopology2DMesh),
+		DeviceAttributeTensixAllocation:       StringAttribute(TensixAllocationContiguous),
+		DeviceAttributeGDDRControllerLayout:   StringAttribute(GDDRControllerLayoutLocalized),
+		DeviceAttributeGDDRControllerCount:    IntAttribute(spec.GDDRControllerCount()),
+		DeviceAttributeGDDRControllersPerASIC: IntAttribute(spec.GDDRControllersPerASIC),
+		DeviceAttributeAIClockMHz:             IntAttribute(spec.AIClockMHz),
+		DeviceAttributeMemoryType:             StringAttribute(spec.MemoryType),
+		DeviceAttributeConnectivity:           BoolAttribute(spec.Connectivity),
+		DeviceAttributeSystemInterfaceType:    StringAttribute(spec.SystemInterfaceType),
+		DeviceAttributeSystemInterfaceCount:   IntAttribute(spec.SystemInterfaceCount),
 	}
 	if spec.WarpInterfaceCount > 0 {
 		attributes[DeviceAttributeWarpInterfaceCount] = IntAttribute(spec.WarpInterfaceCount)
@@ -164,22 +173,25 @@ func (spec CardSpec) Attributes() map[resourceapi.QualifiedName]resourceapi.Devi
 	if spec.QSFPSpeedGbps > 0 {
 		attributes[DeviceAttributeQSFPSpeedGbps] = IntAttribute(spec.QSFPSpeedGbps)
 	}
+	if spec.BigRISCV > 0 {
+		attributes[DeviceAttributeBigRISCVCoreCount] = IntAttribute(spec.BigRISCV)
+	}
 	return attributes
+}
+
+func (spec CardSpec) GDDRControllerCount() int64 {
+	return spec.ASICCount * spec.GDDRControllersPerASIC
 }
 
 func (spec CardSpec) Capacity() map[resourceapi.QualifiedName]resourceapi.DeviceCapacity {
 	capacity := map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
 		DeviceCapacityASICs:                      CapacityValue(spec.ASICCount),
-		DeviceCapacityTensixCores:                CapacityValue(spec.TensixCores),
 		DeviceCapacitySRAMBytes:                  CapacityValueFromString(spec.SRAMMB, "M"),
 		DeviceCapacityMemoryBytes:                CapacityValueFromString(spec.MemoryGB, "G"),
 		DeviceCapacityMemorySpeedGTPerSecond:     CapacityValue(spec.MemorySpeedGTPerSecond),
 		DeviceCapacityMemoryBandwidthBytesPerSec: CapacityValueFromString(spec.MemoryBandwidthGBPerSec, "G"),
 		DeviceCapacityBlockFP8TeraFLOPS:          CapacityValue(spec.BlockFP8TeraFLOPS),
 		DeviceCapacityBoardPowerWatts:            CapacityValue(spec.TBPWatts),
-	}
-	if spec.BigRISCV > 0 {
-		capacity[DeviceCapacityBigRISCV] = CapacityValue(spec.BigRISCV)
 	}
 	if spec.FP8TeraFLOPS > 0 {
 		capacity[DeviceCapacityFP8TeraFLOPS] = CapacityValue(spec.FP8TeraFLOPS)
