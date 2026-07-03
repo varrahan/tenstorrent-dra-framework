@@ -26,8 +26,8 @@ func TestResourceSliceModelUsesDefaultsAndMapsDevices(t *testing.T) {
 	if got.Name != "tt-0" || got.Path != "/dev/tenstorrent/0" || got.Major != 241 || got.Minor != 0 {
 		t.Fatalf("device mapping = %#v", got)
 	}
-	if got.Attributes[dra.DeviceAttributeDeviceID] != "0" {
-		t.Fatalf("device-id attribute = %q, want 0", got.Attributes[dra.DeviceAttributeDeviceID])
+	if stringAttribute(t, got.Attributes[dra.DeviceAttributeDeviceID]) != "0" {
+		t.Fatalf("device-id attribute = %#v, want 0", got.Attributes[dra.DeviceAttributeDeviceID])
 	}
 }
 
@@ -44,11 +44,11 @@ func TestResourceSliceModelMapsOptionalChipAttributes(t *testing.T) {
 	})
 
 	got := model.Devices[0].Attributes
-	if got[dra.DeviceAttributeChipSeries] != "blackhole" {
-		t.Fatalf("chip series attribute = %q, want blackhole", got[dra.DeviceAttributeChipSeries])
+	if stringAttribute(t, got[dra.DeviceAttributeChipSeries]) != "blackhole" {
+		t.Fatalf("chip series attribute = %#v, want blackhole", got[dra.DeviceAttributeChipSeries])
 	}
-	if got[dra.DeviceAttributeCardSeries] != "p150" {
-		t.Fatalf("card series attribute = %q, want p150", got[dra.DeviceAttributeCardSeries])
+	if stringAttribute(t, got[dra.DeviceAttributeCardSeries]) != "p150" {
+		t.Fatalf("card series attribute = %#v, want p150", got[dra.DeviceAttributeCardSeries])
 	}
 }
 
@@ -65,19 +65,68 @@ func TestResourceSliceModelAddsComputeClassCapacity(t *testing.T) {
 	})
 
 	got := model.Devices[0]
-	if got.Attributes[dra.DeviceAttributeChipSeries] != "wormhole" {
-		t.Fatalf("chip series = %q, want wormhole", got.Attributes[dra.DeviceAttributeChipSeries])
+	if stringAttribute(t, got.Attributes[dra.DeviceAttributeChipSeries]) != "wormhole" {
+		t.Fatalf("chip series = %#v, want wormhole", got.Attributes[dra.DeviceAttributeChipSeries])
 	}
-	if got.Capacity[dra.DeviceCapacityTensixCores] != "128" {
+	if capacityValue(got.Capacity[dra.DeviceCapacityTensixCores]) != "128" {
 		t.Fatalf("tensix capacity = %q, want 128", got.Capacity[dra.DeviceCapacityTensixCores])
 	}
-	if got.Capacity[dra.DeviceCapacityMemoryBytes] != "24G" {
+	if capacityValue(got.Capacity[dra.DeviceCapacityMemoryBytes]) != "24G" {
 		t.Fatalf("memory capacity = %q, want 24G", got.Capacity[dra.DeviceCapacityMemoryBytes])
 	}
-	if got.Capacity[dra.DeviceCapacityMemoryBandwidthBytesPerSec] != "576G" {
+	if capacityValue(got.Capacity[dra.DeviceCapacityMemoryBandwidthBytesPerSec]) != "576G" {
 		t.Fatalf("memory bandwidth = %q, want 576G", got.Capacity[dra.DeviceCapacityMemoryBandwidthBytesPerSec])
 	}
-	if got.Attributes[dra.DeviceAttributeInternalChipToChip] != "200G" {
-		t.Fatalf("internal chip-to-chip = %q, want 200G", got.Attributes[dra.DeviceAttributeInternalChipToChip])
+	if intAttribute(t, got.Attributes[dra.DeviceAttributeInternalChipToChipGbps]) != 200 {
+		t.Fatalf("internal chip-to-chip = %#v, want 200", got.Attributes[dra.DeviceAttributeInternalChipToChipGbps])
 	}
+	if boolAttribute(t, got.Attributes[dra.DeviceAttributeConnectivity]) != true {
+		t.Fatalf("connectivity = %#v, want true", got.Attributes[dra.DeviceAttributeConnectivity])
+	}
+	if intAttribute(t, got.Attributes[dra.DeviceAttributeWarpInterfaceCount]) != 2 {
+		t.Fatalf("warp interface count = %#v, want 2", got.Attributes[dra.DeviceAttributeWarpInterfaceCount])
+	}
+	if intAttribute(t, got.Attributes[dra.DeviceAttributeWarpSpeedGbps]) != 100 {
+		t.Fatalf("warp speed = %#v, want 100", got.Attributes[dra.DeviceAttributeWarpSpeedGbps])
+	}
+	if intAttribute(t, got.Attributes[dra.DeviceAttributeQSFPInterfaceCount]) != 2 {
+		t.Fatalf("qsfp interface count = %#v, want 2", got.Attributes[dra.DeviceAttributeQSFPInterfaceCount])
+	}
+	if intAttribute(t, got.Attributes[dra.DeviceAttributeQSFPSpeedGbps]) != 200 {
+		t.Fatalf("qsfp speed = %#v, want 200", got.Attributes[dra.DeviceAttributeQSFPSpeedGbps])
+	}
+	if stringAttribute(t, got.Attributes[dra.DeviceAttributeSystemInterfaceType]) != "PCIe 4.0" {
+		t.Fatalf("system interface type = %#v, want PCIe 4.0", got.Attributes[dra.DeviceAttributeSystemInterfaceType])
+	}
+	if intAttribute(t, got.Attributes[dra.DeviceAttributeSystemInterfaceCount]) != 16 {
+		t.Fatalf("system interface count = %#v, want 16", got.Attributes[dra.DeviceAttributeSystemInterfaceCount])
+	}
+}
+
+func stringAttribute(t *testing.T, attribute dra.DeviceAttribute) string {
+	t.Helper()
+	if attribute.String == nil {
+		t.Fatalf("attribute %#v has nil String", attribute)
+	}
+	return *attribute.String
+}
+
+func intAttribute(t *testing.T, attribute dra.DeviceAttribute) int64 {
+	t.Helper()
+	if attribute.Int == nil {
+		t.Fatalf("attribute %#v has nil Int", attribute)
+	}
+	return *attribute.Int
+}
+
+func boolAttribute(t *testing.T, attribute dra.DeviceAttribute) bool {
+	t.Helper()
+	if attribute.Bool == nil {
+		t.Fatalf("attribute %#v has nil Bool", attribute)
+	}
+	return *attribute.Bool
+}
+
+func capacityValue(capacity dra.DeviceCapacity) string {
+	return capacity.Value
 }

@@ -25,14 +25,24 @@ spec:
         string: wormhole
       tenstorrent.com/cardSeries:
         string: n150
-      tenstorrent.com/aiClock:
-        string: "1 GHz"
+      tenstorrent.com/aiClockMHz:
+        int: 1000
       tenstorrent.com/memoryType:
         string: GDDR6
       tenstorrent.com/connectivity:
-        string: "2x Warp 100; 2x QSFP-DD 200G active"
-      tenstorrent.com/systemInterface:
-        string: "PCIe 4.0 x16"
+        bool: true
+      tenstorrent.com/warpInterfaceCount:
+        int: 2
+      tenstorrent.com/warpSpeedGbps:
+        int: 100
+      tenstorrent.com/qsfpInterfaceCount:
+        int: 2
+      tenstorrent.com/qsfpSpeedGbps:
+        int: 200
+      tenstorrent.com/systemInterfaceType:
+        string: "PCIe 4.0"
+      tenstorrent.com/systemInterfaceCount:
+        int: 16
     capacity:
       tenstorrent.com/asics:
         value: "1"
@@ -78,16 +88,24 @@ spec:
         string: wormhole
       tenstorrent.com/cardSeries:
         string: n300
-      tenstorrent.com/aiClock:
-        string: "1 GHz"
+      tenstorrent.com/aiClockMHz:
+        int: 1000
       tenstorrent.com/memoryType:
         string: GDDR6
       tenstorrent.com/connectivity:
-        string: "2x Warp 100; 2x QSFP-DD 200G active"
-      tenstorrent.com/internalChipToChip:
-        string: "200G"
-      tenstorrent.com/systemInterface:
-        string: "PCIe 4.0 x16"
+        bool: true
+      tenstorrent.com/warpInterfaceCount:
+        int: 2
+      tenstorrent.com/warpSpeedGbps:
+        int: 100
+      tenstorrent.com/qsfpInterfaceCount:
+        int: 2
+      tenstorrent.com/qsfpSpeedGbps:
+        int: 200
+      tenstorrent.com/systemInterfaceType:
+        string: "PCIe 4.0"
+      tenstorrent.com/systemInterfaceCount:
+        int: 16
     capacity:
       tenstorrent.com/asics:
         value: "2"
@@ -133,14 +151,16 @@ spec:
         string: blackhole
       tenstorrent.com/cardSeries:
         string: p100
-      tenstorrent.com/aiClock:
-        string: "Up to 1.35 GHz"
+      tenstorrent.com/aiClockMHz:
+        int: 1350
       tenstorrent.com/memoryType:
         string: GDDR6
       tenstorrent.com/connectivity:
-        string: none
-      tenstorrent.com/systemInterface:
-        string: "PCIe 5.0 x16"
+        bool: false
+      tenstorrent.com/systemInterfaceType:
+        string: "PCIe 5.0"
+      tenstorrent.com/systemInterfaceCount:
+        int: 16
     capacity:
       tenstorrent.com/asics:
         value: "1"
@@ -184,14 +204,20 @@ spec:
         string: blackhole
       tenstorrent.com/cardSeries:
         string: p150
-      tenstorrent.com/aiClock:
-        string: "Up to 1.35 GHz"
+      tenstorrent.com/aiClockMHz:
+        float: 1350
       tenstorrent.com/memoryType:
         string: GDDR6
       tenstorrent.com/connectivity:
-        string: "4x QSFP-DD 800G"
-      tenstorrent.com/systemInterface:
-        string: "PCIe 5.0 x16"
+        bool: true
+      tenstorrent.com/qsfpInterfaceCount:
+        int: 4
+      tenstorrent.com/qsfpSpeedGbps:
+        int: 800
+      tenstorrent.com/systemInterfaceType:
+        string: "PCIe 5.0"
+      tenstorrent.com/systemInterfaceCount:
+        int: 16
     capacity:
       tenstorrent.com/asics:
         value: "1"

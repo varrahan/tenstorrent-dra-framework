@@ -1,18 +1,37 @@
 package dra
 
-import "github.com/varrahan/tt-kind-dra/src/dra/internal/device"
+import (
+	"math"
+	"strconv"
+
+	"github.com/varrahan/tt-kind-dra/src/dra/internal/device"
+)
+
+const aiClockMHzAttribute = DeviceAttributeDomain + "/aiClockMHz"
 
 const DefaultDriverName = "tenstorrent.com/dra"
 
 // DeviceResource is the device-level data needed before building a Kubernetes
 // resource.k8s.io ResourceSlice.
 type DeviceResource struct {
-	Name       string            `json:"name"`
-	Path       string            `json:"path"`
-	Major      uint64            `json:"major"`
-	Minor      uint64            `json:"minor"`
-	Attributes map[string]string `json:"attributes"`
-	Capacity   map[string]string `json:"capacity,omitempty"`
+	Name       string                     `json:"name"`
+	Path       string                     `json:"path"`
+	Major      uint64                     `json:"major"`
+	Minor      uint64                     `json:"minor"`
+	Attributes map[string]DeviceAttribute `json:"attributes"`
+	Capacity   map[string]DeviceCapacity  `json:"capacity,omitempty"`
+}
+
+// DeviceAttribute mirrors the typed ResourceSlice device attribute value shape.
+type DeviceAttribute struct {
+	String *string `json:"string,omitempty"`
+	Int    *int64  `json:"int,omitempty"`
+	Bool   *bool   `json:"bool,omitempty"`
+}
+
+// DeviceCapacity mirrors the ResourceSlice capacity value shape.
+type DeviceCapacity struct {
+	Value string `json:"value"`
 }
 
 // ResourceSliceModel is an internal, dependency-light representation of the
@@ -30,27 +49,32 @@ func NewResourceSliceModel(driverName, nodeName string, nodes []device.Node) Res
 
 	devices := make([]DeviceResource, 0, len(nodes))
 	for _, node := range nodes {
-		attributes := map[string]string{
-			DeviceAttributeDeviceID: node.ID,
-			DeviceAttributePath:     node.Path,
+		name := "tt-" + node.ID
+		if node.ChipSeries != "" && node.CardSeries != "" {
+			name = "tt-" + node.ChipSeries + "-" + node.CardSeries + "-" + node.ID
+		}
+		attributes := map[string]DeviceAttribute{
+			DeviceAttributeDeviceID: StringAttribute(node.ID),
+			DeviceAttributePath:     StringAttribute(node.Path),
 		}
 		if node.ChipSeries != "" {
-			attributes[DeviceAttributeChipSeries] = node.ChipSeries
+			attributes[DeviceAttributeChipSeries] = StringAttribute(node.ChipSeries)
 		}
 		if node.CardSeries != "" {
-			attributes[DeviceAttributeCardSeries] = node.CardSeries
+			attributes[DeviceAttributeCardSeries] = StringAttribute(node.CardSeries)
 		}
 
-		capacity := map[string]string(nil)
+		capacity := map[string]DeviceCapacity(nil)
 		if spec, ok := CardSpecForClass(node.ChipSeries, node.CardSeries); ok {
 			for key, value := range spec.Attributes() {
 				attributes[key] = value
 			}
+			normalizeAIClockAttribute(attributes)
 			capacity = spec.Capacity()
 		}
 
 		devices = append(devices, DeviceResource{
-			Name:       "tt-" + node.ID,
+			Name:       name,
 			Path:       node.Path,
 			Major:      node.Major,
 			Minor:      node.Minor,
@@ -64,4 +88,47 @@ func NewResourceSliceModel(driverName, nodeName string, nodes []device.Node) Res
 		NodeName:   nodeName,
 		Devices:    devices,
 	}
+}
+
+func normalizeAIClockAttribute(attributes map[string]DeviceAttribute) {
+	clockGHz, ok := attributes[DeviceAttributeAIClockGHz]
+	if !ok {
+		return
+	}
+	delete(attributes, DeviceAttributeAIClockGHz)
+
+	if clockGHz.String == nil {
+		return
+	}
+
+	mhz, ok := parseAIClockMHz(*clockGHz.String)
+	if !ok {
+		attributes[aiClockMHzAttribute] = clockGHz
+		return
+	}
+	attributes[aiClockMHzAttribute] = IntAttribute(mhz)
+}
+
+func parseAIClockMHz(value string) (int64, bool) {
+	mhz, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, false
+	}
+	return int64(math.Round(mhz * 1000)), true
+}
+
+func StringAttribute(value string) DeviceAttribute {
+	return DeviceAttribute{String: &value}
+}
+
+func IntAttribute(value int64) DeviceAttribute {
+	return DeviceAttribute{Int: &value}
+}
+
+func BoolAttribute(value bool) DeviceAttribute {
+	return DeviceAttribute{Bool: &value}
+}
+
+func CapacityValue(value string) DeviceCapacity {
+	return DeviceCapacity{Value: value}
 }

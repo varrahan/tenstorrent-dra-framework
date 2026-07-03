@@ -25,7 +25,7 @@ type CardSpec struct {
 	ASICCount               int    `json:"asicCount"`
 	TensixCores             int    `json:"tensixCores"`
 	BigRISCV                int    `json:"bigRiscv,omitempty"`
-	AIClock                 string `json:"aiClock"`
+	AIClockGHz              string `json:"aiClockGHz"`
 	SRAMMB                  int    `json:"sramMB"`
 	MemoryGB                int    `json:"memoryGB"`
 	MemoryType              string `json:"memoryType"`
@@ -35,9 +35,13 @@ type CardSpec struct {
 	FP16TeraFLOPS           int    `json:"fp16TeraFLOPS,omitempty"`
 	BlockFP8TeraFLOPS       int    `json:"blockFP8TeraFLOPS"`
 	TBPWatts                int    `json:"tbpWatts"`
-	Connectivity            string `json:"connectivity"`
-	InternalChipToChip      string `json:"internalChipToChip,omitempty"`
-	SystemInterface         string `json:"systemInterface"`
+	Connectivity            bool   `json:"connectivity"`
+	WarpInterfaceCount      int64  `json:"warpInterfaceCount,omitempty"`
+	WarpSpeedGbps           int64  `json:"warpSpeedGbps,omitempty"`
+	QSFPInterfaceCount      int64  `json:"qsfpInterfaceCount,omitempty"`
+	QSFPSpeedGbps           int64  `json:"qsfpSpeedGbps,omitempty"`
+	SystemInterfaceType     string `json:"systemInterfaceType"`
+	SystemInterfaceCount    int64  `json:"systemInterfaceCount"`
 }
 
 var SupportedCardSpecs = []CardSpec{
@@ -46,7 +50,7 @@ var SupportedCardSpecs = []CardSpec{
 		CardSeries:              "n150",
 		ASICCount:               1,
 		TensixCores:             72,
-		AIClock:                 "1 GHz",
+		AIClockGHz:              "1",
 		SRAMMB:                  108,
 		MemoryGB:                12,
 		MemoryType:              "GDDR6",
@@ -56,15 +60,20 @@ var SupportedCardSpecs = []CardSpec{
 		FP16TeraFLOPS:           74,
 		BlockFP8TeraFLOPS:       148,
 		TBPWatts:                160,
-		Connectivity:            "2x Warp 100; 2x QSFP-DD 200G active",
-		SystemInterface:         "PCIe 4.0 x16",
+		Connectivity:            true,
+		WarpInterfaceCount:      2,
+		WarpSpeedGbps:           100,
+		QSFPInterfaceCount:      2,
+		QSFPSpeedGbps:           200,
+		SystemInterfaceType:     "PCIe 4.0",
+		SystemInterfaceCount:    16,
 	},
 	{
 		ChipSeries:              "wormhole",
 		CardSeries:              "n300",
 		ASICCount:               2,
 		TensixCores:             128,
-		AIClock:                 "1 GHz",
+		AIClockGHz:              "1",
 		SRAMMB:                  192,
 		MemoryGB:                24,
 		MemoryType:              "GDDR6",
@@ -74,9 +83,13 @@ var SupportedCardSpecs = []CardSpec{
 		FP16TeraFLOPS:           131,
 		BlockFP8TeraFLOPS:       262,
 		TBPWatts:                300,
-		Connectivity:            "2x Warp 100; 2x QSFP-DD 200G active",
-		InternalChipToChip:      "200G",
-		SystemInterface:         "PCIe 4.0 x16",
+		Connectivity:            true,
+		WarpInterfaceCount:      2,
+		WarpSpeedGbps:           100,
+		QSFPInterfaceCount:      2,
+		QSFPSpeedGbps:           200,
+		SystemInterfaceType:     "PCIe 4.0",
+		SystemInterfaceCount:    16,
 	},
 	{
 		ChipSeries:              "blackhole",
@@ -84,7 +97,7 @@ var SupportedCardSpecs = []CardSpec{
 		ASICCount:               1,
 		TensixCores:             120,
 		BigRISCV:                16,
-		AIClock:                 "Up to 1.35 GHz",
+		AIClockGHz:              "1.35",
 		SRAMMB:                  180,
 		MemoryGB:                28,
 		MemoryType:              "GDDR6",
@@ -92,8 +105,9 @@ var SupportedCardSpecs = []CardSpec{
 		MemoryBandwidthGBPerSec: 448,
 		BlockFP8TeraFLOPS:       664,
 		TBPWatts:                300,
-		Connectivity:            "none",
-		SystemInterface:         "PCIe 5.0 x16",
+		Connectivity:            false,
+		SystemInterfaceType:     "PCIe 5.0",
+		SystemInterfaceCount:    16,
 	},
 	{
 		ChipSeries:              "blackhole",
@@ -101,7 +115,7 @@ var SupportedCardSpecs = []CardSpec{
 		ASICCount:               1,
 		TensixCores:             120,
 		BigRISCV:                16,
-		AIClock:                 "Up to 1.35 GHz",
+		AIClockGHz:              "1.35",
 		SRAMMB:                  180,
 		MemoryGB:                32,
 		MemoryType:              "GDDR6",
@@ -109,8 +123,11 @@ var SupportedCardSpecs = []CardSpec{
 		MemoryBandwidthGBPerSec: 512,
 		BlockFP8TeraFLOPS:       664,
 		TBPWatts:                300,
-		Connectivity:            "4x QSFP-DD 800G",
-		SystemInterface:         "PCIe 5.0 x16",
+		Connectivity:            true,
+		QSFPInterfaceCount:      4,
+		QSFPSpeedGbps:           800,
+		SystemInterfaceType:     "PCIe 5.0",
+		SystemInterfaceCount:    16,
 	},
 }
 
@@ -123,40 +140,50 @@ func CardSpecForClass(chipSeries, cardSeries string) (CardSpec, bool) {
 	return CardSpec{}, false
 }
 
-func (spec CardSpec) Attributes() map[string]string {
-	attributes := map[string]string{
-		DeviceAttributeChipSeries:      spec.ChipSeries,
-		DeviceAttributeCardSeries:      spec.CardSeries,
-		DeviceAttributeAIClock:         spec.AIClock,
-		DeviceAttributeMemoryType:      spec.MemoryType,
-		DeviceAttributeConnectivity:    spec.Connectivity,
-		DeviceAttributeSystemInterface: spec.SystemInterface,
+func (spec CardSpec) Attributes() map[string]DeviceAttribute {
+	attributes := map[string]DeviceAttribute{
+		DeviceAttributeChipSeries:           StringAttribute(spec.ChipSeries),
+		DeviceAttributeCardSeries:           StringAttribute(spec.CardSeries),
+		DeviceAttributeAIClockGHz:           StringAttribute(spec.AIClockGHz),
+		DeviceAttributeMemoryType:           StringAttribute(spec.MemoryType),
+		DeviceAttributeConnectivity:         BoolAttribute(spec.Connectivity),
+		DeviceAttributeSystemInterfaceType:  StringAttribute(spec.SystemInterfaceType),
+		DeviceAttributeSystemInterfaceCount: IntAttribute(spec.SystemInterfaceCount),
 	}
-	if spec.InternalChipToChip != "" {
-		attributes[DeviceAttributeInternalChipToChip] = spec.InternalChipToChip
+	if spec.WarpInterfaceCount > 0 {
+		attributes[DeviceAttributeWarpInterfaceCount] = IntAttribute(spec.WarpInterfaceCount)
+	}
+	if spec.WarpSpeedGbps > 0 {
+		attributes[DeviceAttributeWarpSpeedGbps] = IntAttribute(spec.WarpSpeedGbps)
+	}
+	if spec.QSFPInterfaceCount > 0 {
+		attributes[DeviceAttributeQSFPInterfaceCount] = IntAttribute(spec.QSFPInterfaceCount)
+	}
+	if spec.QSFPSpeedGbps > 0 {
+		attributes[DeviceAttributeQSFPSpeedGbps] = IntAttribute(spec.QSFPSpeedGbps)
 	}
 	return attributes
 }
 
-func (spec CardSpec) Capacity() map[string]string {
-	capacity := map[string]string{
-		DeviceCapacityASICs:                      fmt.Sprint(spec.ASICCount),
-		DeviceCapacityTensixCores:                fmt.Sprint(spec.TensixCores),
-		DeviceCapacitySRAMBytes:                  fmt.Sprintf("%dM", spec.SRAMMB),
-		DeviceCapacityMemoryBytes:                fmt.Sprintf("%dG", spec.MemoryGB),
-		DeviceCapacityMemorySpeedGTPerSecond:     fmt.Sprint(spec.MemorySpeedGTPerSecond),
-		DeviceCapacityMemoryBandwidthBytesPerSec: fmt.Sprintf("%dG", spec.MemoryBandwidthGBPerSec),
-		DeviceCapacityBlockFP8TeraFLOPS:          fmt.Sprint(spec.BlockFP8TeraFLOPS),
-		DeviceCapacityBoardPowerWatts:            fmt.Sprint(spec.TBPWatts),
+func (spec CardSpec) Capacity() map[string]DeviceCapacity {
+	capacity := map[string]DeviceCapacity{
+		DeviceCapacityASICs:                      CapacityValue(fmt.Sprint(spec.ASICCount)),
+		DeviceCapacityTensixCores:                CapacityValue(fmt.Sprint(spec.TensixCores)),
+		DeviceCapacitySRAMBytes:                  CapacityValue(fmt.Sprintf("%dM", spec.SRAMMB)),
+		DeviceCapacityMemoryBytes:                CapacityValue(fmt.Sprintf("%dG", spec.MemoryGB)),
+		DeviceCapacityMemorySpeedGTPerSecond:     CapacityValue(fmt.Sprint(spec.MemorySpeedGTPerSecond)),
+		DeviceCapacityMemoryBandwidthBytesPerSec: CapacityValue(fmt.Sprintf("%dG", spec.MemoryBandwidthGBPerSec)),
+		DeviceCapacityBlockFP8TeraFLOPS:          CapacityValue(fmt.Sprint(spec.BlockFP8TeraFLOPS)),
+		DeviceCapacityBoardPowerWatts:            CapacityValue(fmt.Sprint(spec.TBPWatts)),
 	}
 	if spec.BigRISCV > 0 {
-		capacity[DeviceCapacityBigRISCV] = fmt.Sprint(spec.BigRISCV)
+		capacity[DeviceCapacityBigRISCV] = CapacityValue(fmt.Sprint(spec.BigRISCV))
 	}
 	if spec.FP8TeraFLOPS > 0 {
-		capacity[DeviceCapacityFP8TeraFLOPS] = fmt.Sprint(spec.FP8TeraFLOPS)
+		capacity[DeviceCapacityFP8TeraFLOPS] = CapacityValue(fmt.Sprint(spec.FP8TeraFLOPS))
 	}
 	if spec.FP16TeraFLOPS > 0 {
-		capacity[DeviceCapacityFP16TeraFLOPS] = fmt.Sprint(spec.FP16TeraFLOPS)
+		capacity[DeviceCapacityFP16TeraFLOPS] = CapacityValue(fmt.Sprint(spec.FP16TeraFLOPS))
 	}
 	return capacity
 }

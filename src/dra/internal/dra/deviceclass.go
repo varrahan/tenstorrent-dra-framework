@@ -3,16 +3,20 @@ package dra
 import "fmt"
 
 const (
-	DeviceAttributeDomain             = "tenstorrent.com"
-	DeviceAttributeDeviceID           = DeviceAttributeDomain + "/device-id"
-	DeviceAttributePath               = DeviceAttributeDomain + "/path"
-	DeviceAttributeChipSeries         = DeviceAttributeDomain + "/chipSeries"
-	DeviceAttributeCardSeries         = DeviceAttributeDomain + "/cardSeries"
-	DeviceAttributeAIClock            = DeviceAttributeDomain + "/aiClock"
-	DeviceAttributeMemoryType         = DeviceAttributeDomain + "/memoryType"
-	DeviceAttributeConnectivity       = DeviceAttributeDomain + "/connectivity"
-	DeviceAttributeInternalChipToChip = DeviceAttributeDomain + "/internalChipToChip"
-	DeviceAttributeSystemInterface    = DeviceAttributeDomain + "/systemInterface"
+	DeviceAttributeDomain                 = "tenstorrent.com"
+	DeviceAttributeDeviceID               = DeviceAttributeDomain + "/device-id"
+	DeviceAttributePath                   = DeviceAttributeDomain + "/path"
+	DeviceAttributeChipSeries             = DeviceAttributeDomain + "/chipSeries"
+	DeviceAttributeCardSeries             = DeviceAttributeDomain + "/cardSeries"
+	DeviceAttributeAIClockGHz             = DeviceAttributeDomain + "/aiClockGHz"
+	DeviceAttributeMemoryType             = DeviceAttributeDomain + "/memoryType"
+	DeviceAttributeConnectivity           = DeviceAttributeDomain + "/connectivity"
+	DeviceAttributeWarpInterfaceCount     = DeviceAttributeDomain + "/warpInterfaceCount"
+	DeviceAttributeWarpSpeedGbps          = DeviceAttributeDomain + "/warpSpeedGbps"
+	DeviceAttributeQSFPInterfaceCount     = DeviceAttributeDomain + "/qsfpInterfaceCount"
+	DeviceAttributeQSFPSpeedGbps          = DeviceAttributeDomain + "/qsfpSpeedGbps"
+	DeviceAttributeSystemInterfaceType    = DeviceAttributeDomain + "/systemInterfaceType"
+	DeviceAttributeSystemInterfaceCount   = DeviceAttributeDomain + "/systemInterfaceCount"
 )
 
 // DeviceClassVariant describes a compute-equivalent Tenstorrent chip and card

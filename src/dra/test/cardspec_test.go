@@ -8,17 +8,20 @@ import (
 
 func TestSupportedCardSpecsMatchComputeEquivalentTenstorrentRows(t *testing.T) {
 	want := []struct {
-		chip       string
-		series     string
-		tensix     int
-		memoryGB   int
-		bandwidth  int
-		powerWatts int
+		chip                 string
+		series               string
+		tensix               int
+		memoryGB             int
+		bandwidth            int
+		powerWatts           int
+		systemInterfaceType  string
+		systemInterfaceCount int64
+		connectivity         bool
 	}{
-		{"wormhole", "n150", 72, 12, 288, 160},
-		{"wormhole", "n300", 128, 24, 576, 300},
-		{"blackhole", "p100", 120, 28, 448, 300},
-		{"blackhole", "p150", 120, 32, 512, 300},
+		{"wormhole", "n150", 72, 12, 288, 160, "PCIe 4.0", 16, true},
+		{"wormhole", "n300", 128, 24, 576, 300, "PCIe 4.0", 16, true},
+		{"blackhole", "p100", 120, 28, 448, 300, "PCIe 5.0", 16, false},
+		{"blackhole", "p150", 120, 32, 512, 300, "PCIe 5.0", 16, true},
 	}
 
 	if len(dra.SupportedCardSpecs) != len(want) {
@@ -32,7 +35,10 @@ func TestSupportedCardSpecsMatchComputeEquivalentTenstorrentRows(t *testing.T) {
 			spec.TensixCores != expected.tensix ||
 			spec.MemoryGB != expected.memoryGB ||
 			spec.MemoryBandwidthGBPerSec != expected.bandwidth ||
-			spec.TBPWatts != expected.powerWatts {
+			spec.TBPWatts != expected.powerWatts ||
+			spec.SystemInterfaceType != expected.systemInterfaceType ||
+			spec.SystemInterfaceCount != expected.systemInterfaceCount ||
+			spec.Connectivity != expected.connectivity {
 			t.Fatalf("spec %d = %#v, want %#v", i, spec, expected)
 		}
 	}
