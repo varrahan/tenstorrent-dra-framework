@@ -47,3 +47,7 @@ coverage.txt
 *.njsproj
 *.sln
 *.swp
+
+# Other files and directories to ignore
+/src/metrics_exporter/
+/src/metrics_exporter/*
