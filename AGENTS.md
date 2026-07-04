@@ -54,7 +54,7 @@ clear when a command is expected to run inside the VM.
 
 The purpose of this system is to bridge the gap between Tenstorrent ASIC hardware and Kubernetes container orchestration through a hardware-software co-design approach.
 
-Specifically, this system transitions the cluster from legacy, integer-based device plugins to a highly intelligent, topology-aware control plane using the Kubernetes Dynamic Resource Allocation (DRA) framework. DRA enables workloads to request specialized hardware based on device attributes rather than simple counts. By implementing this system, you ensure strict tenant isolation, optimal scheduling based on physical Ethernet ring interconnects, and deep telemetry for real-time machine learning deployment pipelines.
+Specifically, this system targets scale-out HPC and ML clusters. It transitions the cluster from legacy, integer-based device plugins to a highly intelligent, topology-aware control plane using the Kubernetes Dynamic Resource Allocation (DRA) framework. DRA enables distributed workloads to request specialized hardware based on device class, health, memory profile, and interconnect topology rather than simple counts. By implementing this system, you ensure strict tenant isolation, optimal scheduling based on physical Ethernet ring interconnects, and deep telemetry for real-time machine learning deployment pipelines. Fine-grained multiprocess execution on a single card is a later-stage capability and must not take priority over cluster-scale placement, isolation, and observability.
 
 ## Core Technology Stack
 
@@ -79,12 +79,13 @@ Specifically, this system transitions the cluster from legacy, integer-based dev
 
 ### 1. Resource Allocator Agent (DRA Driver)
 
-**Role:** Handles fine-grained hardware scheduling and allocation via the Kubernetes Dynamic Resource Allocation (DRA) API.
+**Role:** Handles topology-aware accelerator scheduling and allocation for scale-out HPC and ML workloads via the Kubernetes Dynamic Resource Allocation (DRA) API.
 
 **Responsibilities:**
 
 * Replaces legacy integer-based K8s device plugins, requiring a deep hardware-software co-design approach to bridge the K8s control plane with the ASIC.
-* Parses custom resource claims, such as allocating specific Tensix core groups or SRAM partitions instead of only passing a whole PCIe device.
+* Parses custom resource claims for whole-card or coarse-partition accelerator allocation based on device class, health, memory profile, and scale-out topology.
+* Defers specific Tensix core-group or SRAM-region sharing until isolation, reset, accounting, and runtime behavior are proven.
 * Interfaces securely with the Kubelet to manage device cgroups and paths within the containerized environments.
 
 ### 2. Telemetry & Observability Agent

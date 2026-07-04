@@ -12,7 +12,9 @@ chip family, memory size, interconnect topology, or capacities) and lets the
 scheduler allocate exact devices on a per-request basis.
 
 This project uses DRA to expose Tenstorrent accelerators to Kubernetes as structured
-resources instead of opaque scalar values.
+resources instead of opaque scalar values. The primary target is scale-out HPC
+and ML cluster scheduling, where distributed jobs need compatible cards, healthy
+devices, and low-latency topology rather than arbitrary single-card sharing.
 
 ## Key DRA terminology
 
@@ -49,19 +51,27 @@ workload scheduling:
   clock, memory/bandwidth, link interfaces, topology flags) are encoded as
   device attributes/capacities so the scheduler can make better placement decisions
   than integer-only counts.
-- This enables use cases like topology-aware placement for multi-device AI jobs, and
-  fine-grained scheduling that can distinguish Blackhole vs Wormhole characteristics.
+- This enables use cases like topology-aware placement for multi-device AI jobs
+  and HPC workloads, while still allowing the scheduler to distinguish Blackhole
+  vs Wormhole characteristics.
 
 ## Why this matters here
 
-This project needs DRA for two reasons:
+This project needs DRA for four reasons:
 
-1. **Hardware specificity**: Workloads can request a capability profile instead of
+1. **Scale-out placement**: Distributed HPC and ML workloads can request devices
+   that satisfy topology, class, and health requirements across nodes.
+2. **Hardware specificity**: Workloads can request a capability profile instead of
    just “a card,” which is critical for mixed card families.
-2. **Topology and isolation intent**: Future work can extend request/selection
+3. **Topology and isolation intent**: Future work can extend request/selection
    logic to enforce interconnect-aware placement and tenant-safe allocation.
-3. **API-native lifecycle**: Scheduling, reservation, and status flow follow the
+4. **API-native lifecycle**: Scheduling, reservation, and status flow follow the
    Kubernetes control-plane model rather than out-of-band scripts or node-side heuristics.
+
+Fine-grained sub-card allocation, such as selecting Tensix subregions for
+multiple processes on the same ASIC, is intentionally secondary. It should be
+added only when the allocator, kubelet plugin, Tenstorrent runtime, and hardware
+reset/scrub flows can enforce isolation and account for usage reliably.
 
 ## Minimal workflow in practical terms
 

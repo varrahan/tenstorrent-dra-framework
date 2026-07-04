@@ -7,8 +7,12 @@ matches the task.
 ## Required Context
 
 This repository is in an early environment-validation stage for a Tenstorrent
-Kubernetes DRA integration. Development is expected to happen inside or against
-the QEMU `ttsim` Ubuntu VM.
+Kubernetes DRA integration. The design center is scale-out HPC and ML clusters:
+distributed workloads, topology-aware multi-card placement, health-aware
+scheduling, and cluster-level observability. Fine-grained single-card
+multiprocess execution is a later-stage capability and should not drive early
+architecture decisions ahead of cluster placement, isolation, and telemetry.
+Development is expected to happen inside or against the QEMU `ttsim` Ubuntu VM.
 
 This repository is the implementation workspace, but the operational target is
 the VM. Write source code, documentation, tests, and validation scripts in this
@@ -33,8 +37,11 @@ globs in validation commands because they also match normal terminal devices.
 
 ## Validation Assets
 
-Validation-only VM scripts and manifests live under the repository's `test/vm/`
-directory. From inside the QEMU VM, run:
+Shared VM requirements, tests, and configuration that are independent of a
+specific `src/` component live under the repository's `vm/` directory.
+
+Existing validation-only VM scripts and manifests live under the repository's
+`test/vm/` directory. From inside the QEMU VM, run:
 
 ```bash
 make -C test/vm vm-validate
@@ -53,7 +60,9 @@ make -C test/vm kind-clean
 Runtime source code is split by component and language:
 
 - `src/dra/`: Go implementation of the Kubernetes DRA driver.
-- `src/telemetry/`: Python/FastAPI telemetry service.
+- `src/telemetry/`: C++ Tenstorrent metrics exporter.
+- `vm/`: shared VM requirements, tests, and configuration independent of
+  `src/` components.
 
 ## Documents
 

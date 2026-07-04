@@ -50,6 +50,7 @@ cd ~/emulators/ttsim-qemu
 ./build/qemu-system-x86_64 \
   -m 8G \
   -smp 4 \
+  -cpu host \
   -enable-kvm \
   -nographic \
   -bios /usr/share/ovmf/OVMF.fd \
@@ -59,6 +60,11 @@ cd ~/emulators/ttsim-qemu
   -cdrom /home/varrahan/images/seed.iso \
   -device ttsim,lib=/home/varrahan/sim/libttsim_wh.so,bar4-size=32M
 ```
+
+`-cpu host` is required for current Tenstorrent user-space wheels such as
+`tt-smi` and `ttnn` in this VM. Without it, the guest may boot with an old QEMU
+virtual CPU model that lacks AVX/AVX2 and native Tenstorrent wheels can fail
+with `Illegal instruction`.
 
 This maps:
 
