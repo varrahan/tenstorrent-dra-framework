@@ -48,6 +48,11 @@ coverage.txt
 *.sln
 *.swp
 
-# Other files and directories to ignore
-/src/metrics_exporter/
-/src/metrics_exporter/*
+# Local telemetry system files
+/src/telemetry/*
+/src/telemetry/
+
+
+# Local vm config files
+/vm
+/vm/*
