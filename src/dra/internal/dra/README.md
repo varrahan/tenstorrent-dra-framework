@@ -7,6 +7,11 @@ and example workload requests into real Kubernetes `resource.k8s.io/v1` objects.
 Go source in this package is the source of truth for generated manifests under
 `src/dra/manifests/`.
 
+The resource model is oriented toward scale-out HPC and ML clusters. Prefer
+attributes that help the scheduler place distributed jobs on compatible,
+healthy, topology-adjacent accelerators. Do not make fine-grained single-card
+multiprocess sharing the default abstraction.
+
 Keep DeviceClass selector attributes aligned with attributes emitted by
 ResourceSlice device builders:
 

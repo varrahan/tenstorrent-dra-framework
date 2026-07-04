@@ -10,8 +10,9 @@ Initial scope:
 - Publish `ResourceSlice` objects for Kubernetes v1.34+ clusters.
 - Provide cluster-scoped `DeviceClass` definitions for supported Tenstorrent
   chip and card series.
-- Provide generated reference `ResourceClaim` manifests that workloads can use
-  to request one device from a supported DeviceClass.
+- Provide generated reference `ResourceClaim` manifests that distributed HPC and
+  ML workloads can use to request whole-card or coarse-partition resources from
+  a supported DeviceClass.
 
 The first implementation milestone is local device discovery from
 `/dev/tenstorrent`. Kubernetes API writes are intentionally kept out of the
@@ -59,6 +60,11 @@ ResourceSlices to publish `tenstorrent.com/chipSeries` and
 reference manifest that captures the compute-relevant attributes and capacities
 that the DRA driver should publish from node-specific discovery. It is not live
 inventory for a single VM node.
+
+Scale-out cluster scheduling is the primary design goal. The DRA model should
+prioritize card class, health, memory characteristics, and accelerator-to-accelerator
+topology needed by distributed workloads. Fine-grained single-card sharing is
+secondary and must not drive the early API shape.
 
 Tensix cores are not exposed as an independently consumable scalar capacity.
 They are modeled as a 2D mesh with contiguous-region allocation requirements.
