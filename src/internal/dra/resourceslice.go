@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const DefaultDriverName = "tenstorrent.com/dra"
+const DefaultDriverName = "dra.tenstorrent.com"
 
 const (
 	DefaultPoolGeneration int64 = 1
@@ -101,19 +101,11 @@ func defaultDriverName(driverName string) string {
 
 func newDeviceResource(node device.Node) resourceapi.Device {
 	attributes := nodeAttributes(node)
-	capacity := map[resourceapi.QualifiedName]resourceapi.DeviceCapacity(nil)
-
-	if spec, ok := CardSpecForClass(node.ChipSeries, node.CardSeries); ok {
-		for key, value := range spec.Attributes() {
-			attributes[key] = value
-		}
-		capacity = spec.Capacity()
-	}
 
 	return resourceapi.Device{
 		Name:       deviceResourceName(node),
 		Attributes: attributes,
-		Capacity:   capacity,
+		Capacity:   nil,
 	}
 }
 

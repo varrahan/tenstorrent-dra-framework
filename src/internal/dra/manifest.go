@@ -10,15 +10,30 @@ import (
 )
 
 func DeviceClassManifestYAML(driverName string) ([]byte, error) {
-	objects := make([]any, 0, len(SupportedDeviceClassVariants))
-	for _, class := range NewDeviceClasses(driverName) {
+	if err := ValidateDriverName(defaultDriverName(driverName)); err != nil {
+		return nil, err
+	}
+	classes := NewDeviceClasses(driverName)
+	if err := ValidateDeviceClasses(classes); err != nil {
+		return nil, err
+	}
+
+	objects := make([]any, 0, len(classes))
+	for _, class := range classes {
 		objects = append(objects, class)
 	}
 	return manifestYAML(objects...)
 }
 
 func ReferenceResourceSliceManifestYAML(driverName, nodeName string) ([]byte, error) {
+	if err := ValidateDriverName(defaultDriverName(driverName)); err != nil {
+		return nil, err
+	}
 	slices := NewReferenceResourceSlices(driverName, nodeName)
+	if err := ValidateResourceSlices(slices); err != nil {
+		return nil, err
+	}
+
 	objects := make([]any, 0, len(slices))
 	for _, slice := range slices {
 		objects = append(objects, slice)
@@ -28,6 +43,10 @@ func ReferenceResourceSliceManifestYAML(driverName, nodeName string) ([]byte, er
 
 func ReferenceResourceClaimManifestYAML() ([]byte, error) {
 	claims := NewReferenceResourceClaims()
+	if err := ValidateResourceClaims(claims); err != nil {
+		return nil, err
+	}
+
 	objects := make([]any, 0, len(claims))
 	for _, claim := range claims {
 		objects = append(objects, resourceClaimManifest{

@@ -81,8 +81,10 @@ node.
 
 Planned telemetry capabilities include:
 
-- Scraping Tenstorrent driver and device state from sources such as
-  `/sys/class/tenstorrent/` or `tt-smi`.
+- Scraping Tenstorrent driver and device state from safe node-local sources
+  such as `/sys/class/tenstorrent/`, backing PCI sysfs, and `hwmon` when the
+  kernel driver exposes it. `tt-smi` is not a runtime data-collection
+  dependency for this project.
 - Reporting thermal state, power draw, NoC congestion, and fault indicators.
 - Serving metrics from a lightweight C++ exporter.
 - Exposing Prometheus-compatible endpoints for monitoring and alerting.

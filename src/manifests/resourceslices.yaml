@@ -64,7 +64,7 @@ spec:
       tenstorrent.com/sramBytes:
         value: 108M
     name: tt-wormhole-n150-0
-  driver: tenstorrent.com/dra
+  driver: dra.tenstorrent.com
   nodeName: ttsim-node
   pool:
     generation: 1
@@ -137,7 +137,7 @@ spec:
       tenstorrent.com/sramBytes:
         value: 192M
     name: tt-wormhole-n300-0
-  driver: tenstorrent.com/dra
+  driver: dra.tenstorrent.com
   nodeName: ttsim-node
   pool:
     generation: 1
@@ -200,7 +200,7 @@ spec:
       tenstorrent.com/sramBytes:
         value: 180M
     name: tt-blackhole-p100-0
-  driver: tenstorrent.com/dra
+  driver: dra.tenstorrent.com
   nodeName: ttsim-node
   pool:
     generation: 1
@@ -267,7 +267,7 @@ spec:
       tenstorrent.com/sramBytes:
         value: 180M
     name: tt-blackhole-p150-0
-  driver: tenstorrent.com/dra
+  driver: dra.tenstorrent.com
   nodeName: ttsim-node
   pool:
     generation: 1

@@ -94,7 +94,7 @@ Specifically, this system targets scale-out HPC and ML clusters. It transitions 
 
 **Responsibilities:**
 
-* Scrapes driver telemetry, including thermal states, power draw, and Network-on-Chip (NoC) congestion, directly from `/sys/class/tenstorrent/` or `tt-smi`.
+* Scrapes driver telemetry, including thermal states, power draw, and Network-on-Chip (NoC) congestion, from safe node-local sources such as `/sys/class/tenstorrent/`, backing PCI sysfs, and `hwmon` when exposed by `tt-kmd`. `tt-smi` is not a runtime data-collection dependency.
 * Exposes a Prometheus-scrapeable endpoint. Structured as a lightweight Python application utilizing FastAPI to serve metrics efficiently.
 * Provides the necessary visibility to debug bottlenecks in real-time machine learning deployment pipelines.
 

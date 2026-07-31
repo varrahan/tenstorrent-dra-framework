@@ -52,14 +52,16 @@ Apply it from inside the Kubernetes v1.34+ VM validation environment:
 kubectl apply -f src/dra/manifests/deviceclasses.yaml
 ```
 
-These classes select devices managed by `tenstorrent.com/dra` and require
+These classes select devices managed by `dra.tenstorrent.com` and require
 ResourceSlices to publish `tenstorrent.com/chipSeries` and
 `tenstorrent.com/cardSeries` attributes.
 
 [`manifests/resourceslices.yaml`](manifests/resourceslices.yaml) is a generated
-reference manifest that captures the compute-relevant attributes and capacities
-that the DRA driver should publish from node-specific discovery. It is not live
-inventory for a single VM node.
+reference manifest for example validation only. It is not live inventory for a
+single VM node and must not be treated as the source for actual scheduling
+capacity. Live ResourceSlices should publish only values observed from safe
+node-local sources such as `tt-kmd` sysfs, backing PCI sysfs, topology
+discovery, Kubernetes allocation state, or TT-Metalium/profiler data.
 
 Scale-out cluster scheduling is the primary design goal. The DRA model should
 prioritize card class, health, memory characteristics, and accelerator-to-accelerator

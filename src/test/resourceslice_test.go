@@ -65,7 +65,7 @@ func TestResourceSliceMapsOptionalChipAttributes(t *testing.T) {
 	}
 }
 
-func TestResourceSliceAddsComputeClassCapacity(t *testing.T) {
+func TestResourceSliceDoesNotAddTableDerivedCapacity(t *testing.T) {
 	slice := dra.NewResourceSliceForNodes("", "slice-a", "node-a", "node-a", []device.Node{
 		{
 			ID:         "0",
@@ -79,54 +79,29 @@ func TestResourceSliceAddsComputeClassCapacity(t *testing.T) {
 
 	got := slice.Spec.Devices[0]
 
-	for key, want := range map[resourceapi.QualifiedName]string{
-		dra.DeviceAttributeChipSeries:           "wormhole",
-		dra.DeviceAttributeSystemInterfaceType:  "PCIe 4.0",
-		dra.DeviceAttributeTensixTopology:       dra.TensixTopology2DMesh,
-		dra.DeviceAttributeTensixAllocation:     dra.TensixAllocationContiguous,
-		dra.DeviceAttributeGDDRControllerLayout: dra.GDDRControllerLayoutLocalized,
+	if stringAttribute(t, got.Attributes[dra.DeviceAttributeChipSeries]) != "wormhole" {
+		t.Fatalf("chip series attribute = %#v, want wormhole", got.Attributes[dra.DeviceAttributeChipSeries])
+	}
+	if stringAttribute(t, got.Attributes[dra.DeviceAttributeCardSeries]) != "n300" {
+		t.Fatalf("card series attribute = %#v, want n300", got.Attributes[dra.DeviceAttributeCardSeries])
+	}
+	for _, key := range []resourceapi.QualifiedName{
+		dra.DeviceAttributeSystemInterfaceType,
+		dra.DeviceAttributeTensixTopology,
+		dra.DeviceAttributeTensixAllocation,
+		dra.DeviceAttributeGDDRControllerLayout,
+		dra.DeviceAttributeTensixCoreCount,
+		dra.DeviceAttributeGDDRControllersPerASIC,
+		dra.DeviceAttributeGDDRControllerCount,
+		dra.DeviceCapacityMemoryBytes,
+		dra.DeviceCapacityMemoryBandwidthBytesPerSec,
 	} {
-		if got := stringAttribute(t, got.Attributes[key]); got != want {
-			t.Fatalf("string attribute %q = %q, want %q", key, got, want)
+		if _, ok := got.Attributes[key]; ok {
+			t.Fatalf("attribute %q came from static card specs", key)
 		}
-	}
-
-	for key, want := range map[resourceapi.QualifiedName]int64{
-		dra.DeviceAttributeTensixCoreCount:        128,
-		dra.DeviceAttributeGDDRControllersPerASIC: 6,
-		dra.DeviceAttributeGDDRControllerCount:    12,
-		dra.DeviceAttributeWarpInterfaceCount:     2,
-		dra.DeviceAttributeWarpSpeedGbps:          100,
-		dra.DeviceAttributeQSFPInterfaceCount:     2,
-		dra.DeviceAttributeQSFPSpeedGbps:          200,
-		dra.DeviceAttributeSystemInterfaceCount:   16,
-	} {
-		if got := intAttribute(t, got.Attributes[key]); got != want {
-			t.Fatalf("int attribute %q = %d, want %d", key, got, want)
+		if _, ok := got.Capacity[key]; ok {
+			t.Fatalf("capacity %q came from static card specs", key)
 		}
-	}
-
-	for key, want := range map[resourceapi.QualifiedName]bool{
-		dra.DeviceAttributeConnectivity: true,
-	} {
-		if got := boolAttribute(t, got.Attributes[key]); got != want {
-			t.Fatalf("bool attribute %q = %t, want %t", key, got, want)
-		}
-	}
-
-	for key, want := range map[resourceapi.QualifiedName]string{
-		dra.DeviceCapacityMemoryBytes:                "24G",
-		dra.DeviceCapacityMemoryBandwidthBytesPerSec: "576G",
-	} {
-		if got := capacityValue(got.Capacity[key]); got != want {
-			t.Fatalf("capacity %q = %q, want %q", key, got, want)
-		}
-	}
-	if _, ok := got.Capacity[dra.DeviceAttributeTensixCoreCount]; ok {
-		t.Fatal("tensix core count must not be exposed as scalar capacity")
-	}
-	if _, ok := got.Capacity[dra.DeviceAttributeBigRISCVCoreCount]; ok {
-		t.Fatal("big RISC-V core count must not be exposed as scalar capacity")
 	}
 }
 
@@ -144,16 +119,4 @@ func intAttribute(t *testing.T, attribute resourceapi.DeviceAttribute) int64 {
 		t.Fatalf("attribute %#v has nil Int", attribute)
 	}
 	return *attribute.IntValue
-}
-
-func boolAttribute(t *testing.T, attribute resourceapi.DeviceAttribute) bool {
-	t.Helper()
-	if attribute.BoolValue == nil {
-		t.Fatalf("attribute %#v has nil Bool", attribute)
-	}
-	return *attribute.BoolValue
-}
-
-func capacityValue(capacity resourceapi.DeviceCapacity) string {
-	return capacity.Value.String()
 }

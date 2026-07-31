@@ -51,8 +51,3 @@ coverage.txt
 # Local telemetry system files
 /src/telemetry/*
 /src/telemetry/
-
-
-# Local vm config files
-/vm
-/vm/*

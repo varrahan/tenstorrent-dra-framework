@@ -35,6 +35,13 @@ truth, and mount those paths explicitly into `kind` node containers before
 validating driver, scheduler, or pod-level behavior. Avoid broad `/dev/tt*`
 globs in validation commands because they also match normal terminal devices.
 
+Do not use `tt-smi` for simulator validation, telemetry collection, DRA
+discovery, or normal VM setup. Collect device data from safe node-local sources:
+`tt-kmd` sysfs under `/sys/class/tenstorrent`, backing PCI sysfs, `hwmon` when
+available, the project metrics exporter, Kubernetes DRA allocation state, and
+atomically published TT-Metalium profiler snapshots for workload-level core
+occupancy.
+
 ## Validation Assets
 
 Shared VM requirements, tests, and configuration that are independent of a

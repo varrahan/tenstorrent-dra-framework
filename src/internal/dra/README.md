@@ -2,9 +2,9 @@
 
 This package contains the DRA-facing resource builders.
 
-The current code maps discovered Tenstorrent device nodes, supported card specs,
-and example workload requests into real Kubernetes `resource.k8s.io/v1` objects.
-Go source in this package is the source of truth for generated manifests under
+The current code maps discovered Tenstorrent device nodes and example workload
+requests into Kubernetes `resource.k8s.io/v1` objects. Go source in this
+package is the source of truth for generated reference manifests under
 `src/dra/manifests/`.
 
 The resource model is oriented toward scale-out HPC and ML clusters. Prefer
@@ -32,13 +32,14 @@ capabilities. Actual placement of subregions and GDDR-local blocks belongs in
 the allocator/kubelet plugin, using device-discovered topology as the source of
 truth.
 
-ResourceSlice objects also publish GDDR controller counts. Wormhole chips have
-six GDDR6 controllers per ASIC, and Blackhole chips have eight per ASIC.
-Blackhole big RISC-V cores are represented as a scheduling attribute
-(`tenstorrent.com/bigRISCVCoreCount`), not as scalar capacity.
+Reference ResourceSlice manifests publish GDDR controller counts and other
+card-class attributes for example validation. Live ResourceSlices should publish
+those fields only when device discovery or a safe telemetry/topology source
+reports them.
 
-The supported card set is based on Tenstorrent's Wormhole and Blackhole PCIe
-card specification tables, collapsed to compute-equivalent classes:
+The supported reference card set is based on Tenstorrent's Wormhole and
+Blackhole PCIe card specification tables, collapsed to compute-equivalent
+classes:
 
 - Wormhole: n150, n300
 - Blackhole: p100, p150

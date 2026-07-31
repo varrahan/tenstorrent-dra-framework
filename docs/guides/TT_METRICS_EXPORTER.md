@@ -2,7 +2,10 @@
 
 This repository contains the blueprints for building a Kubernetes Dynamic Resource Allocation (DRA) metrics exporter for Tenstorrent hardware (Wormhole/Blackhole clusters).
 
-This service acts as a DaemonSet to track real-time memory usage, Tensix core utilization, and Ethernet mesh topology, exposing them via a Prometheus `/metrics` endpoint.
+This service acts as a DaemonSet to track hardware data that is actually
+reported by safe node-local sources, then exposes it through Prometheus
+`/metrics` and structured device inventory endpoints. It must not synthesize
+capacity from card-spec tables.
 
 ---
 
@@ -24,16 +27,39 @@ Bypass `pyluwen` to build a lean, uniform C++ binary. Begin by reading the host 
 
 1. **Iterate Devices**: Write C++ logic using `<filesystem>` to scan `/sys/class/tenstorrent/` and count available devices.
 2. **Extract Memory Data**: Open and read `/sys/class/tenstorrent/N/memory_usage` stream.
-3. **Extract Board Info**: Parse architecture (Wormhole/Blackhole) and health status metrics, noting that simulator thermal/power data may be dummy values.
+3. **Extract Board Info**: Parse architecture, firmware-reported card identity,
+   health status, PCI identity, and power-management metadata. Preserve missing
+   values as absent/null instead of filling them with SKU-derived defaults.
 
 ### Stage 3: Tensix Core Utilization (TT-Metalium Profiler)
 
-Tensix cores use static spatial mapping. You must integrate with TT-Metalium to intercept active `CoreGrids`.
+Tensix core usage must come from workload/runtime instrumentation. Integrate
+with TT-Metalium to observe active `CoreGrids`; do not infer usage or available
+core counts from public card tables.
 
-1. **Link Library**: Link your C++ application against `libtt_metal.so`.
-2. **Enable Profiler**: Ensure the environment variable `TT_METAL_DEVICE_PROFILER=1` is active.
-3. **Poll Active Programs**: Periodically call `tt::tt_metal::detail::ReadDeviceProfilerResults(device_ptr)`.
-4. **Calculate Usage**: Parse the returned `CoreRangeSet` objects to calculate the delta between total chip cores and actively reserved cores.
+Profiler results are process-local. The node exporter must not open a device
+already owned by a workload merely to inspect profiler state.
+
+1. **Profiler Build**: Use a Tracy-enabled TT-Metalium source build. In
+   v0.73.1, `./build_metal.sh` enables Tracy by default; do not pass
+   `--disable-profiler`. For a manual build use `-DENABLE_TRACY=ON`. Stock
+   wheels may not include the support required by device profiling.
+2. **Enable Profiler**: Set `TT_METAL_DEVICE_PROFILER=1`,
+   `TT_METAL_PROFILER_MID_RUN_DUMP=1`, and
+   `TT_METAL_PROFILER_CPP_POST_PROCESS=1` before TTNN initializes. Set
+   `TT_METAL_PROFILER_DISABLE_DUMP_TO_FILES=1` when only the in-process
+   publisher results are needed.
+3. **Publish From The Workload**: After a synchronized workload iteration, call
+   `ttnn.ReadDeviceProfiler(device)` and publish
+   `ttnn.get_latest_programs_perf_data()` through the telemetry component's
+   TTNN integration.
+4. **Consume Node-Locally**: Atomically publish per-device workload snapshots
+   under `/var/lib/tt-device-plugin/metalium-profiler`; configure the exporter
+   with `--metalium-profiler-state-root`.
+5. **Report Honest Semantics**: Use `ProgramAnalysisData.core_count` and
+   `num_available_cores` as a recent program core-footprint/occupancy signal.
+   Do not describe it as time-weighted busy percentage, and expire stale
+   samples.
 
 ### Stage 4: Prometheus Exporter Packaging
 
@@ -56,4 +82,13 @@ Deploy the exporter as a cluster-wide service.
 
 ## Simulator Caveats
 
-When running against `ttsim-qemu`, physical telemetry (temperature, clock speed, power draw) will likely yield static placeholders. Ensure your exporter handles these edge cases gracefully without crashing.
+When running against `ttsim-qemu`, many physical telemetry files may be missing.
+The exporter should handle absent temperature, clock, power, memory, and core
+usage data gracefully without crashing or inventing placeholder values.
+
+The current v0.73.1 profiler source build is not safe for an end-to-end run on
+this QEMU profile: source-UMD topology discovery terminates QEMU. Direct
+`libttsim_wh_v1.9.3.so` gets farther but does not implement the profiler NoC
+write used by mid-run dumps. Use compatible physical hardware or a compatible
+TTSim version for real dynamic samples; the VM remains suitable for exporter
+and snapshot-contract validation.

@@ -46,7 +46,7 @@ func TestDeviceClassSelectorExpressionUsesDriverAndAttributes(t *testing.T) {
 		ChipSeries: "wormhole",
 		CardSeries: "n300",
 	})
-	want := "device.driver == \"tenstorrent.com/dra\" &&\n" +
+	want := "device.driver == \"dra.tenstorrent.com\" &&\n" +
 		"device.attributes[\"tenstorrent.com\"].chipSeries == \"wormhole\" &&\n" +
 		"device.attributes[\"tenstorrent.com\"].cardSeries == \"n300\""
 
