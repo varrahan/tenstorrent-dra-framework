@@ -97,6 +97,10 @@ The VM workflow supports:
 - Creating disposable Kubernetes clusters for driver and manifest testing.
 - Verifying simulated hardware visibility with tools such as `lspci`, `lsmod`,
   `dmesg`, and `/dev` discovery.
+- Generating synthetic multi-device sysfs, topology, health, and workload state
+  with `make -C test/vm fake-hardware`.
+- Syncing the VM validation harness into a running guest checkout with
+  `make -C test/vm sync-test-vm`.
 
 ## Project Phases
 

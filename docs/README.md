@@ -57,7 +57,11 @@ Useful narrower targets are:
 make -C test/vm load-tt-kmd
 make -C test/vm kind-smoke
 make -C test/vm kind-clean
+make -C test/vm fake-hardware
 ```
+
+From the QEMU host, `make -C test/vm sync-test-vm` copies these validation
+assets into the guest checkout.
 
 ## Source Layout
 

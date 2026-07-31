@@ -374,6 +374,51 @@ runs the `tt-kmd`, kind, DRA API, and pod device-visibility checks:
 make -C test/vm vm-validate
 ```
 
+From the QEMU host, copy the current VM validation assets into an existing guest
+checkout at `/home/ubuntu/tt-device-plugin` with:
+
+```bash
+make -C test/vm sync-test-vm
+```
+
+The sync target uses the same SSH endpoint and key as the checked-in QEMU
+verification workflow: `ubuntu@127.0.0.1:2222` and
+`$HOME/.ssh/ttsim_vm_ed25519`.
+
+### Synthetic hardware and workload injection
+
+The VM harness also includes the synthetic sysfs and TT-Metalium workload-state
+generator shared with the telemetry exporter. Inside the guest checkout, start
+the default 32-device, one-second update loop with:
+
+```bash
+make -C test/vm fake-hardware
+```
+
+The equivalent explicit command is:
+
+```bash
+python3 test/vm/ttsim_fake_hardware.py \
+  --sysfs-root /tmp/tt-sim-sysfs \
+  --state-root /tmp/tt-sim-state \
+  --device-count 32 \
+  --interval 1 \
+  --iterations 0 \
+  --simulate-workloads
+```
+
+This continuously updates fake Tenstorrent attributes under
+`/tmp/tt-sim-sysfs/class/tenstorrent` and writes v2 workload snapshots under
+`/tmp/tt-sim-state/v2/workloads`. Override `FAKE_SYSFS_ROOT`,
+`FAKE_STATE_ROOT`, `FAKE_DEVICE_COUNT`, `FAKE_INTERVAL`, or `FAKE_ITERATIONS`
+on the `make` command when a different test shape is needed. Set
+`FAKE_ITERATIONS=1` for a finite fixture-generation run.
+
+The fake tree does not create kernel character devices. Continue to use the
+documented `ttsim` plus `tt-kmd` path for kind device mounting and pod
+visibility checks; use the synthetic roots for inventory, topology, health,
+and cross-component workload-state development.
+
 Use the inline commands below when debugging a specific validation step.
 
 Create a DRA-capable smoke-test kind cluster when needed. Kubernetes v1.34+ is
