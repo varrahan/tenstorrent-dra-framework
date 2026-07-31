@@ -20,16 +20,12 @@ tt-kmd tag ttkmd-2.3.0 (do not use a newer KMD for this simulator baseline)
 uv from https://astral.sh/uv/install.sh
 tt-flash via uvx tt-flash@latest
 tt-system-firmware bundles from https://github.com/tenstorrent/tt-system-firmware
-ttnn==0.73.1 in /home/ubuntu/.venvs/tt-metalium
-pydantic in /home/ubuntu/.venvs/tt-metalium for tt-run
-TT-Metalium profiler-enabled source build for dynamic workload utilization
 
 QEMU must use TCG with -cpu max. Do not enable KVM or use -cpu host.
 Use /home/varrahan/sim/libttsim_wh.so from the documented v1.8.4 setup and
 bar4-size=32M. PCI enumeration, BAR layout, KMD binding, sysfs, and the
 character device are the bridge success criteria; TTNN open_device is not.
 tt-smi is intentionally not a VM prerequisite. Use tt-kmd sysfs, backing PCI
-sysfs, hwmon when available, the metrics exporter, and workload-published
-TT-Metalium profiler snapshots for data collection.
+sysfs, and Kubernetes DRA allocation state for inventory and allocation checks.
 Do not use Tenstorrent tt-installer for this QEMU VM unless the simulator
 safety policy changes; the installer path includes TT-SMI setup and validation.

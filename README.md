@@ -2,8 +2,8 @@
 
 This project is a Kubernetes orchestration layer for Tenstorrent accelerator
 hardware. Its design center is scale-out HPC and ML clusters where distributed
-jobs need topology-aware placement, health-aware scheduling, and operational
-visibility across many accelerator nodes.
+jobs need topology-aware placement, health-aware scheduling, and strict device
+isolation across accelerator nodes.
 
 The long-term direction is to move beyond legacy integer-count device plugins
 and use Kubernetes Dynamic Resource Allocation (DRA) so workloads can request
@@ -12,13 +12,12 @@ hardware by attributes, topology, and health state. Instead of only asking for
 specific device class, memory profile, health state, or accelerator placement
 with direct low-latency links to peer devices. Fine-grained sub-card sharing,
 such as core-group or memory-region allocation, is a later-stage capability and
-must not take priority over cluster-scale placement, isolation, and telemetry.
+must not take priority over cluster-scale placement, isolation, and health.
 
 ## What This Project Entails
 
 The repository is the foundation for a hardware-software co-design effort that
-connects Tenstorrent devices, kernel driver state, Kubernetes scheduling, and
-cluster observability.
+connects Tenstorrent devices, kernel driver state, and Kubernetes scheduling.
 
 The project targets the following environment:
 
@@ -29,7 +28,6 @@ The project targets the following environment:
 | Local Kubernetes | Docker and `kind` | Runs Kubernetes nodes for development and validation. |
 | Resource allocation | Kubernetes DRA | Publishes and allocates accelerator resources through `ResourceSlice` and resource claim APIs. |
 | Driver implementation | Go and C/C++ | Integrates Kubernetes control-plane logic with lower-level device interfaces. |
-| Telemetry | C++ metrics exporter | Exposes accelerator health and performance metrics for Prometheus-style scraping. |
 
 Development is expected to happen inside or against the QEMU `ttsim` VM
 described in [docs/VM.md](docs/VM.md), where Docker, `kind`, Kubernetes tooling,
@@ -72,23 +70,6 @@ Planned topology capabilities include:
 - Treating multi-card and multi-node placement as a core scheduling requirement,
   not an optional optimization.
 
-### Telemetry and Observability
-
-The telemetry component is intended to provide continuous visibility into
-accelerator state. Cluster operators and automated systems should be able to
-observe health and performance characteristics without manually inspecting each
-node.
-
-Planned telemetry capabilities include:
-
-- Scraping Tenstorrent driver and device state from safe node-local sources
-  such as `/sys/class/tenstorrent/`, backing PCI sysfs, and `hwmon` when the
-  kernel driver exposes it. `tt-smi` is not a runtime data-collection
-  dependency for this project.
-- Reporting thermal state, power draw, NoC congestion, and fault indicators.
-- Serving metrics from a lightweight C++ exporter.
-- Exposing Prometheus-compatible endpoints for monitoring and alerting.
-
 ### Tenant Isolation and Hardware Hygiene
 
 The project includes a hardware janitor role to protect workloads from stale
@@ -123,27 +104,23 @@ The VM workflow supports:
    with `kind`.
 2. DRA driver: publish Tenstorrent resources through Kubernetes DRA APIs and
    allocate whole-card or coarse-partition resources to distributed workloads.
-3. Telemetry: expose accelerator health and performance metrics through a
-   C++ metrics exporter.
-4. Topology: discover accelerator interconnects and surface topology metadata to
+3. Topology: discover accelerator interconnects and surface topology metadata to
    scheduling components.
-5. Hardware hygiene: add reset, scrubbing, health-check, and cordon/taint flows
+4. Hardware hygiene: add reset, scrubbing, health-check, and cordon/taint flows
    for tenant isolation and reliability.
 
 ## Repository Status
 
 This repository is currently in an early architecture and environment-validation
 stage. The existing documentation and validation assets focus on booting and
-accessing the QEMU `ttsim` VM. Initial source scaffolds now exist for the Go
-DRA driver and C++ metrics exporter; Kubernetes API integration, topology
-discovery, and hardware janitor flows will be added as the implementation is
-built out.
+accessing the QEMU `ttsim` VM. Initial source scaffolds exist for the Go DRA
+driver; Kubernetes API integration, topology discovery, and hardware janitor
+flows will be added as the implementation is built out.
 
 ## Source Layout
 
 - `src/`: Go implementation of the Kubernetes DRA driver, with commands,
   internal packages, generated manifests, and tests directly beneath it.
-- `src/telemetry/`: C++ Tenstorrent metrics exporter.
 - `vm/`: shared VM requirements, tests, and configuration independent of
   source components.
 - `test/vm/`: VM validation scripts and kind smoke-test manifests.
@@ -156,7 +133,5 @@ built out.
   and Tenstorrent card specifications.
 - [docs/VM.md](docs/VM.md): QEMU `ttsim` VM boot, SSH access, kind validation,
   and troubleshooting guide.
-- [docs/TELEMETRY.md](docs/TELEMETRY.md): metrics exporter and TT-Metalium
-  profiler integration.
 - [AGENTS.md](AGENTS.md): project architecture notes and required agent workflow
   instructions.

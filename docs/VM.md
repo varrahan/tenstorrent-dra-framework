@@ -60,8 +60,8 @@ TCG's MMIO emulation.
 
 The single-chip v1.8.4 Wormhole profile is the documented QEMU bridge profile.
 Its supported success criteria are PCI enumeration, the three correct BARs,
-and `ttkmd-2.3.0` binding. Firmware telemetry and `ttnn.open_device()` are not
-current bridge success criteria.
+and `ttkmd-2.3.0` binding. Firmware-facing UMD calls and `ttnn.open_device()`
+are not current bridge success criteria.
 
 For multi-card simulator work, verify the selected `libttsim` profile before
 booting the VM:
@@ -155,84 +155,13 @@ verification with:
 ./vm/verify-ttsim-qemu.sh
 ```
 
-Do not install or run `tt-smi` for simulator validation, telemetry scraping, or
-DRA discovery. The safe VM data-collection path is:
+Do not install or run `tt-smi` for simulator validation or DRA discovery. The
+safe inventory path is:
 
 - `tt-kmd` device and firmware attributes under `/sys/class/tenstorrent`
 - backing PCI identity and resource files under each device's `device/` sysfs
   directory
-- `hwmon` sensors when the driver registers them
-- the metrics exporter JSON and Prometheus output
 - Kubernetes DRA allocation state for reserved device usage
-- TT-Metalium profiler snapshots for workload-level core occupancy
-
-### TT-Metalium workload utilization
-
-The telemetry exporter consumes process-local TTNN profiler snapshots from
-`/var/lib/tt-device-plugin/metalium-profiler`. The workload must mount that
-directory writable, while the exporter should mount it read-only and run with:
-
-```bash
-./build/tt-metrics-exporter \
-  --sysfs-root /sys/class/tenstorrent \
-  --metalium-profiler-state-root /var/lib/tt-device-plugin/metalium-profiler \
-  --metalium-profiler-stale-after 15 \
-  --port 9400
-```
-
-If the optional `ttnn==0.73.1` wheel is installed, it exposes
-`get_latest_programs_perf_data()`, but it is not Tracy-enabled. Enabling
-`TT_METAL_DEVICE_PROFILER=1` currently fails with
-`TT_METAL_DEVICE_PROFILER requires a Tracy-enabled build of tt-metal`.
-Tenstorrent documents device profiling as fully supported on source builds.
-Build a version compatible with the VM firmware and simulator using:
-
-```bash
-cd /path/to/tt-metal
-git checkout v0.73.1
-./build_metal.sh
-```
-
-In v0.73.1 Tracy is enabled by default; do not pass `--disable-profiler`. For a
-manual CMake build, set `-DENABLE_TRACY=ON`.
-
-Before launching the instrumented TTNN workload, set:
-
-```bash
-export TT_METAL_DEVICE_PROFILER=1
-export TT_METAL_PROFILER_MID_RUN_DUMP=1
-export TT_METAL_PROFILER_CPP_POST_PROCESS=1
-export TT_METAL_PROFILER_DISABLE_DUMP_TO_FILES=1
-export TT_METALIUM_PROFILER_STATE_ROOT=/var/lib/tt-device-plugin/metalium-profiler
-```
-
-Call the telemetry component's
-`integrations/ttnn/metalium_profiler_publisher.py` from the same process after
-a synchronized workload iteration. Its core-occupancy signal is derived from
-completed programs and expires when samples stop; it is not a time-weighted
-hardware-busy percentage.
-
-After activating the Tracy-enabled source build, exercise the full path with:
-
-```bash
-cd /home/ubuntu/tt-telemetry
-python integrations/ttnn/example_dynamic_workload.py \
-  --state-root /var/lib/tt-device-plugin/metalium-profiler \
-  --device-key 0
-```
-
-While it runs, scrape `tt_metalium_workload_*` from the exporter in another VM
-terminal.
-
-The dump-to-files setting avoids profiler CSV artifacts but keeps the
-in-process results consumed by the publisher.
-
-The current QEMU bridge cannot complete this end-to-end profiler run. As the
-official bridge lesson documents, current TTNN topology discovery accesses an
-ARC tile register that this simulator does not implement. Do not use
-`ttnn.open_device()` as a bridge health check. Use compatible physical hardware
-for real profiler samples; exporter/state-contract tests remain safe in the VM
-because they do not open the device.
 
 Download and verify the current TT system firmware bundle inside the VM when
 debugging firmware compatibility:
@@ -244,7 +173,7 @@ ssh -i /home/varrahan/.ssh/ttsim_vm_ed25519 -p 2222 ubuntu@127.0.0.1 \
 
 The unsafe `tt-smi` commands previously used to isolate the simulator/UMD
 mismatch are intentionally not listed here. Reintroduce them only in a dedicated
-crash-reproduction note, never in validation, telemetry, DRA discovery, or
+crash-reproduction note, never in validation, DRA discovery, or
 normal VM setup instructions.
 
 ---

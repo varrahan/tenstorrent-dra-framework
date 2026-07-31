@@ -9,9 +9,9 @@ matches the task.
 This repository is in an early environment-validation stage for a Tenstorrent
 Kubernetes DRA integration. The design center is scale-out HPC and ML clusters:
 distributed workloads, topology-aware multi-card placement, health-aware
-scheduling, and cluster-level observability. Fine-grained single-card
+scheduling, and tenant isolation. Fine-grained single-card
 multiprocess execution is a later-stage capability and should not drive early
-architecture decisions ahead of cluster placement, isolation, and telemetry.
+architecture decisions ahead of cluster placement, isolation, and health.
 Development is expected to happen inside or against the QEMU `ttsim` Ubuntu VM.
 
 This repository is the implementation workspace, but the operational target is
@@ -35,12 +35,9 @@ truth, and mount those paths explicitly into `kind` node containers before
 validating driver, scheduler, or pod-level behavior. Avoid broad `/dev/tt*`
 globs in validation commands because they also match normal terminal devices.
 
-Do not use `tt-smi` for simulator validation, telemetry collection, DRA
-discovery, or normal VM setup. Collect device data from safe node-local sources:
-`tt-kmd` sysfs under `/sys/class/tenstorrent`, backing PCI sysfs, `hwmon` when
-available, the project metrics exporter, Kubernetes DRA allocation state, and
-atomically published TT-Metalium profiler snapshots for workload-level core
-occupancy.
+Do not use `tt-smi` for simulator validation, DRA discovery, or normal VM setup.
+Collect inventory from `tt-kmd` sysfs under `/sys/class/tenstorrent`, backing
+PCI sysfs, and Kubernetes DRA allocation state.
 
 ## Validation Assets
 
@@ -64,23 +61,19 @@ make -C test/vm kind-clean
 
 ## Source Layout
 
-The Go DRA driver is rooted directly at `src/`; additional runtime components
-may use their own subdirectories:
+The Go DRA driver is rooted directly at `src/`:
 
 - `src/`: Go DRA commands, internal packages, generated manifests, and tests.
-- `src/telemetry/`: C++ Tenstorrent metrics exporter.
 - `vm/`: shared VM requirements, tests, and configuration independent of
   runtime components.
 
 ## Documents
 
-The complete project documentation is intentionally limited to these four files:
+The complete project documentation is intentionally limited to these three files:
 
 - [DRA.md](DRA.md): DRA concepts, driver layout, resource-model constraints,
   generated manifests, and supported card specifications.
 - [VM.md](VM.md): QEMU `ttsim` boot and access, `tt-kmd`, Docker/`kind`, device
   mounting, validation, and troubleshooting.
-- [TELEMETRY.md](TELEMETRY.md): Node-local metrics, TT-Metalium profiler
-  integration, Prometheus packaging, and simulator limitations.
 - `README.md` (this file): authoritative project-wide context and document
   routing.

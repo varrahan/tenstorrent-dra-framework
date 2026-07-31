@@ -54,7 +54,7 @@ clear when a command is expected to run inside the VM.
 
 The purpose of this system is to bridge the gap between Tenstorrent ASIC hardware and Kubernetes container orchestration through a hardware-software co-design approach.
 
-Specifically, this system targets scale-out HPC and ML clusters. It transitions the cluster from legacy, integer-based device plugins to a highly intelligent, topology-aware control plane using the Kubernetes Dynamic Resource Allocation (DRA) framework. DRA enables distributed workloads to request specialized hardware based on device class, health, memory profile, and interconnect topology rather than simple counts. By implementing this system, you ensure strict tenant isolation, optimal scheduling based on physical Ethernet ring interconnects, and deep telemetry for real-time machine learning deployment pipelines. Fine-grained multiprocess execution on a single card is a later-stage capability and must not take priority over cluster-scale placement, isolation, and observability.
+Specifically, this system targets scale-out HPC and ML clusters. It transitions the cluster from legacy, integer-based device plugins to a highly intelligent, topology-aware control plane using the Kubernetes Dynamic Resource Allocation (DRA) framework. DRA enables distributed workloads to request specialized hardware based on device class, health, memory profile, and interconnect topology rather than simple counts. By implementing this system, you ensure strict tenant isolation and optimal scheduling based on physical Ethernet ring interconnects. Fine-grained multiprocess execution on a single card is a later-stage capability and must not take priority over cluster-scale placement, isolation, and health management.
 
 ## Core Technology Stack
 
@@ -64,14 +64,12 @@ Specifically, this system targets scale-out HPC and ML clusters. It transitions 
 | **Container Engine** | Docker | Hosts the Kubernetes nodes running via `kind` and allows for isolated compilation and testing of driver components. |
 | **Orchestration** | `kind`, Kubernetes v1.34+ | Kubernetes v1.34+ is strictly required, as the Dynamic Resource Allocation (DRA) API reached General Availability (GA). |
 | **DRA Driver / Resource Allocator** | Go, C/C++ | Go is the industry standard for writing Kubernetes Custom Resource Definitions (CRDs) and operators. C/C++ is utilized for high-performance bindings to interface directly with `tt-kmd`. |
-| **Telemetry Agent** | Python, FastAPI | Provides a lightweight, high-performance web framework to continuously scrape hardware states and expose them as a Prometheus-scrapeable endpoint. |
 | **Project & Context Management** | Obsidian | Used to structure project architecture, track custom K8s YAML manifests, and map out hardware topology definitions. |
 
 ## Key Implementation Phases
 
 * **Phase 1: Foundation (Kubernetes v1.34+)** Configure `kind` to mount the QEMU `/dev/tenstorrent` paths directly into the virtual nodes.
 * **Phase 2: The DRA Driver (Go & C++)** The driver will publish `ResourceSlices` to the Kubernetes API server, detailing specific attributes of the Tenstorrent cards.
-* **Phase 3: Telemetry & Observability (Python & FastAPI)** Deploy the FastAPI container alongside the DRA driver to monitor device health and expose metrics.
 
 ---
 
@@ -88,17 +86,7 @@ Specifically, this system targets scale-out HPC and ML clusters. It transitions 
 * Defers specific Tensix core-group or SRAM-region sharing until isolation, reset, accounting, and runtime behavior are proven.
 * Interfaces securely with the Kubelet to manage device cgroups and paths within the containerized environments.
 
-### 2. Telemetry & Observability Agent
-
-**Role:** Exposes real-time hardware metrics for cluster administrators and automated scaling engines.
-
-**Responsibilities:**
-
-* Scrapes driver telemetry, including thermal states, power draw, and Network-on-Chip (NoC) congestion, from safe node-local sources such as `/sys/class/tenstorrent/`, backing PCI sysfs, and `hwmon` when exposed by `tt-kmd`. `tt-smi` is not a runtime data-collection dependency.
-* Exposes a Prometheus-scrapeable endpoint. Structured as a lightweight Python application utilizing FastAPI to serve metrics efficiently.
-* Provides the necessary visibility to debug bottlenecks in real-time machine learning deployment pipelines.
-
-### 3. Topology Discovery Agent
+### 2. Topology Discovery Agent
 
 **Role:** Maps physical scale-out interconnects to influence the Kubernetes scheduler.
 
@@ -108,7 +96,7 @@ Specifically, this system targets scale-out HPC and ML clusters. It transitions 
 * Maps out the physical routing infrastructure. Guarantees that distributed MPI/Buda jobs are placed on cards with direct, low-latency physical links rather than traversing the slower host network.
 * Generates and dynamically updates `NodeResourceTopology` Custom Resource Definitions (CRDs).
 
-### 4. Hardware Janitor Agent (Sanitization & Health)
+### 3. Hardware Janitor Agent (Sanitization & Health)
 
 **Role:** Enforces strict tenant isolation and hardware stability across pod lifecycles.
 

@@ -47,7 +47,3 @@ coverage.txt
 *.njsproj
 *.sln
 *.swp
-
-# Local telemetry system files
-/src/telemetry/*
-/src/telemetry/

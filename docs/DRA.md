@@ -167,7 +167,7 @@ schedules the Pod onto the matching node.
 
 Scale-out scheduling is the primary design goal. Live ResourceSlices must use
 observed node-local data from `tt-kmd` sysfs, backing PCI sysfs, topology
-discovery, Kubernetes allocation state, or workload profiler data. They must
+discovery, or Kubernetes allocation state. They must
 not synthesize available capacity from public card tables.
 
 Tensix cores are not independently allocatable scalar capacity. They form a 2D
