@@ -74,6 +74,13 @@ may use their own subdirectories:
 
 ## Documents
 
-- [VM.md](VM.md): Booting and accessing the QEMU `ttsim` VM, validating Docker
-  and `kind`, mounting Tenstorrent device paths into `kind`, and troubleshooting
-  host-to-guest access.
+The complete project documentation is intentionally limited to these four files:
+
+- [DRA.md](DRA.md): DRA concepts, driver layout, resource-model constraints,
+  generated manifests, and supported card specifications.
+- [VM.md](VM.md): QEMU `ttsim` boot and access, `tt-kmd`, Docker/`kind`, device
+  mounting, validation, and troubleshooting.
+- [TELEMETRY.md](TELEMETRY.md): Node-local metrics, TT-Metalium profiler
+  integration, Prometheus packaging, and simulator limitations.
+- `README.md` (this file): authoritative project-wide context and document
+  routing.

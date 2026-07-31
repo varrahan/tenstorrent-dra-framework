@@ -76,6 +76,20 @@ QEMU bridge launch uses the single-chip `libttsim_wh.so`; multi-chip profiles
 belong to separate host-simulator validation until Tenstorrent documents their
 QEMU enumeration behavior.
 
+For host-library experiments, `vm/check-ttsim-lib.py` probes conventional PCI
+BDF device numbers through `libttsim_pci_config_rd32()` and can enforce a
+minimum observed count:
+
+```bash
+python3 vm/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh.so
+python3 vm/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh_x2.so --require-min 1
+python3 vm/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh_x8.so --require-min 4
+```
+
+With the v1.8.4 host libraries, `_x2` reports one PCI function and `_x8`
+reports four through that config-space API. These are observations, not a
+supported QEMU guest-enumeration contract.
+
 Do not use `tt-smi` as a QEMU bridge validation path. The official success
 criteria stop at PCI enumeration and compatible KMD binding, while UMD topology
 accesses still reach unimplemented simulator registers. Use `lspci`, the QEMU

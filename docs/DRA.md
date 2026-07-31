@@ -1,4 +1,4 @@
-# Dynamic Resource Allocation (DRA)
+# Dynamic Resource Allocation and Hardware Model
 
 ## What DRA is
 
@@ -35,6 +35,37 @@ devices, and low-latency topology rather than arbitrary single-card sharing.
 - **`resource.k8s.io`**: The API group where DRA types (`DeviceClass`,
   `ResourceSlice`, `ResourceClaim`, `ResourceClaimTemplate`) are defined.
 
+## Driver implementation
+
+The Go driver is rooted directly under `src/`:
+
+- [`cmd/tt-dra-driver`](../src/cmd/tt-dra-driver/): device discovery command.
+- [`cmd/tt-dra-manifests`](../src/cmd/tt-dra-manifests/): manifest generator.
+- [`internal/device`](../src/internal/device/): node-local device discovery.
+- [`internal/dra`](../src/internal/dra/): typed DRA builders and validation.
+- [`manifests`](../src/manifests/): generated reference YAML.
+- [`test`](../src/test/): Go tests and generated-artifact checks.
+
+Device discovery is intentionally independent of Kubernetes API writes. Go
+source in `src/internal/dra` is authoritative; checked-in YAML is generated:
+
+```bash
+go generate ./src
+```
+
+The supported DeviceClasses are:
+
+- `tenstorrent-wormhole-n150`
+- `tenstorrent-wormhole-n300`
+- `tenstorrent-blackhole-p100`
+- `tenstorrent-blackhole-p150`
+
+They select devices managed by `dra.tenstorrent.com` and require live
+ResourceSlices to publish `tenstorrent.com/chipSeries` and
+`tenstorrent.com/cardSeries`. The checked-in ResourceSlices and ResourceClaims
+are reference manifests for validation and examples, not live inventory or
+cluster policy.
+
 ## How DRA is used in this repo
 
 In this repository, DRA is the bridge between Tenstorrent hardware discovery and
@@ -44,9 +75,9 @@ workload scheduling:
   maps them to DRA-ready models.
 - The driver publishes:
   - **`DeviceClass` definitions** in
-    [`src/manifests/deviceclasses.yaml`](../../src/manifests/deviceclasses.yaml).
+    [`src/manifests/deviceclasses.yaml`](../src/manifests/deviceclasses.yaml).
   - **`ResourceSlice` inventory** in
-    [`src/manifests/resourceslices.yaml`](../../src/manifests/resourceslices.yaml).
+    [`src/manifests/resourceslices.yaml`](../src/manifests/resourceslices.yaml).
 - Tenstorrent-specific attributes used in DRA objects (chip series, card series,
   clock, memory/bandwidth, link interfaces, topology flags) are encoded as
   device attributes/capacities so the scheduler can make better placement decisions
@@ -101,14 +132,14 @@ The flow for this repository looks like:
     apiVersion: resource.k8s.io/v1
     kind: ResourceClaimTemplate
     metadata:
-    name: tenstorrent-accel-claim-template
+      name: tenstorrent-accel-claim-template
     spec:
-    spec:
+      spec:
         devices:
-        requests:
-        - name: accel
+          requests:
+          - name: accel
             exactly:
-            deviceClassName: tenstorrent-wormhole-n300
+              deviceClassName: tenstorrent-wormhole-n300
     ```
 
 3. Reference that template from a Pod:
@@ -117,14 +148,14 @@ The flow for this repository looks like:
     apiVersion: v1
     kind: Pod
     metadata:
-    name: tt-infer
+      name: tt-infer
     spec:
-    containers:
-    - name: app
+      containers:
+      - name: app
         image: your-app-image
         command: ["sleep", "infinity"]
-    resourceClaims:
-    - name: accel
+      resourceClaims:
+      - name: accel
         resourceClaimTemplateName: tenstorrent-accel-claim-template
     ```
 
@@ -132,9 +163,63 @@ When submitted, scheduler sees the Pod request, allocates a compatible Tenstorre
 device from `ResourceSlice`, records it on `ResourceClaim.status.allocation`, and
 schedules the Pod onto the matching node.
 
+## Resource-model constraints
+
+Scale-out scheduling is the primary design goal. Live ResourceSlices must use
+observed node-local data from `tt-kmd` sysfs, backing PCI sysfs, topology
+discovery, Kubernetes allocation state, or workload profiler data. They must
+not synthesize available capacity from public card tables.
+
+Tensix cores are not independently allocatable scalar capacity. They form a 2D
+mesh that requires contiguous-region allocation. ResourceSlices advertise
+`tenstorrent.com/tensixTopology`, `tenstorrent.com/tensixAllocation`, and
+`tenstorrent.com/gddrControllerLayout`; actual subregion and GDDR-local
+placement belongs in the allocator and kubelet plugin after isolation, reset,
+accounting, and runtime behavior are proven.
+
+Wormhole exposes six GDDR6 controllers per ASIC; Blackhole exposes eight.
+Blackhole also publishes its Big RISC-V core count as an attribute. Attribute
+and capacity names must be valid Kubernetes DRA `QualifiedName` values, using
+camelCase after the `tenstorrent.com/` prefix.
+
+## Tenstorrent PCIe card reference
+
+Public card specifications inform DeviceClass design and workload selection,
+but are not a live inventory source.
+
+### Blackhole
+
+| Card | PCIe | AI clock | Tensix | SRAM | Memory | Bandwidth | BLOCKFP8 | TBP | Cooling | Interconnect |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| p100a | 5.0 ×16 | Up to 1.35 GHz | 120 | 180 MB | 28 GB GDDR6 | 448 GB/s | 664 TFLOPS | 300 W | Active | No QSFP |
+| p150a | 5.0 ×16 | Up to 1.35 GHz | 120 | 180 MB | 32 GB GDDR6 | 512 GB/s | 664 TFLOPS | 300 W | Active | 4 × QSFP-DD 800G |
+| p150b | 5.0 ×16 | Up to 1.35 GHz | 120 | 180 MB | 32 GB GDDR6 | 512 GB/s | 664 TFLOPS | 300 W | Passive | 4 × QSFP-DD 800G |
+
+Blackhole has 16 SiFive x280 Big RISC-V cores per processor. The p150a and
+p150b variants are compute-equivalent and share one DRA class; their cooling
+differences are operational rather than scheduling capabilities.
+
+### Wormhole
+
+| Card | PCIe | AI clock | ASICs | Tensix | SRAM | Memory | Bandwidth | FP8 / FP16 / BLOCKFP8 | TBP | Cooling | Interconnect |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| n150d | 4.0 ×16 | 1 GHz | 1 | 72 | 108 MB | 12 GB GDDR6 | 288 GB/s | 262 / 74 / 148 TFLOPS | 160 W | Active | 2 × QSFP-DD 200G, 2 × Warp 100 |
+| n150s | 4.0 ×16 | 1 GHz | 1 | 72 | 108 MB | 12 GB GDDR6 | 288 GB/s | 262 / 74 / 148 TFLOPS | 160 W | Passive | 2 × QSFP-DD 200G, 2 × Warp 100 |
+| n300d | 4.0 ×16 | 1 GHz | 2 | 128 | 192 MB | 24 GB GDDR6 | 576 GB/s | 466 / 131 / 262 TFLOPS | 300 W | Active | 2 × QSFP-DD 200G, 2 × Warp 100 |
+| n300s | 4.0 ×16 | 1 GHz | 2 | 128 | 192 MB | 24 GB GDDR6 | 576 GB/s | 466 / 131 / 262 TFLOPS | 300 W | Passive | 2 × QSFP-DD 200G, 2 × Warp 100 |
+
+The d/s variants are compute-equivalent and differ primarily in cooling. n150
+is a single-ASIC card; n300 is dual-ASIC. Use n150 for lower-power capacity and
+n300 when aggregate compute and memory per node matter more.
+
 ## References
 
 - Kubernetes DRA guide: [Dynamic Resource Allocation][].
-- Project DRA scope and initial driver behavior: [`src/README.md`](../../src/README.md).
+- [Tenstorrent card index][cards]
+- [Blackhole documentation][blackhole documentation]
+- [Wormhole documentation][wormhole documentation]
 
 [Dynamic Resource Allocation]: https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/
+[blackhole documentation]: https://docs.tenstorrent.com/aibs/blackhole/index.html
+[wormhole documentation]: https://docs.tenstorrent.com/aibs/wormhole/index.html
+[cards]: https://tenstorrent.com/hardware/cards

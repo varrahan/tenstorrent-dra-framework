@@ -1,4 +1,4 @@
-# Tenstorrent DRA Metrics Exporter
+# Telemetry and Metrics Exporter
 
 This repository contains the blueprints for building a Kubernetes Dynamic Resource Allocation (DRA) metrics exporter for Tenstorrent hardware (Wormhole/Blackhole clusters).
 
@@ -92,3 +92,33 @@ this QEMU profile: source-UMD topology discovery terminates QEMU. Direct
 write used by mid-run dumps. Use compatible physical hardware or a compatible
 TTSim version for real dynamic samples; the VM remains suitable for exporter
 and snapshot-contract validation.
+
+## Optional TT-Metalium development environment
+
+TT-Metalium is not part of the QEMU bridge health check. For experiments that
+only need its Python APIs, use an isolated environment inside the VM instead of
+`tt-installer`:
+
+```bash
+/home/ubuntu/.local/bin/uv venv /home/ubuntu/.venvs/tt-metalium --python /usr/bin/python3
+source /home/ubuntu/.venvs/tt-metalium/bin/activate
+uv pip install ttnn==0.73.1 pydantic
+python -c 'import ttnn, ttnn.profiler; print(ttnn.__file__)'
+tt-run --help
+```
+
+Point `TT_METAL_RUNTIME_ROOT` at the wheel's bundled runtime artifacts and send
+profiler/TTNN reports to a writable work directory. Top-level `tt_lib` imports
+may require optional model dependencies such as PyTorch; those are not required
+for exporter or snapshot-contract validation.
+
+The `ttnn==0.73.1` wheel exposes profiler result APIs but is not Tracy-enabled.
+Dynamic workload occupancy requires a compatible source build:
+
+```bash
+git checkout v0.73.1
+./build_metal.sh
+```
+
+Tracy is enabled by default in that release; do not pass `--disable-profiler`.
+The equivalent manual CMake option is `-DENABLE_TRACY=ON`.
