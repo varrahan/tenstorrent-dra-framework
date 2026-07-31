@@ -3,8 +3,8 @@ package test
 import (
 	"testing"
 
-	"github.com/varrahan/tt-kind-dra/src/dra/internal/device"
-	"github.com/varrahan/tt-kind-dra/src/dra/internal/dra"
+	"github.com/varrahan/tt-kind-dra/src/internal/device"
+	"github.com/varrahan/tt-kind-dra/src/internal/dra"
 	resourceapi "k8s.io/api/resource/v1"
 )
 

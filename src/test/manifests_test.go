@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/varrahan/tt-kind-dra/src/dra/internal/dra"
+	"github.com/varrahan/tt-kind-dra/src/internal/dra"
 )
 
 func TestCheckedInManifestsMatchGeneratedDRAObjects(t *testing.T) {
@@ -124,7 +124,7 @@ func assertManifestEquals(t *testing.T, path, want string) {
 	t.Helper()
 	got := readManifest(t, path)
 	if got != want {
-		t.Fatalf("%s is not generated from Go source; run go generate ./src/dra", path)
+		t.Fatalf("%s is not generated from Go source; run go generate ./src", path)
 	}
 }
 

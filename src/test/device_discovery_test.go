@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/varrahan/tt-kind-dra/src/dra/internal/device"
+	"github.com/varrahan/tt-kind-dra/src/internal/device"
 )
 
 func TestDeviceDiscoverSingleCharacterDevice(t *testing.T) {

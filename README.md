@@ -141,7 +141,8 @@ built out.
 
 ## Source Layout
 
-- `src/dra/`: Go implementation of the Kubernetes DRA driver.
+- `src/`: Go implementation of the Kubernetes DRA driver, with commands,
+  internal packages, generated manifests, and tests directly beneath it.
 - `src/telemetry/`: C++ Tenstorrent metrics exporter.
 - `vm/`: shared VM requirements, tests, and configuration independent of
   source components.

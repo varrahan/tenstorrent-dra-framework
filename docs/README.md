@@ -64,12 +64,13 @@ make -C test/vm kind-clean
 
 ## Source Layout
 
-Runtime source code is split by component and language:
+The Go DRA driver is rooted directly at `src/`; additional runtime components
+may use their own subdirectories:
 
-- `src/dra/`: Go implementation of the Kubernetes DRA driver.
+- `src/`: Go DRA commands, internal packages, generated manifests, and tests.
 - `src/telemetry/`: C++ Tenstorrent metrics exporter.
 - `vm/`: shared VM requirements, tests, and configuration independent of
-  `src/` components.
+  runtime components.
 
 ## Documents
 

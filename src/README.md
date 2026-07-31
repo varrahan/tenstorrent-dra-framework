@@ -21,6 +21,15 @@ initial discovery package so that hardware detection can be tested independently
 Go tests for this component live under [`test/`](test/) so test code stays
 separate from the implementation packages.
 
+## Layout
+
+- [`cmd/tt-dra-driver`](cmd/tt-dra-driver/): device-discovery command.
+- [`cmd/tt-dra-manifests`](cmd/tt-dra-manifests/): manifest generator.
+- [`internal/device`](internal/device/): node-local device discovery.
+- [`internal/dra`](internal/dra/): typed DRA object builders and validation.
+- [`manifests`](manifests/): generated reference YAML.
+- [`test`](test/): Go tests for the driver packages and generated artifacts.
+
 ## DeviceClasses, ResourceSlices, And ResourceClaims
 
 Go source under [`internal/dra`](internal/dra/) is the source of truth for
@@ -30,7 +39,7 @@ after changing card specs, selectors, attributes, capacities, labels, or object
 builders:
 
 ```bash
-go generate ./src/dra
+go generate ./src
 ```
 
 The generated DeviceClass manifest lives at
@@ -49,7 +58,7 @@ specs and share `tenstorrent-blackhole-p150`.
 Apply it from inside the Kubernetes v1.34+ VM validation environment:
 
 ```bash
-kubectl apply -f src/dra/manifests/deviceclasses.yaml
+kubectl apply -f src/manifests/deviceclasses.yaml
 ```
 
 These classes select devices managed by `dra.tenstorrent.com` and require

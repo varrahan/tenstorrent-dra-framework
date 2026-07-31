@@ -44,9 +44,9 @@ workload scheduling:
   maps them to DRA-ready models.
 - The driver publishes:
   - **`DeviceClass` definitions** in
-    [`src/dra/manifests/deviceclasses.yaml`](../../src/dra/manifests/deviceclasses.yaml).
+    [`src/manifests/deviceclasses.yaml`](../../src/manifests/deviceclasses.yaml).
   - **`ResourceSlice` inventory** in
-    [`src/dra/manifests/resourceslices.yaml`](../../src/dra/manifests/resourceslices.yaml).
+    [`src/manifests/resourceslices.yaml`](../../src/manifests/resourceslices.yaml).
 - Tenstorrent-specific attributes used in DRA objects (chip series, card series,
   clock, memory/bandwidth, link interfaces, topology flags) are encoded as
   device attributes/capacities so the scheduler can make better placement decisions
@@ -91,8 +91,8 @@ The flow for this repository looks like:
 1. Install DRA manifests:
 
     ```bash
-    kubectl apply -f src/dra/manifests/deviceclasses.yaml \
-    -f src/dra/manifests/resourceslices.yaml
+    kubectl apply -f src/manifests/deviceclasses.yaml \
+    -f src/manifests/resourceslices.yaml
     ```
 
 2. Create a reusable request template for a Tenstorrent class:
@@ -135,6 +135,6 @@ schedules the Pod onto the matching node.
 ## References
 
 - Kubernetes DRA guide: [Dynamic Resource Allocation][].
-- Project DRA scope and initial driver behavior: [`src/dra/README.md`](../../src/dra/README.md).
+- Project DRA scope and initial driver behavior: [`src/README.md`](../../src/README.md).
 
 [Dynamic Resource Allocation]: https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/

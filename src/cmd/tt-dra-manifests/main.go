@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/varrahan/tt-kind-dra/src/dra/internal/dra"
+	"github.com/varrahan/tt-kind-dra/src/internal/dra"
 )
 
 func main() {

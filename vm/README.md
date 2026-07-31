@@ -7,8 +7,9 @@ Use this area for QEMU `ttsim` guest setup, host-independent VM validation
 configuration, and shared VM prerequisites that apply across the DRA driver,
 telemetry exporter, and future node-local components.
 
-Component-specific source, tests, and packaging stay under their owning
-`src/<component>/` directory.
+The DRA driver is rooted directly under `src/`. Other component-specific source,
+tests, and packaging stay under their owning directories, such as
+`src/telemetry/`.
 
 ## ttsim PCI Device Count
 

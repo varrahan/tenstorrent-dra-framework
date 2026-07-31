@@ -68,6 +68,8 @@ func ValidateResourceSlices(slices []resourceapi.ResourceSlice) error {
 			nodeSelections++
 			if *slice.Spec.NodeName == "" {
 				errs = append(errs, fmt.Errorf("%s spec.nodeName must not be empty", prefix))
+			} else {
+				errs = append(errs, validateDNSSubdomain(prefix+" spec.nodeName", *slice.Spec.NodeName)...)
 			}
 		}
 		if slice.Spec.NodeSelector != nil {
@@ -120,6 +122,9 @@ func ValidateResourceClaims(claims []resourceapi.ResourceClaim) error {
 		if len(claim.Spec.Devices.Requests) == 0 {
 			errs = append(errs, fmt.Errorf("%s must define at least one device request", prefix))
 		}
+		if len(claim.Spec.Devices.Requests) > resourceapi.DeviceRequestsMaxSize {
+			errs = append(errs, fmt.Errorf("%s has %d device requests, maximum is %d", prefix, len(claim.Spec.Devices.Requests), resourceapi.DeviceRequestsMaxSize))
+		}
 		for j := range claim.Spec.Devices.Requests {
 			request := &claim.Spec.Devices.Requests[j]
 			requestPrefix := fmt.Sprintf("%s request[%d] %q", prefix, j, request.Name)
@@ -132,6 +137,9 @@ func ValidateResourceClaims(claims []resourceapi.ResourceClaim) error {
 			if request.Exactly.Count < 1 {
 				errs = append(errs, fmt.Errorf("%s count must be greater than zero", requestPrefix))
 			}
+			if request.Exactly.AllocationMode != resourceapi.DeviceAllocationModeExactCount {
+				errs = append(errs, fmt.Errorf("%s allocationMode is %q, want %q", requestPrefix, request.Exactly.AllocationMode, resourceapi.DeviceAllocationModeExactCount))
+			}
 			errs = append(errs, validateSelectors(requestPrefix, request.Exactly.Selectors)...)
 		}
 	}
@@ -140,6 +148,9 @@ func ValidateResourceClaims(claims []resourceapi.ResourceClaim) error {
 
 func validateSelectors(prefix string, selectors []resourceapi.DeviceSelector) []error {
 	var errs []error
+	if len(selectors) > resourceapi.DeviceSelectorsMaxSize {
+		errs = append(errs, fmt.Errorf("%s has %d selectors, maximum is %d", prefix, len(selectors), resourceapi.DeviceSelectorsMaxSize))
+	}
 	env, err := cel.NewEnv(cel.Variable("device", cel.DynType))
 	if err != nil {
 		return []error{fmt.Errorf("create CEL environment: %w", err)}
@@ -153,6 +164,10 @@ func validateSelectors(prefix string, selectors []resourceapi.DeviceSelector) []
 		}
 		if strings.TrimSpace(selector.CEL.Expression) == "" {
 			errs = append(errs, fmt.Errorf("%s CEL expression must not be empty", selectorPrefix))
+			continue
+		}
+		if len(selector.CEL.Expression) > resourceapi.CELSelectorExpressionMaxLength {
+			errs = append(errs, fmt.Errorf("%s CEL expression exceeds %d bytes", selectorPrefix, resourceapi.CELSelectorExpressionMaxLength))
 			continue
 		}
 		ast, issues := env.Compile(selector.CEL.Expression)

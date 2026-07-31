@@ -5,7 +5,7 @@ This package contains the DRA-facing resource builders.
 The current code maps discovered Tenstorrent device nodes and example workload
 requests into Kubernetes `resource.k8s.io/v1` objects. Go source in this
 package is the source of truth for generated reference manifests under
-`src/dra/manifests/`.
+`src/manifests/`.
 
 The resource model is oriented toward scale-out HPC and ML clusters. Prefer
 attributes that help the scheduler place distributed jobs on compatible,

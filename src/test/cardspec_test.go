@@ -3,7 +3,7 @@ package test
 import (
 	"testing"
 
-	"github.com/varrahan/tt-kind-dra/src/dra/internal/dra"
+	"github.com/varrahan/tt-kind-dra/src/internal/dra"
 )
 
 func TestSupportedCardSpecsMatchComputeEquivalentTenstorrentRows(t *testing.T) {
