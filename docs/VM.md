@@ -50,7 +50,7 @@ Use the checked-in launcher, which implements the documented TCG command and
 binds SSH forwarding to localhost:
 
 ```bash
-./vm/launch-ttsim-qemu.sh
+./test/vm/host/launch-ttsim-qemu.sh
 ```
 
 Do not add `-enable-kvm`, `-accel kvm`, or `-cpu host`. Tenstorrent documents
@@ -68,7 +68,7 @@ booting the VM:
 
 ```bash
 cd /home/varrahan/development/software/tt-device-plugin
-python3 vm/check-ttsim-lib.py "$HOME/sim/libttsim_wh.so"
+python3 test/vm/host/check-ttsim-lib.py "$HOME/sim/libttsim_wh.so"
 ```
 
 Do not infer guest PCI counts from `_x2` or `_x8` profile names. The documented
@@ -76,14 +76,14 @@ QEMU bridge launch uses the single-chip `libttsim_wh.so`; multi-chip profiles
 belong to separate host-simulator validation until Tenstorrent documents their
 QEMU enumeration behavior.
 
-For host-library experiments, `vm/check-ttsim-lib.py` probes conventional PCI
+For host-library experiments, `test/vm/host/check-ttsim-lib.py` probes conventional PCI
 BDF device numbers through `libttsim_pci_config_rd32()` and can enforce a
 minimum observed count:
 
 ```bash
-python3 vm/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh.so
-python3 vm/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh_x2.so --require-min 1
-python3 vm/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh_x8.so --require-min 4
+python3 test/vm/host/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh.so
+python3 test/vm/host/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh_x2.so --require-min 1
+python3 test/vm/host/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh_x8.so --require-min 4
 ```
 
 With the v1.8.4 host libraries, `_x2` reports one PCI function and `_x8`
@@ -125,7 +125,7 @@ the Ubuntu 24.04 minimal image and `cidata` seed under
 `$HOME/sim/ttsim-qemu/`, then launch with:
 
 ```bash
-./vm/launch-ttsim-qemu.sh
+./test/vm/host/launch-ttsim-qemu.sh
 ```
 
 Initial TCG boot normally takes about one minute. Follow progress with:
@@ -152,7 +152,7 @@ that the documented simulator does not implement. Run the complete host/guest
 verification with:
 
 ```bash
-./vm/verify-ttsim-qemu.sh
+./test/vm/host/verify-ttsim-qemu.sh
 ```
 
 Do not install or run `tt-smi` for simulator validation or DRA discovery. The
@@ -184,7 +184,7 @@ The launcher uses QEMU's documented `-daemonize` and PID-file options, so no
 `tmux` session is required:
 
 ```bash
-./vm/launch-ttsim-qemu.sh
+./test/vm/host/launch-ttsim-qemu.sh
 cat "$HOME/sim/ttsim-qemu/vm.pid"
 tail -f /tmp/ttsim-qemu-serial.log
 ```

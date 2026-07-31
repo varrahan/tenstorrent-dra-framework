@@ -125,8 +125,7 @@ flows will be added as the implementation is built out.
 
 - `src/`: Go implementation of the Kubernetes DRA driver, with commands,
   internal packages, generated manifests, and tests directly beneath it.
-- `vm/`: shared VM requirements, tests, and configuration independent of
-  source components.
+- `test/vm/host/`: shared VM launcher/verification utilities and VM requirements.
 - `test/vm/`: VM validation scripts and kind smoke-test manifests.
 
 ## Documentation

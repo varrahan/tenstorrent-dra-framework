@@ -42,7 +42,7 @@ PCI sysfs, and Kubernetes DRA allocation state.
 ## Validation Assets
 
 Shared VM requirements, tests, and configuration that are independent of a
-specific `src/` component live under the repository's `vm/` directory.
+specific `src/` component live under the repository's `test/vm/host/` directory.
 
 Existing validation-only VM scripts and manifests live under the repository's
 `test/vm/` directory. From inside the QEMU VM, run:
@@ -68,8 +68,7 @@ assets into the guest checkout.
 The Go DRA driver is rooted directly at `src/`:
 
 - `src/`: Go DRA commands, internal packages, generated manifests, and tests.
-- `vm/`: shared VM requirements, tests, and configuration independent of
-  runtime components.
+- `test/vm/host/`: shared VM launcher/verification utilities and VM requirements.
 
 ## Documents
 

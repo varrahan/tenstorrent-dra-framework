@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-vm_root="${TTSIM_VM_ROOT:-$HOME/sim/ttsim-qemu}"
-ssh_port="${TTSIM_SSH_PORT:-2222}"
-ssh_key="${TTSIM_SSH_KEY:-$HOME/.ssh/ttsim_vm_ed25519}"
-pidfile="$vm_root/vm.pid"
+readonly TTSIM_VM_ROOT="$HOME/sim/ttsim-qemu"
+readonly TTSIM_SSH_PORT="2222"
+readonly TTSIM_SSH_KEY="$HOME/.ssh/ttsim_vm_ed25519"
+pidfile="$TTSIM_VM_ROOT/vm.pid"
 
 if [[ ! -r "$pidfile" ]] || ! kill -0 "$(<"$pidfile")" 2>/dev/null; then
   echo "ttsim QEMU bridge is not running" >&2
@@ -22,8 +22,8 @@ grep -q -- '-cpu max' <<<"$command_line"
 grep -q -- 'bar4-size=32M' <<<"$command_line"
 
 ssh_options=(
-  -i "$ssh_key"
-  -p "$ssh_port"
+  -i "$TTSIM_SSH_KEY"
+  -p "$TTSIM_SSH_PORT"
   -o BatchMode=yes
   -o ConnectTimeout=5
 )
