@@ -8,6 +8,8 @@ readonly TTSIM_LIBRARY="${TTSIM_LIBRARY:-$HOME/sim/libttsim_wh.so}"
 readonly TTSIM_SSH_PORT="${TTSIM_SSH_PORT:-2222}"
 readonly TTSIM_MONITOR_SOCKET="${TTSIM_MONITOR_SOCKET:-/tmp/ttsim-mon.sock}"
 readonly TTSIM_SERIAL_LOG="${TTSIM_SERIAL_LOG:-/tmp/ttsim-qemu-serial.log}"
+readonly TTSIM_MEMORY="${TTSIM_MEMORY:-8G}"
+readonly TTSIM_SMP="${TTSIM_SMP:-8}"
 
 pidfile="$TTSIM_VM_ROOT/vm.pid"
 
@@ -32,7 +34,8 @@ fi
 rm -f "$TTSIM_MONITOR_SOCKET" "$TTSIM_SERIAL_LOG" "$pidfile"
 
 "$QEMU_BIN" \
-  -m 8G -smp 4 \
+  -m "$TTSIM_MEMORY" -smp "$TTSIM_SMP" \
+  -accel tcg,thread=multi \
   -cpu max \
   -drive "file=$TTSIM_VM_ROOT/ubuntu.qcow2,if=virtio" \
   -drive "file=$TTSIM_VM_ROOT/seed.iso,if=virtio,format=raw,readonly=on" \

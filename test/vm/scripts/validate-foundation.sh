@@ -164,6 +164,16 @@ run_kind_smoke() {
   require_cmd kind
   require_cmd kubectl
 
+  # Nested Docker/kind requires bridge filtering and forwarding in the guest
+  # kernel. These are VM network prerequisites, not accelerator prerequisites.
+  if command -v sudo >/dev/null 2>&1; then
+    sudo modprobe overlay 2>/dev/null || true
+    sudo modprobe br_netfilter 2>/dev/null || true
+    sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+    sudo sysctl -w net.bridge.bridge-nf-call-iptables=1 >/dev/null 2>&1 || true
+    sudo sysctl -w net.bridge.bridge-nf-call-ip6tables=1 >/dev/null 2>&1 || true
+  fi
+
   "$SCRIPT_DIR/load-tt-kmd.sh"
 
   test -e "$TT_DEVICE_PATH" || fail "device path does not exist: $TT_DEVICE_PATH"

@@ -55,8 +55,10 @@ binds SSH forwarding to localhost:
 
 For deterministic launcher regression tests, the launcher accepts environment
 overrides for `QEMU_BIN`, `TTSIM_VM_ROOT`, `TTSIM_LIBRARY`, `TTSIM_SSH_PORT`,
-`TTSIM_MONITOR_SOCKET`, and `TTSIM_SERIAL_LOG`. Run the fake-QEMU test without
-hardware or a guest:
+`TTSIM_MONITOR_SOCKET`, `TTSIM_SERIAL_LOG`, `TTSIM_MEMORY`, and `TTSIM_SMP`.
+The default VM uses 8 vCPUs so nested kind has enough scheduler capacity under
+TCG; lower values are suitable only for bridge-only checks. Run the fake-QEMU
+test without hardware or a guest:
 
 ```bash
 make launcher-test
@@ -248,6 +250,24 @@ ssh_pwauth: false
 
 Use key-based SSH as `ubuntu`.
 
+### Nested kind troubleshooting
+
+The QEMU bridge and Tenstorrent character device are independent of kind's
+control-plane networking. If kind reports `NetworkPluginNotReady` or kubeadm
+times out creating its initial RBAC binding, inspect the guest's CPU pressure,
+containerd readiness, and CNI state before treating it as a hardware failure:
+
+```bash
+docker exec <cluster>-control-plane systemctl is-active containerd kubelet
+docker exec <cluster>-control-plane ls -la /etc/cni/net.d
+docker exec <cluster>-control-plane crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps -a
+```
+
+The launcher defaults to eight TCG vCPUs and explicit multi-threaded TCG; the
+validation script enables the guest bridge-netfilter/forwarding prerequisites.
+Production clusters do not run this nested kind CNI; they use their
+administrator-provided CNI.
+
 ---
 
 ## 5. SSH into the VM
@@ -436,7 +456,8 @@ and cross-component workload-state development.
 
 Use the inline commands below when debugging a specific validation step.
 
-Create a DRA-capable smoke-test kind cluster when needed. Kubernetes v1.34+ is
+Create a DRA-capable smoke-test kind cluster when needed. Kubernetes v1.34+
+is
 required for this project, so pin the kind node image instead of relying on the
 default image. This check assumes `tt-kmd` is loaded and
 `/dev/tenstorrent/<device>` exists; if it does not, complete the `tt-kmd`

@@ -44,11 +44,15 @@ TTSIM_LIBRARY="$vm_root/libttsim.so" \
 TTSIM_SSH_PORT="23456" \
 TTSIM_MONITOR_SOCKET="$test_root/monitor.sock" \
 TTSIM_SERIAL_LOG="$test_root/serial.log" \
+TTSIM_MEMORY="2G" \
+TTSIM_SMP="2" \
 FAKE_QEMU_LOG="$fake_log" \
   "$(dirname "$0")/launch-ttsim-qemu.sh" >/dev/null
 
 test -s "$fake_pidfile"
 grep -q -- '-cpu max' "$fake_log"
+grep -q -- '-accel tcg,thread=multi' "$fake_log"
+grep -q -- '-smp 2' "$fake_log"
 grep -q -- 'bar4-size=32M' "$fake_log"
 grep -q -- 'hostfwd=tcp:127.0.0.1:23456-:22' "$fake_log"
 grep -q -- "file=$vm_root/ubuntu.qcow2" "$fake_log"
