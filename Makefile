@@ -13,7 +13,7 @@ SHELL_FILES := $(shell find test/vm -type f -name '*.sh' -print)
 
 .PHONY: build test test-race vet fmt-check lint generate generate-check \
 	python-check shell-check image-build helm-lint kind-integration \
-	vm-validation check ci
+	vm-validation launcher-test check ci
 
 build:
 	$(GO) build ./...
@@ -68,6 +68,9 @@ kind-integration:
 vm-validation:
 	$(MAKE) -C test/vm vm-validate
 
-check: fmt-check test test-race lint generate-check python-check shell-check
+launcher-test:
+	$(MAKE) -C test/vm launcher-test
+
+check: fmt-check test test-race lint generate-check python-check shell-check launcher-test
 
 ci: check

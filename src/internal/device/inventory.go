@@ -46,6 +46,9 @@ func (r Roots) validate() error {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s must not be empty", name)
 		}
+		if !filepath.IsAbs(value) {
+			return fmt.Errorf("%s must be absolute: %q", name, value)
+		}
 	}
 	return nil
 }
@@ -404,15 +407,30 @@ func normalize(raw RawDevice, observedAt time.Time) InventoryDevice {
 		}
 	}
 	device.Eligible, device.RejectionReason = eligibility(device, raw.DiscoveryError)
-	for field, path := range map[string]string{
-		"device": raw.SysfsPath,
-		"pci":    raw.PCIPath,
-	} {
-		if path != "" {
-			device.Provenance[field] = Provenance{Source: "filesystem", Path: path, ObservedAt: observedAt}
-		}
-	}
+	populateProvenance(&device, raw, observedAt)
 	return device
+}
+
+func populateProvenance(device *InventoryDevice, raw RawDevice, observedAt time.Time) {
+	devicePath := raw.SysfsPath
+	pciPath := raw.PCIPath
+	add := func(field, source, path string) {
+		device.Provenance[field] = Provenance{Source: source, Path: path, ObservedAt: observedAt}
+	}
+	add("stableID", "pci-sysfs", pciPath)
+	add("characterDevice", "device-sysfs", devicePath)
+	add("pci", "pci-sysfs", pciPath)
+	add("chipSeries", "tenstorrent-sysfs", devicePath)
+	add("cardSeries", "tenstorrent-sysfs", devicePath)
+	add("firmwareVersion", "tenstorrent-sysfs", devicePath)
+	add("kmdVersion", "tenstorrent-sysfs", devicePath)
+	add("memory", "tenstorrent-sysfs", devicePath)
+	add("compute", "tenstorrent-sysfs", devicePath)
+	add("health", "tenstorrent-sysfs", devicePath)
+	add("fault", "tenstorrent-sysfs", devicePath)
+	add("fabric", "tenstorrent-sysfs", devicePath)
+	add("node", "device-sysfs", devicePath)
+	add("observedAt", "observer", devicePath)
 }
 
 func eligibility(device InventoryDevice, discoveryErr error) (bool, string) {
@@ -451,7 +469,7 @@ func pciIdentity(raw RawDevice) PCIIdentity {
 		SubsystemDevice: normalizeHex(raw.Values["pci.subsystem_device"]),
 		Revision:        normalizeHex(raw.Values["pci.revision"]),
 		NUMANode:        parseOptionalInt(raw.Values["pci.numa_node"]),
-		LinkState:       firstValue(raw.Values, "pci.uevent.DRIVER", "pci.current_link_state"),
+		LinkState:       firstValue(raw.Values, "pci.current_link_state", "pci.link_state"),
 		LinkSpeed:       raw.Values["pci.current_link_speed"],
 		LinkWidth:       parseInt(raw.Values["pci.current_link_width"]),
 	}

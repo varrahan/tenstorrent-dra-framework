@@ -2,12 +2,12 @@
 
 set -euo pipefail
 
-readonly QEMU_BIN="$HOME/.local/bin/qemu-system-x86_64"
-readonly TTSIM_VM_ROOT="$HOME/sim/ttsim-qemu"
-readonly TTSIM_LIBRARY="$HOME/sim/libttsim_wh.so"
-readonly TTSIM_SSH_PORT="2222"
-readonly TTSIM_MONITOR_SOCKET="/tmp/ttsim-mon.sock"
-readonly TTSIM_SERIAL_LOG="/tmp/ttsim-qemu-serial.log"
+readonly QEMU_BIN="${QEMU_BIN:-$HOME/.local/bin/qemu-system-x86_64}"
+readonly TTSIM_VM_ROOT="${TTSIM_VM_ROOT:-$HOME/sim/ttsim-qemu}"
+readonly TTSIM_LIBRARY="${TTSIM_LIBRARY:-$HOME/sim/libttsim_wh.so}"
+readonly TTSIM_SSH_PORT="${TTSIM_SSH_PORT:-2222}"
+readonly TTSIM_MONITOR_SOCKET="${TTSIM_MONITOR_SOCKET:-/tmp/ttsim-mon.sock}"
+readonly TTSIM_SERIAL_LOG="${TTSIM_SERIAL_LOG:-/tmp/ttsim-qemu-serial.log}"
 
 pidfile="$TTSIM_VM_ROOT/vm.pid"
 

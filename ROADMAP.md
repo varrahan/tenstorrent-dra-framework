@@ -133,7 +133,7 @@ architecture decision record (ADR), compatibility analysis, and roadmap update.
 
 ### Prerequisites
 
-- [ ] Preserve and validate the existing QEMU launcher regression fix.
+- [x] Preserve and validate the existing QEMU launcher regression fix.
 - [ ] Confirm the supported host-versus-VM validation boundary in
   [docs/README.md](docs/README.md) and [docs/VM.md](docs/VM.md).
 
@@ -145,7 +145,7 @@ identity or generated output.
 
 ### Ordered implementation checklist
 
-1. [ ] Commit and validate the QEMU launcher variable-name regression fix.
+1. [x] Commit and validate the QEMU launcher variable-name regression fix.
 2. [x] Rename the Go module and imports from
    `github.com/varrahan/tt-kind-dra` to the canonical
    `github.com/varrahan/tenstorrent-dra-framework` repository path.
@@ -180,7 +180,7 @@ identity or generated output.
 - [ ] Verify CI fails for formatting drift, stale generated YAML, vulnerable or
   disallowed dependencies, and unsupported Kubernetes versions.
 - [ ] Run `make -C test/vm vm-validate` inside the QEMU VM and retain its output.
-- [ ] Reproduce launcher behavior with overridden QEMU binary, monitor socket,
+- [x] Reproduce launcher behavior with overridden QEMU binary, monitor socket,
   serial log, PID file, and SSH port.
 
 ### Blocking exit gate
@@ -188,14 +188,17 @@ identity or generated output.
 - [ ] A clean clone builds and tests without undocumented tools.
 - [ ] All generated artifacts are reproducible.
 - [ ] Required CI checks are mandatory and green.
-- [ ] The existing VM foundation and launcher regression test pass.
+- [ ] The existing VM foundation and launcher regression test pass. The
+  launcher regression test passes locally; the VM foundation remains blocked
+  until kind's kube-apiserver starts successfully in the QEMU guest.
 
 ## Stage 1 — Portable, authoritative device inventory
 
 ### Prerequisites
 
 - [ ] Stage 0 gate is complete.
-- [ ] Canonical device identity and data-provenance rules have an approved ADR.
+- [x] Canonical device identity and data-provenance rules have an approved ADR
+  in [ADR 0007](adr/0007-inventory-identity-and-provenance.md).
 
 ### Intended system state
 
@@ -257,7 +260,8 @@ peers.
 
 ### Blocking exit gate
 
-- [x] Real and synthetic sysfs produce the same canonical schema.
+- [ ] Real and synthetic sysfs produce the same canonical schema. Synthetic
+  fixture parity is covered; real-VM evidence is pending the Stage 0 VM gate.
 - [x] Stable IDs survive restart and enumeration-order changes.
 - [x] Bad data removes only the affected device from eligibility.
 - [x] Inventory changes converge within 30 seconds.

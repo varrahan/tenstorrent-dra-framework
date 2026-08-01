@@ -37,12 +37,43 @@ func TestBuildSnapshotNormalizesAndSortsStableDevices(t *testing.T) {
 	if snapshot.Devices[0].Provenance["pci"].Path == "" {
 		t.Fatal("PCI provenance path is empty")
 	}
+	for _, field := range []string{"stableID", "characterDevice", "pci", "chipSeries", "cardSeries", "memory", "compute", "health", "fabric", "node", "observedAt"} {
+		provenance, ok := snapshot.Devices[0].Provenance[field]
+		if !ok || provenance.Source == "" || provenance.ObservedAt.IsZero() {
+			t.Fatalf("missing provenance for canonical field %q: %#v", field, snapshot.Devices[0].Provenance)
+		}
+	}
 	attributes := snapshot.Devices[0].SchedulerAttributes()
 	if _, ok := attributes["path"]; ok {
 		t.Fatal("scheduler attributes must not expose host paths")
 	}
 	if attributes["cardSeries"] != "p150" {
 		t.Fatalf("scheduler card series = %q", attributes["cardSeries"])
+	}
+}
+
+func TestFilesystemProviderRequiresAbsoluteRoots(t *testing.T) {
+	_, err := device.NewFilesystemProvider(device.Roots{
+		DeviceRoot:           "dev/tenstorrent",
+		TenstorrentSysfsRoot: "/sys/class/tenstorrent",
+		PCISysfsRoot:         "/sys/bus/pci/devices",
+		StateDir:             "/var/lib/tenstorrent-dra",
+	})
+	if err == nil {
+		t.Fatal("relative device root was accepted")
+	}
+}
+
+func TestPCIIdentityUsesObservedLinkState(t *testing.T) {
+	raw := inventoryRaw("0000:00:01.0", "wormhole", "n150", "Healthy", true)
+	raw.Values["pci.current_link_state"] = "L0"
+	raw.Values["pci.uevent.DRIVER"] = "tenstorrent"
+	snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{raw}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snapshot.Devices[0].PCI.LinkState; got != "L0" {
+		t.Fatalf("link state = %q, want L0", got)
 	}
 }
 

@@ -130,7 +130,8 @@ make check
 ```
 
 This runs Go build/tests/race/vet/lint checks, generated-manifest verification,
-Python compilation, and shell validation. Run the hardware and Kubernetes
+Python compilation, shell validation, and the overridable QEMU launcher
+regression test. Run the hardware and Kubernetes
 foundation checks inside the QEMU VM:
 
 ```bash

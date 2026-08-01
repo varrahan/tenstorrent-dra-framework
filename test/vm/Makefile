@@ -13,7 +13,7 @@ FAKE_INTERVAL ?= 1
 FAKE_ITERATIONS ?= 0
 FAKE_FIXTURE ?= normal
 
-.PHONY: help load-tt-kmd vm-validate kind-smoke kind-clean fake-hardware sync-test-vm
+.PHONY: help launcher-test load-tt-kmd vm-validate kind-smoke kind-clean fake-hardware sync-test-vm
 
 help:
 	@printf '%s\n' 'Validation targets:'
@@ -23,6 +23,9 @@ help:
 	@printf '  %-16s %s\n' 'kind-clean' 'Delete the validation kind cluster'
 	@printf '  %-16s %s\n' 'fake-hardware' 'Generate synthetic sysfs and workload state (runs until interrupted)'
 	@printf '  %-16s %s\n' 'sync-test-vm' 'Copy test/vm into the running QEMU guest repository'
+
+launcher-test:
+	./host/test-launcher.sh
 
 load-tt-kmd:
 	TT_DEVICE_PATH="$(TT_DEVICE_PATH)" \

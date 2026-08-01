@@ -53,6 +53,15 @@ binds SSH forwarding to localhost:
 ./test/vm/host/launch-ttsim-qemu.sh
 ```
 
+For deterministic launcher regression tests, the launcher accepts environment
+overrides for `QEMU_BIN`, `TTSIM_VM_ROOT`, `TTSIM_LIBRARY`, `TTSIM_SSH_PORT`,
+`TTSIM_MONITOR_SOCKET`, and `TTSIM_SERIAL_LOG`. Run the fake-QEMU test without
+hardware or a guest:
+
+```bash
+make launcher-test
+```
+
 Do not add `-enable-kvm`, `-accel kvm`, or `-cpu host`. Tenstorrent documents
 TCG as required because KVM cannot correctly split the 16-byte WC-mapped MMIO
 loads used by UMD. `-cpu max` exposes the guest CPU features while retaining
