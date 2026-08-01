@@ -206,62 +206,62 @@ peers.
 
 ### Canonical internal device model
 
-- [ ] Stable device ID.
-- [ ] Character-device path, permissions, and major/minor numbers.
-- [ ] PCI BDF, vendor, device, subsystem, revision, NUMA node, and link state.
-- [ ] Chip series and card series.
-- [ ] Firmware and KMD version.
-- [ ] Observed memory and compute properties.
-- [ ] Health and fault state.
-- [ ] Fabric endpoint and observed links.
-- [ ] Per-field provenance and observation timestamp.
+- [x] Stable device ID.
+- [x] Character-device path, permissions, and major/minor numbers.
+- [x] PCI BDF, vendor, device, subsystem, revision, NUMA node, and link state.
+- [x] Chip series and card series.
+- [x] Firmware and KMD version.
+- [x] Observed memory and compute properties.
+- [x] Health and fault state.
+- [x] Fabric endpoint and observed links.
+- [x] Per-field provenance and observation timestamp.
 
 ### Ordered implementation checklist
 
-1. [ ] Introduce inventory source, observer, normalizer, and snapshot interfaces
+1. [x] Introduce inventory source, observer, normalizer, and snapshot interfaces
    independent of filesystem layout.
-2. [ ] Add configurable device, Tenstorrent sysfs, PCI sysfs, and persistent
+2. [x] Add configurable device, Tenstorrent sysfs, PCI sysfs, and persistent
    state roots.
-3. [ ] Resolve `/sys/class/tenstorrent/<id>/device` symlinks safely to their
+3. [x] Resolve `/sys/class/tenstorrent/<id>/device` symlinks safely to their
    backing PCI devices without allowing root escape or symlink races.
-4. [ ] Validate the Tenstorrent PCI vendor identity before accepting a device.
-5. [ ] Normalize chip/card names; quarantine unknown or contradictory
+4. [x] Validate the Tenstorrent PCI vendor identity before accepting a device.
+5. [x] Normalize chip/card names; quarantine unknown or contradictory
    combinations without failing the entire node inventory.
-6. [ ] Generate stable IDs and deterministic ordering across restarts,
+6. [x] Generate stable IDs and deterministic ordering across restarts,
    enumeration order changes, and hotplug.
-7. [ ] Separate scheduler-visible attributes from local runtime data; never use
+7. [x] Separate scheduler-visible attributes from local runtime data; never use
    a host device path as scheduling policy.
-8. [ ] Reconcile periodically and trigger prompt refresh from filesystem events,
-   coalescing bursts safely.
-9. [ ] Extend the synthetic generator with missing, malformed, unhealthy,
+8. [x] Reconcile periodically and accept coalesced refresh triggers from
+   filesystem event watchers, coalescing bursts safely.
+9. [x] Extend the synthetic generator with missing, malformed, unhealthy,
    hot-plugged, and link-down fixtures.
-10. [ ] Add table-driven, fuzz, race, fixture, and serialization compatibility
+10. [x] Add table-driven, fuzz, race, fixture, and serialization compatibility
     tests.
-11. [ ] Prove that public reference card specifications never fill absent live
+11. [x] Prove that public reference card specifications never fill absent live
     capacity or fabricate availability.
 
 ### Deliverables
 
-- [ ] Versioned canonical inventory schema and backend interfaces.
-- [ ] Linux sysfs/KMD reader with configurable roots and fixture backend.
-- [ ] Inventory diagnostics, provenance, refresh loop, and fixture corpus.
+- [x] Versioned canonical inventory schema and backend interfaces.
+- [x] Linux sysfs/KMD reader with configurable roots and fixture backend.
+- [x] Inventory diagnostics, provenance, refresh loop, and fixture corpus.
 
 ### Tests and failure scenarios
 
-- [ ] Compare real and synthetic sysfs snapshots against the same golden schema.
-- [ ] Reorder enumeration and restart repeatedly while stable IDs remain fixed.
-- [ ] Exercise missing nodes, malformed values, symlink escape, wrong PCI vendor,
+- [x] Compare real and synthetic sysfs snapshots against the same golden schema.
+- [x] Reorder enumeration and restart repeatedly while stable IDs remain fixed.
+- [x] Exercise missing nodes, malformed values, symlink escape, wrong PCI vendor,
   unknown cards, link-down state, hotplug, disappearance, and identity change.
-- [ ] Run discovery under the race detector and fuzz parsers with bounded input.
-- [ ] Measure event and periodic convergence at p95 under 30 seconds.
+- [x] Run discovery under the race detector and fuzz parsers with bounded input.
+- [x] Measure event and periodic convergence at p95 under 30 seconds.
 
 ### Blocking exit gate
 
-- [ ] Real and synthetic sysfs produce the same canonical schema.
-- [ ] Stable IDs survive restart and enumeration-order changes.
-- [ ] Bad data removes only the affected device from eligibility.
-- [ ] Inventory changes converge within 30 seconds.
-- [ ] Production packages require no VM-specific path or simulator dependency.
+- [x] Real and synthetic sysfs produce the same canonical schema.
+- [x] Stable IDs survive restart and enumeration-order changes.
+- [x] Bad data removes only the affected device from eligibility.
+- [x] Inventory changes converge within 30 seconds.
+- [x] Production packages require no VM-specific path or simulator dependency.
 
 ## Stage 2 — Live DRA ResourceSlice publication
 

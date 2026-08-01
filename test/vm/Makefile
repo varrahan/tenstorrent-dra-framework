@@ -11,6 +11,7 @@ FAKE_STATE_ROOT ?= /tmp/tt-sim-state
 FAKE_DEVICE_COUNT ?= 32
 FAKE_INTERVAL ?= 1
 FAKE_ITERATIONS ?= 0
+FAKE_FIXTURE ?= normal
 
 .PHONY: help load-tt-kmd vm-validate kind-smoke kind-clean fake-hardware sync-test-vm
 
@@ -54,6 +55,7 @@ fake-hardware:
 		--sysfs-root "$(FAKE_SYSFS_ROOT)" \
 		--state-root "$(FAKE_STATE_ROOT)" \
 		--device-count "$(FAKE_DEVICE_COUNT)" \
+		--fixture "$(FAKE_FIXTURE)" \
 		--interval "$(FAKE_INTERVAL)" \
 		--iterations "$(FAKE_ITERATIONS)" \
 		--simulate-workloads

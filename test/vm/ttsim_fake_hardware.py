@@ -39,7 +39,7 @@ def _safe_unlink(path: Path) -> None:
         shutil.rmtree(path)
 
 
-def setup_mock_sysfs(root: Path, device_count: int) -> None:
+def setup_mock_sysfs(root: Path, device_count: int, fixture: str = "normal") -> None:
     if root.exists():
         shutil.rmtree(root)
     class_root = root / "class" / "tenstorrent"
@@ -47,6 +47,8 @@ def setup_mock_sysfs(root: Path, device_count: int) -> None:
     (root / "devices" / "pci0000:00").mkdir(parents=True, exist_ok=True)
 
     for i in range(device_count):
+        if fixture in ("missing", "hotplug") and i == device_count - 1:
+            continue
         index = str(i)
         pci_addr = f"0000:00:{i + 1:02x}.0"
         pci_dir = root / "devices" / "pci0000:00" / pci_addr
@@ -57,7 +59,7 @@ def setup_mock_sysfs(root: Path, device_count: int) -> None:
 
         # PCI identity and transport metadata.
         _write_value(pci_dir / "PCI_SLOT_NAME", pci_addr)
-        _write_value(pci_dir / "vendor", "0x1e52")
+        _write_value(pci_dir / "vendor", "0xdead" if fixture == "malformed" else "0x1e52")
         _write_value(pci_dir / "device", "0x401e")
         _write_value(pci_dir / "class", "0x120000")
         _write_value(pci_dir / "subsystem_vendor", "0x1e36")
@@ -87,11 +89,11 @@ def setup_mock_sysfs(root: Path, device_count: int) -> None:
 
         # Tenstorrent device attributes expected by the telemetry workflow.
         _write_value(device_dir / "uevent", f"DEVNAME=/dev/tenstorrent/{index}\n")
-        _write_value(device_dir / "dev", f"{226 + i}:{i}")
-        _write_value(device_dir / "architecture", "wormhole")
+        _write_value(device_dir / "dev", "not-a-device" if fixture == "malformed" else f"{226 + i}:{i}")
+        _write_value(device_dir / "architecture", "unknown" if fixture == "malformed" else "wormhole")
         _write_value(device_dir / "arch", "wormhole")
-        _write_value(device_dir / "board_type", "n300")
-        _write_value(device_dir / "health", "Healthy")
+        _write_value(device_dir / "board_type", "mystery" if fixture == "malformed" else "n300")
+        _write_value(device_dir / "health", "Unhealthy" if fixture == "unhealthy" else "Healthy")
         _write_value(device_dir / "tt_fw_bundle_ver", "v2.0.0")
         _write_value(device_dir / "tt_aiclk", 1000000000)
         _write_value(device_dir / "tt_axiclk", 800000000)
@@ -119,7 +121,7 @@ def setup_mock_sysfs(root: Path, device_count: int) -> None:
             random.randint(100000000, 150000000),
         )
 
-        _write_value(device_dir / "fabric_links" / "link0" / "state", "up")
+        _write_value(device_dir / "fabric_links" / "link0" / "state", "down" if fixture == "link-down" else "up")
         _write_value(device_dir / "fabric_links" / "link0" / "speed_gbps", 16)
         _write_value(
             device_dir / "fabric_links" / "link0" / "remote_bdf",
@@ -163,16 +165,23 @@ def simulate_system(
     iterations: int,
     state_root: Path | None = None,
     inject_workloads: bool = False,
+    fixture: str = "normal",
 ) -> None:
     if iterations <= 0:
+        iteration = 0
         while True:
+            if fixture == "hotplug" and iteration == 1:
+                setup_mock_sysfs(root, device_count, "normal")
             simulate_hardware_loop(root, device_count)
             if inject_workloads and state_root is not None:
                 simulate_workloads(state_root, device_count, interval, 1)
+            iteration += 1
             time.sleep(interval)
         return
 
     for index in range(iterations):
+        if fixture == "hotplug" and index == 1:
+            setup_mock_sysfs(root, device_count, "normal")
         simulate_hardware_loop(root, device_count)
         if inject_workloads and state_root is not None:
             simulate_workloads(state_root, device_count, interval, 1)
@@ -250,6 +259,12 @@ def parse_args() -> argparse.Namespace:
         help=f"Root for fake profiler state writes (default: {DEFAULT_STATE_ROOT})",
     )
     parser.add_argument("--device-count", type=int, default=DEFAULT_DEVICES)
+    parser.add_argument(
+        "--fixture",
+        choices=("normal", "missing", "malformed", "unhealthy", "hotplug", "link-down"),
+        default="normal",
+        help="fixture variant for inventory failure testing",
+    )
     parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL)
     parser.add_argument(
         "--iterations",
@@ -272,7 +287,7 @@ def main() -> None:
     if args.interval <= 0:
         raise SystemExit("interval must be > 0")
 
-    setup_mock_sysfs(args.sysfs_root, args.device_count)
+    setup_mock_sysfs(args.sysfs_root, args.device_count, args.fixture)
     print(f"[ttsim] initialized fake sysfs at {args.sysfs_root}")
 
     if args.simulate_workloads:
@@ -284,6 +299,7 @@ def main() -> None:
         iterations=args.iterations,
         state_root=args.state_root if args.simulate_workloads else None,
         inject_workloads=args.simulate_workloads,
+        fixture=args.fixture,
     )
 
 

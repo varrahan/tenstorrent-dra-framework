@@ -141,6 +141,11 @@ The VM workflow is required in CI on a self-hosted `ttsim` runner. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for change requirements and
 [RELEASE.md](RELEASE.md) for artifact and compatibility policy.
 
+The portable inventory command accepts `-device-root`, `-sysfs-root`,
+`-pci-sysfs-root`, and `-state-dir` flags. It emits the legacy device list plus
+the canonical inventory snapshot; synthetic sysfs roots can be supplied for
+host-side fixture tests.
+
 ## Source Layout
 
 - `src/`: Go implementation of the Kubernetes DRA driver, with commands,

@@ -46,6 +46,12 @@ The Go driver is rooted directly under `src/`:
 - [`manifests`](../src/manifests/): generated reference YAML.
 - [`test`](../src/test/): Go tests and generated-artifact checks.
 
+The discovery command now emits a canonical inventory snapshot in addition to
+the legacy device list. Its Linux roots are configurable with `-device-root`,
+`-sysfs-root`, `-pci-sysfs-root`, and `-state-dir`; synthetic roots are suitable
+for host-side fixture tests, while real `/dev` and `tt-kmd` sysfs validation is
+performed from the QEMU VM.
+
 Device discovery is intentionally independent of Kubernetes API writes. Go
 source in `src/internal/dra` is authoritative; checked-in YAML is generated:
 

@@ -414,6 +414,12 @@ This continuously updates fake Tenstorrent attributes under
 on the `make` command when a different test shape is needed. Set
 `FAKE_ITERATIONS=1` for a finite fixture-generation run.
 
+Inventory failure fixtures are available with `FAKE_FIXTURE=missing`,
+`malformed`, `unhealthy`, `hotplug`, or `link-down`; the default is `normal`.
+The hotplug fixture starts with the final device absent and adds it on the
+second finite iteration. These fixtures exercise fail-closed inventory handling
+and do not create kernel character devices.
+
 The fake tree does not create kernel character devices. Continue to use the
 documented `ttsim` plus `tt-kmd` path for kind device mounting and pod
 visibility checks; use the synthetic roots for inventory, topology, health,
