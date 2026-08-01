@@ -29,9 +29,9 @@ if ss -H -ltn "sport = :$TTSIM_SSH_PORT" | grep -q .; then
   exit 1
 fi
 
-rm -f "$monitor_socket" "$serial_log" "$pidfile"
+rm -f "$TTSIM_MONITOR_SOCKET" "$TTSIM_SERIAL_LOG" "$pidfile"
 
-"$qemu_bin" \
+"$QEMU_BIN" \
   -m 8G -smp 4 \
   -cpu max \
   -drive "file=$TTSIM_VM_ROOT/ubuntu.qcow2,if=virtio" \

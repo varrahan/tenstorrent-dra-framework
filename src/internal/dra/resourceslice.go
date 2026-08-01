@@ -3,7 +3,7 @@ package dra
 import (
 	"fmt"
 
-	"github.com/varrahan/tt-kind-dra/src/internal/device"
+	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

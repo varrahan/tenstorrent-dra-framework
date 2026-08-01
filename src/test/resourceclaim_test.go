@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/varrahan/tt-kind-dra/src/internal/dra"
+	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
 	resourceapi "k8s.io/api/resource/v1"
 )
 

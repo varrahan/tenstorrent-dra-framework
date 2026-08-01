@@ -121,6 +121,26 @@ accessing the QEMU `ttsim` VM. Initial source scaffolds exist for the Go DRA
 driver; Kubernetes API integration, topology discovery, and hardware janitor
 flows will be added as the implementation is built out.
 
+## Development checks
+
+Host-safe checks are available from the repository root:
+
+```bash
+make check
+```
+
+This runs Go build/tests/race/vet/lint checks, generated-manifest verification,
+Python compilation, and shell validation. Run the hardware and Kubernetes
+foundation checks inside the QEMU VM:
+
+```bash
+make vm-validation
+```
+
+The VM workflow is required in CI on a self-hosted `ttsim` runner. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for change requirements and
+[RELEASE.md](RELEASE.md) for artifact and compatibility policy.
+
 ## Source Layout
 
 - `src/`: Go implementation of the Kubernetes DRA driver, with commands,
@@ -130,6 +150,8 @@ flows will be added as the implementation is built out.
 
 ## Documentation
 
+- [ROADMAP.md](ROADMAP.md): gated production-readiness plan from the current
+  scaffold through the simulator-qualified v1.0 release.
 - [docs/README.md](docs/README.md): required documentation entry point with
   project-wide DRA, Kubernetes version, and `kind` device-mount constraints.
 - [docs/DRA.md](docs/DRA.md): DRA implementation, resource model, manifests,

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/varrahan/tt-kind-dra/src/internal/dra"
+	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
 )
 
 func main() {

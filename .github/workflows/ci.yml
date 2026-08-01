@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.24.0'
+  HELM_VERSION: 'v3.18.4'
+  GOVULNCHECK_VERSION: 'v1.6.0'
+  GO_LICENSES_VERSION: 'v2.0.1'
+
+jobs:
+  go:
+    name: Go checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-go@v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Install pinned lint tool
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
+      - name: Add Go tool directory to PATH
+        run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Run Go and generated-artifact checks
+        run: make build test test-race vet fmt-check lint generate-check
+
+  python-and-shell:
+    name: Python and shell checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+      - name: Run script checks
+        run: make python-check shell-check
+
+  security:
+    name: Dependency, license, and vulnerability checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-go@v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }} ./...
+      - name: Check dependency licenses
+        run: go run github.com/google/go-licenses/v2@${{ env.GO_LICENSES_VERSION }} check ./...
+
+  helm:
+    name: Helm validation
+    if: ${{ hashFiles('deployments/helm/**') != '' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Install Helm
+        uses: azure/setup-helm@v4.3.0
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Lint chart
+        run: make helm-lint
+
+  image:
+    name: Image build
+    if: ${{ hashFiles('Dockerfile') != '' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Build image
+        run: make image-build
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/dependency-review-action@v4.6.0

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/varrahan/tt-kind-dra/src/internal/device"
+	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-module github.com/varrahan/tt-kind-dra
+module github.com/varrahan/tenstorrent-dra-framework
 
 go 1.24.0
 
