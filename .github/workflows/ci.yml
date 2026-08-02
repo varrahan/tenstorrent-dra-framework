@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
       - name: Install Helm
-        uses: azure/setup-helm@v4.3.0
+        uses: azure/setup-helm@v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Lint chart
