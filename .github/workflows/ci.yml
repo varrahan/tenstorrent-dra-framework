@@ -88,4 +88,4 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/dependency-review-action@v4.6.0
+      - uses: actions/dependency-review-action@v5.0.0
