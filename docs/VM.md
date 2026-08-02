@@ -55,7 +55,10 @@ binds SSH forwarding to localhost:
 
 For deterministic launcher regression tests, the launcher accepts environment
 overrides for `QEMU_BIN`, `TTSIM_VM_ROOT`, `TTSIM_LIBRARY`, `TTSIM_SSH_PORT`,
-`TTSIM_MONITOR_SOCKET`, `TTSIM_SERIAL_LOG`, `TTSIM_MEMORY`, and `TTSIM_SMP`.
+`TTSIM_MONITOR_SOCKET`, `TTSIM_SERIAL_LOG`, `TTSIM_MEMORY`, `TTSIM_SMP`, and
+`TTSIM_CPUSET`. Set `TTSIM_CPUSET` to an administrator-selected set of idle
+host CPUs (for example `16-21`) before launch; the launcher applies it with
+`taskset`. Leave it empty when CPU placement is managed externally.
 The default VM uses 8 vCPUs so nested kind has enough scheduler capacity under
 TCG; lower values are suitable only for bridge-only checks. Run the fake-QEMU
 test without hardware or a guest:
@@ -268,6 +271,29 @@ validation script enables the guest bridge-netfilter/forwarding prerequisites.
 Production clusters do not run this nested kind CNI; they use their
 administrator-provided CNI.
 
+### Split Kubernetes control plane
+
+For faster Kubernetes qualification, run the control plane on the host and
+enroll the QEMU guest as a real worker. Start the host-native control plane:
+
+```bash
+make -C test/vm split-control-plane
+```
+
+The helper exposes the API on host port `6443`; from QEMU user networking the
+guest reaches it at `10.0.2.2:6443` (override with `SPLIT_API_PORT` when needed).
+The guest still needs kubelet, kubeadm,
+containerd, CNI configuration, and bootstrap credentials. The DRA node daemon
+and workload Pods must run on that guest worker, because a host kind container
+cannot consume a character device that exists only inside the VM.
+
+For the isolated QEMU worker, `test/vm/host/split-worker-cni.conflist` is a
+validation-only local bridge configuration. Install it under
+`/etc/cni/net.d/` after joining the cluster when kindnet cannot route between
+the host Docker bridge and QEMU user networking. It makes the worker Ready for
+node-level validation; production deployments must use the cluster's supported
+multi-node CNI instead.
+
 ---
 
 ## 5. SSH into the VM
@@ -436,6 +462,25 @@ python3 test/vm/ttsim_fake_hardware.py \
   --simulate-workloads
 ```
 
+To exercise the driver’s character-device eligibility path with synthetic
+hardware, run the generator as root in the VM and provide a separate device
+root:
+
+```bash
+sudo python3 test/vm/ttsim_fake_hardware.py \
+  --sysfs-root /tmp/tt-sim-sysfs \
+  --state-root /tmp/tt-sim-state \
+  --device-root /tmp/tt-sim-dev \
+  --device-count 2 \
+  --create-device-nodes \
+  --simulate-workloads
+```
+
+Point the driver at `/tmp/tt-sim-dev`, the generated class sysfs, and its
+generated PCI view. These are Linux character-device stand-ins only; they do
+not provide ASIC execution. The script still does not write Kubernetes claim
+status, so DRA allocation remains a genuine cluster/controller check.
+
 This continuously updates fake Tenstorrent attributes under
 `/tmp/tt-sim-sysfs/class/tenstorrent` and writes v2 workload snapshots under
 `/tmp/tt-sim-state/v2/workloads`. Override `FAKE_SYSFS_ROOT`,
@@ -449,7 +494,8 @@ The hotplug fixture starts with the final device absent and adds it on the
 second finite iteration. These fixtures exercise fail-closed inventory handling
 and do not create kernel character devices.
 
-The fake tree does not create kernel character devices. Continue to use the
+Without `--create-device-nodes`, the fake tree does not create kernel character
+devices. Continue to use the
 documented `ttsim` plus `tt-kmd` path for kind device mounting and pod
 visibility checks; use the synthetic roots for inventory, topology, health,
 and cross-component workload-state development.

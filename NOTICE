@@ -1,8 +1,0 @@
-Tenstorrent Kubernetes DRA Framework
-Copyright 2026 Tenstorrent contributors
-
-This product includes software developed by contributors to the
-Tenstorrent Kubernetes DRA Framework.
-
-Third-party dependency notices are maintained by the dependency and license
-checks in CI and must be added here when a dependency requires attribution.

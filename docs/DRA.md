@@ -52,6 +52,33 @@ the legacy device list. Its Linux roots are configurable with `-device-root`,
 for host-side fixture tests, while real `/dev` and `tt-kmd` sysfs validation is
 performed from the QEMU VM.
 
+The same binary can run as the node publisher with `-publish`. In that mode it
+uses in-cluster configuration by default (or `-kubeconfig` outside a Pod),
+requires `-node-name` or `NODE_NAME`, reconciles at the configured `-interval`,
+and publishes only healthy, eligible, locally observed character devices. The
+publisher uses deterministic node-owned pools, chunks inventories at the API
+limit, and removes stale slices. Kubelet lifecycle and CDI injection are
+separate stages and are not implied by ResourceSlice publication.
+
+The node daemon also has a `-kubelet-plugin` mode. It starts the official
+Kubernetes kubelet DRA helper and uses the versioned local state directory plus
+the configurable `-cdi-dir` to prepare and unprepare claims. Preparation
+validates driver, node pool, device health, and current inventory before writing
+one CDI spec containing only the allocated character devices. This mode still
+requires the deployment's RBAC, host mounts, and runtime CDI configuration.
+
+When configured with the node-local hardware janitor, preparation additionally
+requires probe, reset, scrub, and readiness verification. Unprepare performs
+cleanup and verification before releasing ownership; failures quarantine the
+device and fail closed.
+
+The same binary provides `-topology-node`, `-fabric-controller`, and
+`-workload-controller` modes. The node mode publishes topology observations, the
+fabric mode validates and publishes the current graph, and the workload mode
+turns `TenstorrentWorkload` objects into exact claims and node-affine rank Pods.
+Rank Pods remain behind a scheduling gate until all their claims report an
+allocation.
+
 Device discovery is intentionally independent of Kubernetes API writes. Go
 source in `src/internal/dra` is authoritative; checked-in YAML is generated:
 
