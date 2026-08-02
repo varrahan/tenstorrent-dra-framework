@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "tenstorrent-dra.name" . }}-publisher
+spec:
+  selector:
+    matchLabels: {app: tenstorrent-dra-publisher}
+  template:
+    metadata:
+      labels: {app: tenstorrent-dra-publisher}
+    spec:
+      serviceAccountName: {{ include "tenstorrent-dra.name" . }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      containers:
+      - name: publisher
+        image: {{ include "tenstorrent-dra.image" . }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args: ["-publish", "-node-name", "$(NODE_NAME)", "-interval", "{{ .Values.interval }}", "-device-root", "{{ .Values.deviceRoot }}", "-sysfs-root", "{{ .Values.sysfsRoot }}", "-pci-sysfs-root", "{{ .Values.pciSysfsRoot }}", "-state-dir", "{{ .Values.stateDir }}"]
+        env:
+        - name: NODE_NAME
+          valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+        securityContext: {readOnlyRootFilesystem: true}
+        volumeMounts:
+        - {name: device, mountPath: {{ .Values.deviceRoot }}, readOnly: true}
+        - {name: sysfs, mountPath: {{ .Values.sysfsRoot }}, readOnly: true}
+        - {name: pci, mountPath: {{ .Values.pciSysfsRoot }}, readOnly: true}
+      volumes:
+      - {name: device, hostPath: {path: {{ .Values.deviceRoot }}, type: Directory}}
+      - {name: sysfs, hostPath: {path: {{ .Values.sysfsRoot }}, type: Directory}}
+      - {name: pci, hostPath: {path: {{ .Values.pciSysfsRoot }}, type: Directory}}

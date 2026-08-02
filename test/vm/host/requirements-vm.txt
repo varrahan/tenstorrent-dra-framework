@@ -1,0 +1,31 @@
+# VM packages/tools expected for the official QEMU ttsim bridge baseline.
+#
+# This file is documentation for a shared VM environment. System packages are
+# installed with apt; Python tools are installed in a venv or pipx.
+
+cmake
+g++
+git
+make
+pkg-config
+python3-pip
+python3-venv
+curl
+dkms
+linux-headers-generic
+tt-kmd tag ttkmd-2.3.0 (do not use a newer KMD for this simulator baseline)
+
+# Project-specific tools below are optional and are not part of Tenstorrent's
+# QEMU bridge success criteria.
+uv from https://astral.sh/uv/install.sh
+tt-flash via uvx tt-flash@latest
+tt-system-firmware bundles from https://github.com/tenstorrent/tt-system-firmware
+
+QEMU must use TCG with -cpu max. Do not enable KVM or use -cpu host.
+Use /home/varrahan/sim/libttsim_wh.so from the documented v1.8.4 setup and
+bar4-size=32M. PCI enumeration, BAR layout, KMD binding, sysfs, and the
+character device are the bridge success criteria; TTNN open_device is not.
+tt-smi is intentionally not a VM prerequisite. Use tt-kmd sysfs, backing PCI
+sysfs, and Kubernetes DRA allocation state for inventory and allocation checks.
+Do not use Tenstorrent tt-installer for this QEMU VM unless the simulator
+safety policy changes; the installer path includes TT-SMI setup and validation.

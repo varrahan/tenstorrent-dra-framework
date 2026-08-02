@@ -1,32 +1,37 @@
 # VM.md — QEMU `ttsim` VM access guide
 
-This document is for agents and developers that need to boot, access, and run work inside the QEMU `ttsim` Ubuntu VM.
+This document is for agents and developers that need to boot, access, and run
+work inside the QEMU `ttsim` Ubuntu VM. The authoritative setup is Tenstorrent's
+[ttsim QEMU Bridge lesson](https://docs.tenstorrent.com/tt-vscode-toolkit/lessons/ttsim-qemu-bridge/).
+The commands below follow that lesson; project-specific Kubernetes checks are
+clearly separated from the simulator baseline.
 
 The VM is launched with a custom QEMU binary and a simulated Tenstorrent device:
 
 - Guest OS image: Ubuntu 24.04 minimal cloud image
-- Runtime device: `-device ttsim,lib=/home/varrahan/sim/libttsim_wh.so,bar4-size=32M`
-- Guest tooling already expected in the image: Docker, kind, `kubectl`, and
-  `tt-kmd`
-- Console mode: `-nographic`
+- Runtime device: `-device ttsim,lib=$HOME/sim/libttsim_wh.so,bar4-size=32M`
+- QEMU acceleration: TCG with `-cpu max`; KVM must not be enabled
+- Supported guest driver for the documented simulator path: `ttkmd-2.3.0`
+- Console mode: serial log plus QEMU monitor socket
 - Recommended access path: SSH from host to guest through QEMU user-networking port forwarding
 
-> Important: the original command uses QEMU user-mode networking without a `hostfwd` rule. In that form, the guest can usually make outbound network connections, but agents on the host cannot SSH into the guest through `127.0.0.1:<port>`. Use the recommended command below to expose guest SSH on host `127.0.0.1:2222`.
+> Important: as documented by Tenstorrent, the QEMU PCI path is not a complete
+> TTNN execution environment yet. PCI enumeration and `tt-kmd` binding are the
+> supported bridge checks. Current TTNN topology discovery can still abort in
+> an unimplemented simulator register path.
 
 ---
 
 ## 1. Host prerequisites
 
-Run these checks from the QEMU build directory on the QEMU host before starting
-the VM:
+Run these checks on the QEMU host before starting the VM:
 
 ```bash
-test -x ./build/qemu-system-x86_64
-test -r /usr/share/ovmf/OVMF.fd
-test -r /home/varrahan/images/ubuntu-24.04-minimal-cloudimg-amd64.img
-test -r /home/varrahan/images/seed.iso
-test -r /home/varrahan/sim/libttsim_wh.so
-test -r /dev/kvm && test -w /dev/kvm
+test -x "$HOME/.local/bin/qemu-system-x86_64"
+test -r "$HOME/sim/ttsim-qemu/ubuntu.qcow2"
+test -r "$HOME/sim/ttsim-qemu/seed.iso"
+test -r "$HOME/sim/libttsim_wh.so"
+"$HOME/.local/bin/qemu-system-x86_64" -device help | grep ttsim
 ```
 
 Check whether the default SSH-forward port is free:
@@ -41,24 +46,68 @@ If port `2222` is already in use, pick another host port such as `2223` and use 
 
 ## 2. Recommended launch command with SSH access
 
-Start the VM from the QEMU build directory where
-`./build/qemu-system-x86_64` exists:
+Use the checked-in launcher, which implements the documented TCG command and
+binds SSH forwarding to localhost:
 
 ```bash
-cd ~/emulators/ttsim-qemu
-
-./build/qemu-system-x86_64 \
-  -m 8G \
-  -smp 4 \
-  -enable-kvm \
-  -nographic \
-  -bios /usr/share/ovmf/OVMF.fd \
-  -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22 \
-  -device virtio-net-pci,netdev=net0 \
-  -drive file=/home/varrahan/images/ubuntu-24.04-minimal-cloudimg-amd64.img,format=qcow2,if=virtio \
-  -cdrom /home/varrahan/images/seed.iso \
-  -device ttsim,lib=/home/varrahan/sim/libttsim_wh.so,bar4-size=32M
+./test/vm/host/launch-ttsim-qemu.sh
 ```
+
+For deterministic launcher regression tests, the launcher accepts environment
+overrides for `QEMU_BIN`, `TTSIM_VM_ROOT`, `TTSIM_LIBRARY`, `TTSIM_SSH_PORT`,
+`TTSIM_MONITOR_SOCKET`, `TTSIM_SERIAL_LOG`, `TTSIM_MEMORY`, `TTSIM_SMP`, and
+`TTSIM_CPUSET`. Set `TTSIM_CPUSET` to an administrator-selected set of idle
+host CPUs (for example `16-21`) before launch; the launcher applies it with
+`taskset`. Leave it empty when CPU placement is managed externally.
+The default VM uses 8 vCPUs so nested kind has enough scheduler capacity under
+TCG; lower values are suitable only for bridge-only checks. Run the fake-QEMU
+test without hardware or a guest:
+
+```bash
+make launcher-test
+```
+
+Do not add `-enable-kvm`, `-accel kvm`, or `-cpu host`. Tenstorrent documents
+TCG as required because KVM cannot correctly split the 16-byte WC-mapped MMIO
+loads used by UMD. `-cpu max` exposes the guest CPU features while retaining
+TCG's MMIO emulation.
+
+The single-chip v1.8.4 Wormhole profile is the documented QEMU bridge profile.
+Its supported success criteria are PCI enumeration, the three correct BARs,
+and `ttkmd-2.3.0` binding. Firmware-facing UMD calls and `ttnn.open_device()`
+are not current bridge success criteria.
+
+For multi-card simulator work, verify the selected `libttsim` profile before
+booting the VM:
+
+```bash
+cd /home/varrahan/development/software/tt-device-plugin
+python3 test/vm/host/check-ttsim-lib.py "$HOME/sim/libttsim_wh.so"
+```
+
+Do not infer guest PCI counts from `_x2` or `_x8` profile names. The documented
+QEMU bridge launch uses the single-chip `libttsim_wh.so`; multi-chip profiles
+belong to separate host-simulator validation until Tenstorrent documents their
+QEMU enumeration behavior.
+
+For host-library experiments, `test/vm/host/check-ttsim-lib.py` probes conventional PCI
+BDF device numbers through `libttsim_pci_config_rd32()` and can enforce a
+minimum observed count:
+
+```bash
+python3 test/vm/host/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh.so
+python3 test/vm/host/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh_x2.so --require-min 1
+python3 test/vm/host/check-ttsim-lib.py /home/varrahan/sim/libttsim_wh_x8.so --require-min 4
+```
+
+With the v1.8.4 host libraries, `_x2` reports one PCI function and `_x8`
+reports four through that config-space API. These are observations, not a
+supported QEMU guest-enumeration contract.
+
+Do not use `tt-smi` as a QEMU bridge validation path. The official success
+criteria stop at PCI enumeration and compatible KMD binding, while UMD topology
+accesses still reach unimplemented simulator registers. Use `lspci`, the QEMU
+monitor, `tt-kmd` sysfs, and `/dev/tenstorrent/0` as the bridge checks.
 
 This maps:
 
@@ -68,28 +117,93 @@ host 127.0.0.1:2222  ->  guest 127.0.0.1:22
 
 Keep the bind address as `127.0.0.1` unless there is a specific need to expose the VM to other machines. Binding to all interfaces can make the VM reachable by other hosts on the network.
 
+### Reproducible build and bridge verification
+
+Build Tenstorrent's QEMU fork exactly as documented:
+
+```bash
+git clone -b stable-11.0-ttsim --depth=1 \
+  https://github.com/tenstorrent/ttsim-qemu \
+  "$HOME/emulators/ttsim-qemu"
+mkdir "$HOME/emulators/ttsim-qemu/build"
+cd "$HOME/emulators/ttsim-qemu/build"
+../configure --target-list=x86_64-softmmu \
+  --prefix="$HOME/.local" --disable-docs
+ninja -j"$(nproc)"
+ninja install
+```
+
+The documented setup currently uses the v1.8.4 simulator artifacts. Verify
+downloads against the SHA-256 digests published by GitHub's release API. Store
+the Ubuntu 24.04 minimal image and `cidata` seed under
+`$HOME/sim/ttsim-qemu/`, then launch with:
+
+```bash
+./test/vm/host/launch-ttsim-qemu.sh
+```
+
+Initial TCG boot normally takes about one minute. Follow progress with:
+
+```bash
+tail -f /tmp/ttsim-qemu-serial.log
+```
+
+On a fresh guest, install the KMD version documented as compatible with this
+bridge:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y linux-headers-"$(uname -r)" build-essential git
+git clone --depth=1 --branch ttkmd-2.3.0 \
+  https://github.com/tenstorrent/tt-kmd.git "$HOME/tt-kmd"
+make -C "$HOME/tt-kmd" -j"$(nproc)"
+sudo insmod "$HOME/tt-kmd/tenstorrent.ko"
+sudo chmod a+rw /dev/tenstorrent/0
+```
+
+Do not substitute a newer KMD. Versions after 2.3.0 probe reset-unit registers
+that the documented simulator does not implement. Run the complete host/guest
+verification with:
+
+```bash
+./test/vm/host/verify-ttsim-qemu.sh
+```
+
+Do not install or run `tt-smi` for simulator validation or DRA discovery. The
+safe inventory path is:
+
+- `tt-kmd` device and firmware attributes under `/sys/class/tenstorrent`
+- backing PCI identity and resource files under each device's `device/` sysfs
+  directory
+- Kubernetes DRA allocation state for reserved device usage
+
+Download and verify the current TT system firmware bundle inside the VM when
+debugging firmware compatibility:
+
+```bash
+ssh -i /home/varrahan/.ssh/ttsim_vm_ed25519 -p 2222 ubuntu@127.0.0.1 \
+  'bash -lc "cd /home/ubuntu && curl -L -o fw_pack-19.11.0.fwbundle https://github.com/tenstorrent/tt-system-firmware/releases/download/v19.11.0/fw_pack-19.11.0.fwbundle && echo '\''500b5af0d7fba867fed443b59bcefae837bd91e5efdb73fccc2005cecb18bf2a  fw_pack-19.11.0.fwbundle'\'' | sha256sum -c -"'
+```
+
+The unsafe `tt-smi` commands previously used to isolate the simulator/UMD
+mismatch are intentionally not listed here. Reintroduce them only in a dedicated
+crash-reproduction note, never in validation, DRA discovery, or
+normal VM setup instructions.
+
 ---
 
 ## 3. Detached launch for agents
 
-For long-running agent work, run QEMU inside `tmux` so the VM survives terminal disconnects:
+The launcher uses QEMU's documented `-daemonize` and PID-file options, so no
+`tmux` session is required:
 
 ```bash
-tmux new -s ttsim-vm
+./test/vm/host/launch-ttsim-qemu.sh
+cat "$HOME/sim/ttsim-qemu/vm.pid"
+tail -f /tmp/ttsim-qemu-serial.log
 ```
 
-Then paste the recommended launch command above.
-
-Useful `tmux` controls:
-
-```text
-Detach from session:       Ctrl-b d
-Reattach to session:       tmux attach -t ttsim-vm
-List sessions:             tmux ls
-Kill session if needed:    tmux kill-session -t ttsim-vm
-```
-
-Graceful shutdown is preferred over killing the QEMU process.
+Graceful shutdown through SSH is preferred over signaling the QEMU PID.
 
 ---
 
@@ -98,23 +212,23 @@ Graceful shutdown is preferred over killing the QEMU process.
 The username and SSH keys are controlled by the cloud-init seed ISO at:
 
 ```text
-/home/varrahan/images/seed.iso
+/home/varrahan/sim/ttsim-qemu/seed.iso
 ```
 
 Inspect it from the host when the VM is not relying on a mounted seed directory.
 Prefer `isoinfo` when it is available, because it does not require sudo:
 
 ```bash
-isoinfo -R -i /home/varrahan/images/seed.iso -f
-isoinfo -R -i /home/varrahan/images/seed.iso -x /user-data
-isoinfo -R -i /home/varrahan/images/seed.iso -x /meta-data
+isoinfo -R -i /home/varrahan/sim/ttsim-qemu/seed.iso -f
+isoinfo -R -i /home/varrahan/sim/ttsim-qemu/seed.iso -x /user-data
+isoinfo -R -i /home/varrahan/sim/ttsim-qemu/seed.iso -x /meta-data
 ```
 
 If `isoinfo` is not available, mount the ISO temporarily:
 
 ```bash
 mkdir -p /tmp/ttsim-seed
-sudo mount -o loop /home/varrahan/images/seed.iso /tmp/ttsim-seed
+sudo mount -o loop /home/varrahan/sim/ttsim-qemu/seed.iso /tmp/ttsim-seed
 sed -n '1,240p' /tmp/ttsim-seed/user-data 2>/dev/null || true
 sed -n '1,120p' /tmp/ttsim-seed/meta-data 2>/dev/null || true
 sudo umount /tmp/ttsim-seed
@@ -129,16 +243,56 @@ ssh_authorized_keys:
   - ssh-ed25519 ...
 ```
 
-The current seed image enables SSH password authentication:
+The current seed image creates the `ubuntu` user with passwordless sudo,
+authorizes `/home/varrahan/.ssh/ttsim_vm_ed25519.pub`, and disables SSH password
+authentication:
 
 ```yaml
-password: ubuntu
-ssh_pwauth: True
+ssh_pwauth: false
 ```
 
-It does not define a custom user, so use the Ubuntu cloud image default user
-`ubuntu` unless the seed ISO is changed. Prefer key-based SSH when the seed
-configures keys; otherwise use the seed-provided password.
+Use key-based SSH as `ubuntu`.
+
+### Nested kind troubleshooting
+
+The QEMU bridge and Tenstorrent character device are independent of kind's
+control-plane networking. If kind reports `NetworkPluginNotReady` or kubeadm
+times out creating its initial RBAC binding, inspect the guest's CPU pressure,
+containerd readiness, and CNI state before treating it as a hardware failure:
+
+```bash
+docker exec <cluster>-control-plane systemctl is-active containerd kubelet
+docker exec <cluster>-control-plane ls -la /etc/cni/net.d
+docker exec <cluster>-control-plane crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps -a
+```
+
+The launcher defaults to eight TCG vCPUs and explicit multi-threaded TCG; the
+validation script enables the guest bridge-netfilter/forwarding prerequisites.
+Production clusters do not run this nested kind CNI; they use their
+administrator-provided CNI.
+
+### Split Kubernetes control plane
+
+For faster Kubernetes qualification, run the control plane on the host and
+enroll the QEMU guest as a real worker. Start the host-native control plane:
+
+```bash
+make -C test/vm split-control-plane
+```
+
+The helper exposes the API on host port `6443`; from QEMU user networking the
+guest reaches it at `10.0.2.2:6443` (override with `SPLIT_API_PORT` when needed).
+The guest still needs kubelet, kubeadm,
+containerd, CNI configuration, and bootstrap credentials. The DRA node daemon
+and workload Pods must run on that guest worker, because a host kind container
+cannot consume a character device that exists only inside the VM.
+
+For the isolated QEMU worker, `test/vm/host/split-worker-cni.conflist` is a
+validation-only local bridge configuration. Install it under
+`/etc/cni/net.d/` after joining the cluster when kindnet cannot route between
+the host Docker bridge and QEMU user networking. It makes the worker Ready for
+node-level validation; production deployments must use the cluster's supported
+multi-node CNI instead.
 
 ---
 
@@ -240,7 +394,7 @@ Use `Ctrl-a x` only when graceful shutdown is not possible.
 
 ---
 
-## 8. Initial guest verification
+## 8. Initial guest and optional project-tool verification
 
 After SSH works, verify the guest environment:
 
@@ -251,7 +405,9 @@ ip addr
 systemctl is-active ssh || systemctl status ssh --no-pager
 ```
 
-Verify Docker:
+The fresh official bridge image does not include Docker, kind, or `kubectl`.
+Install those separately only when moving from bridge validation to this
+project's Kubernetes validation. After installation, verify Docker:
 
 ```bash
 docker version || sudo docker version
@@ -273,9 +429,81 @@ runs the `tt-kmd`, kind, DRA API, and pod device-visibility checks:
 make -C test/vm vm-validate
 ```
 
+From the QEMU host, copy the current VM validation assets into an existing guest
+checkout at `/home/ubuntu/tt-device-plugin` with:
+
+```bash
+make -C test/vm sync-test-vm
+```
+
+The sync target uses the same SSH endpoint and key as the checked-in QEMU
+verification workflow: `ubuntu@127.0.0.1:2222` and
+`$HOME/.ssh/ttsim_vm_ed25519`.
+
+### Synthetic hardware and workload injection
+
+The VM harness also includes the synthetic sysfs and TT-Metalium workload-state
+generator shared with the telemetry exporter. Inside the guest checkout, start
+the default 32-device, one-second update loop with:
+
+```bash
+make -C test/vm fake-hardware
+```
+
+The equivalent explicit command is:
+
+```bash
+python3 test/vm/ttsim_fake_hardware.py \
+  --sysfs-root /tmp/tt-sim-sysfs \
+  --state-root /tmp/tt-sim-state \
+  --device-count 32 \
+  --interval 1 \
+  --iterations 0 \
+  --simulate-workloads
+```
+
+To exercise the driver’s character-device eligibility path with synthetic
+hardware, run the generator as root in the VM and provide a separate device
+root:
+
+```bash
+sudo python3 test/vm/ttsim_fake_hardware.py \
+  --sysfs-root /tmp/tt-sim-sysfs \
+  --state-root /tmp/tt-sim-state \
+  --device-root /tmp/tt-sim-dev \
+  --device-count 2 \
+  --create-device-nodes \
+  --simulate-workloads
+```
+
+Point the driver at `/tmp/tt-sim-dev`, the generated class sysfs, and its
+generated PCI view. These are Linux character-device stand-ins only; they do
+not provide ASIC execution. The script still does not write Kubernetes claim
+status, so DRA allocation remains a genuine cluster/controller check.
+
+This continuously updates fake Tenstorrent attributes under
+`/tmp/tt-sim-sysfs/class/tenstorrent` and writes v2 workload snapshots under
+`/tmp/tt-sim-state/v2/workloads`. Override `FAKE_SYSFS_ROOT`,
+`FAKE_STATE_ROOT`, `FAKE_DEVICE_COUNT`, `FAKE_INTERVAL`, or `FAKE_ITERATIONS`
+on the `make` command when a different test shape is needed. Set
+`FAKE_ITERATIONS=1` for a finite fixture-generation run.
+
+Inventory failure fixtures are available with `FAKE_FIXTURE=missing`,
+`malformed`, `unhealthy`, `hotplug`, or `link-down`; the default is `normal`.
+The hotplug fixture starts with the final device absent and adds it on the
+second finite iteration. These fixtures exercise fail-closed inventory handling
+and do not create kernel character devices.
+
+Without `--create-device-nodes`, the fake tree does not create kernel character
+devices. Continue to use the
+documented `ttsim` plus `tt-kmd` path for kind device mounting and pod
+visibility checks; use the synthetic roots for inventory, topology, health,
+and cross-component workload-state development.
+
 Use the inline commands below when debugging a specific validation step.
 
-Create a DRA-capable smoke-test kind cluster when needed. Kubernetes v1.34+ is
+Create a DRA-capable smoke-test kind cluster when needed. Kubernetes v1.34+
+is
 required for this project, so pin the kind node image instead of relying on the
 default image. This check assumes `tt-kmd` is loaded and
 `/dev/tenstorrent/<device>` exists; if it does not, complete the `tt-kmd`
@@ -368,22 +596,21 @@ sudo dmesg | grep --color=never -i -E 'tenstorrent|ttsim|tt-kmd' | tail -100 || 
 find /dev/tenstorrent -maxdepth 1 -mindepth 0 -ls 2>/dev/null || true
 ```
 
-In the current VM image, the `tt-kmd` source tree and built kernel module are at
-`/home/ubuntu/tt-kmd`, but the module is not installed under `/lib/modules`.
-Load it directly if `/dev/tenstorrent/0` is missing:
+The documented `ttkmd-2.3.0` source tree and built module are at
+`/home/ubuntu/tt-kmd`. Load it directly if `/dev/tenstorrent/0` is missing:
 
 ```bash
 modinfo /home/ubuntu/tt-kmd/tenstorrent.ko | sed -n '1,80p'
-sudo insmod /home/ubuntu/tt-kmd/tenstorrent.ko || true
+modinfo /home/ubuntu/tt-kmd/tenstorrent.ko | grep 'version:.*2.3.0'
+sudo insmod /home/ubuntu/tt-kmd/tenstorrent.ko
 lsmod | grep --color=never -i tenstorrent || true
 lspci -nnk -d 1e52:
 find /dev/tenstorrent -maxdepth 1 -type c -ls
 ```
 
 Use `sudo modprobe tenstorrent` only after the module is installed into the
-running kernel's module tree. The exact module and device-node names depend on
-the installed `tt-kmd` version and guest image configuration, so use `sudo
-dmesg`, `lspci`, `lsmod`, and `/dev` discovery as the source of truth.
+running kernel's module tree. Do not upgrade past 2.3.0 for this documented
+bridge baseline.
 
 ---
 
@@ -418,16 +645,16 @@ Do not boot the same mutable qcow2 image in more than one QEMU process at the sa
 For multiple concurrent VM instances, use qcow2 overlays and unique SSH ports:
 
 ```bash
-BASE=/home/varrahan/images/ubuntu-24.04-minimal-cloudimg-amd64.img
-qemu-img create -f qcow2 -F qcow2 -b "$BASE" /home/varrahan/images/agent-1-overlay.qcow2
-qemu-img create -f qcow2 -F qcow2 -b "$BASE" /home/varrahan/images/agent-2-overlay.qcow2
+BASE=/home/varrahan/sim/ttsim-qemu/ubuntu.qcow2
+qemu-img create -f qcow2 -F qcow2 -b "$BASE" /home/varrahan/sim/ttsim-qemu/agent-1-overlay.qcow2
+qemu-img create -f qcow2 -F qcow2 -b "$BASE" /home/varrahan/sim/ttsim-qemu/agent-2-overlay.qcow2
 ```
 
 Then launch each VM with a different disk and host port:
 
 ```text
-agent 1: -drive file=/home/varrahan/images/agent-1-overlay.qcow2,... -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22
-agent 2: -drive file=/home/varrahan/images/agent-2-overlay.qcow2,... -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2223-:22
+agent 1: -drive file=/home/varrahan/sim/ttsim-qemu/agent-1-overlay.qcow2,... -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22
+agent 2: -drive file=/home/varrahan/sim/ttsim-qemu/agent-2-overlay.qcow2,... -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2223-:22
 ```
 
 For most workflows, it is simpler for several agents to share one running VM through separate SSH sessions.
@@ -458,16 +685,10 @@ ssh -vvv -p 2222 ubuntu@127.0.0.1
 
 Then check the VM console for boot, cloud-init, or network issues.
 
-### KVM permission denied
+### KVM flags are present
 
-Check host permissions:
-
-```bash
-ls -l /dev/kvm
-id
-```
-
-Run QEMU with a user that can access `/dev/kvm`, or use the host’s standard process for adding the user to the `kvm` group.
+Remove `-enable-kvm`, `-accel kvm`, and `-cpu host`. The Tenstorrent bridge
+requires TCG with `-cpu max`; `/dev/kvm` permissions are irrelevant.
 
 ### QEMU says the `ttsim` device or library cannot load
 
@@ -519,12 +740,12 @@ QEMU host:                  <hostname or ssh target for the physical host>
 VM SSH host from QEMU host:  127.0.0.1
 VM SSH port:                2222
 VM SSH user:                ubuntu
-VM auth method:             seed ISO password unless SSH keys are configured
-QEMU tmux session:           ttsim-vm
-Disk image:                 /home/varrahan/images/ubuntu-24.04-minimal-cloudimg-amd64.img
-Cloud-init seed:             /home/varrahan/images/seed.iso
-ttsim library:               /home/varrahan/sim/libttsim_wh.so
-Expected guest tools:        docker, kind, kubectl, tt-kmd
+VM auth method:             /home/varrahan/.ssh/ttsim_vm_ed25519
+QEMU PID file:               /home/varrahan/sim/ttsim-qemu/vm.pid
+Disk image:                  /home/varrahan/sim/ttsim-qemu/ubuntu.qcow2
+Cloud-init seed:             /home/varrahan/sim/ttsim-qemu/seed.iso
+ttsim library:               /home/varrahan/sim/libttsim_wh.so (v1.8.4)
+Expected bridge driver:      ttkmd-2.3.0
 Shutdown command:            ssh -p 2222 ubuntu@127.0.0.1 'sudo shutdown -h now'
 ```
 

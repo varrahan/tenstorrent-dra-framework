@@ -7,8 +7,12 @@ matches the task.
 ## Required Context
 
 This repository is in an early environment-validation stage for a Tenstorrent
-Kubernetes DRA integration. Development is expected to happen inside or against
-the QEMU `ttsim` Ubuntu VM.
+Kubernetes DRA integration. The design center is scale-out HPC and ML clusters:
+distributed workloads, topology-aware multi-card placement, health-aware
+scheduling, and tenant isolation. Fine-grained single-card
+multiprocess execution is a later-stage capability and should not drive early
+architecture decisions ahead of cluster placement, isolation, and health.
+Development is expected to happen inside or against the QEMU `ttsim` Ubuntu VM.
 
 This repository is the implementation workspace, but the operational target is
 the VM. Write source code, documentation, tests, and validation scripts in this
@@ -31,10 +35,17 @@ truth, and mount those paths explicitly into `kind` node containers before
 validating driver, scheduler, or pod-level behavior. Avoid broad `/dev/tt*`
 globs in validation commands because they also match normal terminal devices.
 
+Do not use `tt-smi` for simulator validation, DRA discovery, or normal VM setup.
+Collect inventory from `tt-kmd` sysfs under `/sys/class/tenstorrent`, backing
+PCI sysfs, and Kubernetes DRA allocation state.
+
 ## Validation Assets
 
-Validation-only VM scripts and manifests live under the repository's `test/vm/`
-directory. From inside the QEMU VM, run:
+Shared VM requirements, tests, and configuration that are independent of a
+specific `src/` component live under the repository's `test/vm/host/` directory.
+
+Existing validation-only VM scripts and manifests live under the repository's
+`test/vm/` directory. From inside the QEMU VM, run:
 
 ```bash
 make -C test/vm vm-validate
@@ -46,17 +57,28 @@ Useful narrower targets are:
 make -C test/vm load-tt-kmd
 make -C test/vm kind-smoke
 make -C test/vm kind-clean
+make -C test/vm fake-hardware
 ```
+
+From the QEMU host, `make -C test/vm sync-test-vm` copies these validation
+assets into the guest checkout.
 
 ## Source Layout
 
-Runtime source code is split by component and language:
+The Go DRA driver is rooted directly at `src/`:
 
-- `src/dra/`: Go implementation of the Kubernetes DRA driver.
-- `src/telemetry/`: Python/FastAPI telemetry service.
+- `src/`: Go DRA commands, internal packages, generated manifests, and tests.
+- `test/vm/host/`: shared VM launcher/verification utilities and VM requirements.
 
 ## Documents
 
-- [VM.md](VM.md): Booting and accessing the QEMU `ttsim` VM, validating Docker
-  and `kind`, mounting Tenstorrent device paths into `kind`, and troubleshooting
-  host-to-guest access.
+The complete project documentation is intentionally limited to these four files:
+
+- [DRA.md](DRA.md): DRA concepts, driver layout, resource-model constraints,
+  generated manifests, and supported card specifications.
+- [VM.md](VM.md): QEMU `ttsim` boot and access, `tt-kmd`, Docker/`kind`, device
+  mounting, validation, and troubleshooting.
+- [ADR.md](ADR.md): consolidated architecture decisions and the format for new
+  decisions.
+- `README.md` (this file): authoritative project-wide context and document
+  routing.
