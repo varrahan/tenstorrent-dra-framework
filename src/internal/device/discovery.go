@@ -19,50 +19,6 @@ type Node struct {
 	CardSeries string `json:"cardSeries,omitempty"`
 }
 
-// Discover scans a Tenstorrent device root and returns character devices.
-func Discover(root string) ([]Node, error) {
-	info, err := os.Lstat(root)
-	if err != nil {
-		return nil, fmt.Errorf("stat device root %q: %w", root, err)
-	}
-
-	if !info.IsDir() {
-		return discoverSingle(root, info)
-	}
-
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return nil, fmt.Errorf("read device root %q: %w", root, err)
-	}
-
-	nodes := make([]Node, 0, len(entries))
-	for _, entry := range entries {
-		path := filepath.Join(root, entry.Name())
-		info, err := entry.Info()
-		if err != nil {
-			return nil, fmt.Errorf("stat device entry %q: %w", path, err)
-		}
-
-		node, ok, err := classifyCharacterDevice(path, info)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			nodes = append(nodes, node)
-		}
-	}
-
-	return nodes, nil
-}
-
-func discoverSingle(path string, info fs.FileInfo) ([]Node, error) {
-	node, ok, err := classifyCharacterDevice(path, info)
-	if err != nil || !ok {
-		return nil, err
-	}
-	return []Node{node}, nil
-}
-
 func classifyCharacterDevice(path string, info fs.FileInfo) (Node, bool, error) {
 	if info.Mode()&os.ModeCharDevice == 0 {
 		return Node{}, false, nil

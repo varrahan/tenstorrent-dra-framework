@@ -16,19 +16,6 @@ const (
 	ReferenceNodeName           = "ttsim-node"
 )
 
-// NewResourceSliceForNodes converts discovered local device nodes into a typed
-// Kubernetes resource.k8s.io/v1 ResourceSlice.
-func NewResourceSliceForNodes(driverName, sliceName, nodeName, poolName string, nodes []device.Node) resourceapi.ResourceSlice {
-	driverName = defaultDriverName(driverName)
-
-	devices := make([]resourceapi.Device, 0, len(nodes))
-	for _, node := range nodes {
-		devices = append(devices, newDeviceResource(node))
-	}
-
-	return NewResourceSlice(driverName, sliceName, nodeName, poolName, DefaultPoolGeneration, devices)
-}
-
 // NewResourceSlice builds the typed Kubernetes object the DRA driver publishes.
 func NewResourceSlice(driverName, sliceName, nodeName, poolName string, generation int64, devices []resourceapi.Device) resourceapi.ResourceSlice {
 	driverName = defaultDriverName(driverName)
@@ -99,37 +86,11 @@ func defaultDriverName(driverName string) string {
 	return DefaultDriverName
 }
 
-func newDeviceResource(node device.Node) resourceapi.Device {
-	attributes := nodeAttributes(node)
-
-	return resourceapi.Device{
-		Name:       deviceResourceName(node),
-		Attributes: attributes,
-		Capacity:   nil,
-	}
-}
-
 func deviceResourceName(node device.Node) string {
 	if node.ChipSeries != "" && node.CardSeries != "" {
 		return "tt-" + node.ChipSeries + "-" + node.CardSeries + "-" + node.ID
 	}
 	return "tt-" + node.ID
-}
-
-func nodeAttributes(node device.Node) map[resourceapi.QualifiedName]resourceapi.DeviceAttribute {
-	attributes := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-		DeviceAttributeDeviceID: StringAttribute(node.ID),
-		DeviceAttributePath:     StringAttribute(node.Path),
-		DeviceAttributeMajor:    IntAttribute(int64(node.Major)),
-		DeviceAttributeMinor:    IntAttribute(int64(node.Minor)),
-	}
-	if node.ChipSeries != "" {
-		attributes[DeviceAttributeChipSeries] = StringAttribute(node.ChipSeries)
-	}
-	if node.CardSeries != "" {
-		attributes[DeviceAttributeCardSeries] = StringAttribute(node.CardSeries)
-	}
-	return attributes
 }
 
 func StringAttribute(value string) resourceapi.DeviceAttribute {

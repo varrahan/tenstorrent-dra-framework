@@ -10,6 +10,7 @@ readonly TTSIM_MONITOR_SOCKET="${TTSIM_MONITOR_SOCKET:-/tmp/ttsim-mon.sock}"
 readonly TTSIM_SERIAL_LOG="${TTSIM_SERIAL_LOG:-/tmp/ttsim-qemu-serial.log}"
 readonly TTSIM_MEMORY="${TTSIM_MEMORY:-8G}"
 readonly TTSIM_SMP="${TTSIM_SMP:-8}"
+readonly TTSIM_CPUSET="${TTSIM_CPUSET:-}"
 
 pidfile="$TTSIM_VM_ROOT/vm.pid"
 
@@ -33,7 +34,7 @@ fi
 
 rm -f "$TTSIM_MONITOR_SOCKET" "$TTSIM_SERIAL_LOG" "$pidfile"
 
-"$QEMU_BIN" \
+qemu_command=(
   -m "$TTSIM_MEMORY" -smp "$TTSIM_SMP" \
   -accel tcg,thread=multi \
   -cpu max \
@@ -47,6 +48,17 @@ rm -f "$TTSIM_MONITOR_SOCKET" "$TTSIM_SERIAL_LOG" "$pidfile"
   -mon chardev=mon,mode=readline \
   -display none -daemonize \
   -pidfile "$pidfile"
+)
+
+if [[ -n "$TTSIM_CPUSET" ]]; then
+  command -v taskset >/dev/null 2>&1 || {
+    echo 'TTSIM_CPUSET requires taskset' >&2
+    exit 1
+  }
+  taskset --cpu-list "$TTSIM_CPUSET" "$QEMU_BIN" "${qemu_command[@]}"
+else
+  "$QEMU_BIN" "${qemu_command[@]}"
+fi
 
 echo "ttsim QEMU bridge started with PID $(<"$pidfile")"
 echo "SSH: ssh -p $TTSIM_SSH_PORT ubuntu@127.0.0.1"

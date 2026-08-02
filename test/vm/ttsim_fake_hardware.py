@@ -9,9 +9,11 @@ it does not replace the tt-kmd character devices required by kind validation.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import random
 import shutil
+import stat
 import time
 
 
@@ -33,13 +35,20 @@ def _safe_symlink(path: Path, target: Path) -> None:
 
 
 def _safe_unlink(path: Path) -> None:
-    if path.is_symlink() or path.is_file():
+    if path.is_symlink() or (path.exists() and not path.is_dir()):
         path.unlink(missing_ok=True)
     elif path.is_dir():
         shutil.rmtree(path)
 
 
-def setup_mock_sysfs(root: Path, device_count: int, fixture: str = "normal") -> None:
+def setup_mock_sysfs(
+    root: Path,
+    device_count: int,
+    fixture: str = "normal",
+    device_root: Path | None = None,
+    device_major: int = 241,
+    create_device_nodes: bool = False,
+) -> None:
     if root.exists():
         shutil.rmtree(root)
     class_root = root / "class" / "tenstorrent"
@@ -48,6 +57,8 @@ def setup_mock_sysfs(root: Path, device_count: int, fixture: str = "normal") -> 
 
     for i in range(device_count):
         if fixture in ("missing", "hotplug") and i == device_count - 1:
+            if create_device_nodes and device_root is not None:
+                _safe_unlink(device_root / str(i))
             continue
         index = str(i)
         pci_addr = f"0000:00:{i + 1:02x}.0"
@@ -88,7 +99,8 @@ def setup_mock_sysfs(root: Path, device_count: int, fixture: str = "normal") -> 
         _safe_symlink(device_dir / "device", pci_dir)
 
         # Tenstorrent device attributes expected by the telemetry workflow.
-        _write_value(device_dir / "uevent", f"DEVNAME=/dev/tenstorrent/{index}\n")
+        device_path = (device_root / index) if device_root is not None else Path("/dev/tenstorrent") / index
+        _write_value(device_dir / "uevent", f"DEVNAME={device_path}\n")
         _write_value(device_dir / "dev", "not-a-device" if fixture == "malformed" else f"{226 + i}:{i}")
         _write_value(device_dir / "architecture", "unknown" if fixture == "malformed" else "wormhole")
         _write_value(device_dir / "arch", "wormhole")
@@ -105,6 +117,24 @@ def setup_mock_sysfs(root: Path, device_count: int, fixture: str = "normal") -> 
         _write_value(device_dir / "tensix_cores_used", 0)
         _write_value(device_dir / "tensix_topology", "2dMesh")
         _write_value(device_dir / "fault_code", 0)
+        # Fabric identity lets the synthetic tree exercise topology-aware
+        # placement as well as local inventory and health handling.
+        _write_value(device_dir / "fabric_id", "fabric-0")
+        _write_value(device_dir / "ring_id", "ring-0")
+        _write_value(device_dir / "fabric_endpoint", f"ttsim-{index}")
+
+        if create_device_nodes and not (fixture == "missing" and i == device_count - 1):
+            if device_root is None:
+                raise SystemExit("--create-device-nodes requires --device-root")
+            device_root.mkdir(parents=True, exist_ok=True)
+            node_path = device_root / index
+            _safe_unlink(node_path)
+            try:
+                os.mknod(node_path, stat.S_IFCHR | 0o660, os.makedev(device_major, i))
+            except PermissionError as exc:
+                raise SystemExit(
+                    f"cannot create {node_path}: run as root or choose a writable device root"
+                ) from exc
 
         # hwmon at the supported roots.
         _write_value(device_dir / "hwmon" / f"hwmon{i}" / "name", "tenstorrent")
@@ -125,7 +155,7 @@ def setup_mock_sysfs(root: Path, device_count: int, fixture: str = "normal") -> 
         _write_value(device_dir / "fabric_links" / "link0" / "speed_gbps", 16)
         _write_value(
             device_dir / "fabric_links" / "link0" / "remote_bdf",
-            f"0000:00:{i + 1:02x}.0",
+            f"ttsim-{(i + 1) % device_count}",
         )
 
 
@@ -166,12 +196,15 @@ def simulate_system(
     state_root: Path | None = None,
     inject_workloads: bool = False,
     fixture: str = "normal",
+    device_root: Path | None = None,
+    device_major: int = 241,
+    create_device_nodes: bool = False,
 ) -> None:
     if iterations <= 0:
         iteration = 0
         while True:
             if fixture == "hotplug" and iteration == 1:
-                setup_mock_sysfs(root, device_count, "normal")
+                setup_mock_sysfs(root, device_count, "normal", device_root, device_major, create_device_nodes)
             simulate_hardware_loop(root, device_count)
             if inject_workloads and state_root is not None:
                 simulate_workloads(state_root, device_count, interval, 1)
@@ -181,7 +214,7 @@ def simulate_system(
 
     for index in range(iterations):
         if fixture == "hotplug" and index == 1:
-            setup_mock_sysfs(root, device_count, "normal")
+            setup_mock_sysfs(root, device_count, "normal", device_root, device_major, create_device_nodes)
         simulate_hardware_loop(root, device_count)
         if inject_workloads and state_root is not None:
             simulate_workloads(state_root, device_count, interval, 1)
@@ -260,6 +293,22 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--device-count", type=int, default=DEFAULT_DEVICES)
     parser.add_argument(
+        "--device-root",
+        type=Path,
+        help="Root for simulated character devices; used with --create-device-nodes.",
+    )
+    parser.add_argument(
+        "--device-major",
+        type=int,
+        default=241,
+        help="Major number for simulated character devices (default: 241).",
+    )
+    parser.add_argument(
+        "--create-device-nodes",
+        action="store_true",
+        help="Create Linux character-device stand-ins; requires root/CAP_MKNOD.",
+    )
+    parser.add_argument(
         "--fixture",
         choices=("normal", "missing", "malformed", "unhealthy", "hotplug", "link-down"),
         default="normal",
@@ -286,8 +335,19 @@ def main() -> None:
         raise SystemExit("device-count must be >= 1")
     if args.interval <= 0:
         raise SystemExit("interval must be > 0")
+    if args.device_major < 0:
+        raise SystemExit("device-major must be >= 0")
+    if args.create_device_nodes and args.device_root is None:
+        raise SystemExit("--create-device-nodes requires --device-root")
 
-    setup_mock_sysfs(args.sysfs_root, args.device_count, args.fixture)
+    setup_mock_sysfs(
+        args.sysfs_root,
+        args.device_count,
+        args.fixture,
+        args.device_root,
+        args.device_major,
+        args.create_device_nodes,
+    )
     print(f"[ttsim] initialized fake sysfs at {args.sysfs_root}")
 
     if args.simulate_workloads:
@@ -300,6 +360,9 @@ def main() -> None:
         state_root=args.state_root if args.simulate_workloads else None,
         inject_workloads=args.simulate_workloads,
         fixture=args.fixture,
+        device_root=args.device_root,
+        device_major=args.device_major,
+        create_device_nodes=args.create_device_nodes,
     )
 
 

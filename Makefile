@@ -59,8 +59,8 @@ image-build:
 	$(DOCKER) build --tag tenstorrent-dra:dev .
 
 helm-lint:
-	@test -d deployments/helm || { echo 'Helm validation is not available until the Stage 7 chart exists' >&2; exit 2; }
-	$(HELM) lint deployments/helm/*
+	@test -f deployments/helm/tenstorrent-dra/Chart.yaml || { echo 'Helm chart is missing' >&2; exit 2; }
+	$(HELM) lint deployments/helm/tenstorrent-dra
 
 kind-integration:
 	$(MAKE) -C test/vm kind-smoke

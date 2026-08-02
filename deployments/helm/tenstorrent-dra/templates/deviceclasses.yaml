@@ -1,0 +1,14 @@
+{{- range $class := list "wormhole-n150" "wormhole-n300" "blackhole-p100" "blackhole-p150" }}
+{{- $parts := splitList "-" $class }}
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: tenstorrent-{{ $class }}
+  labels:
+    app.kubernetes.io/name: tenstorrent-dra
+spec:
+  selectors:
+  - cel:
+      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent"].chipSeries == "{{ index $parts 0 }}" && device.attributes["tenstorrent"].cardSeries == "{{ index $parts 1 }}"
+---
+{{- end }}

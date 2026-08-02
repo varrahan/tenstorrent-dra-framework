@@ -3,11 +3,9 @@ package test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
 )
@@ -42,13 +40,6 @@ func TestBuildSnapshotNormalizesAndSortsStableDevices(t *testing.T) {
 		if !ok || provenance.Source == "" || provenance.ObservedAt.IsZero() {
 			t.Fatalf("missing provenance for canonical field %q: %#v", field, snapshot.Devices[0].Provenance)
 		}
-	}
-	attributes := snapshot.Devices[0].SchedulerAttributes()
-	if _, ok := attributes["path"]; ok {
-		t.Fatal("scheduler attributes must not expose host paths")
-	}
-	if attributes["cardSeries"] != "p150" {
-		t.Fatalf("scheduler card series = %q", attributes["cardSeries"])
 	}
 }
 
@@ -245,43 +236,6 @@ func FuzzBuildSnapshotNeverPanics(f *testing.F) {
 	})
 }
 
-func TestReconcilerLargeInventoryConvergesWithinThirtySeconds(t *testing.T) {
-	devices := make([]device.RawDevice, 128)
-	for i := range devices {
-		devices[i] = inventoryRaw(fmt.Sprintf("0000:00:%02x.0", i), "wormhole", "n150", "Healthy", true)
-	}
-	trigger := make(chan struct{}, 1)
-	updates := make(chan device.InventorySnapshot, 2)
-	reconciler, err := device.NewReconciler(device.StaticProvider{Devices: devices}, time.Hour, trigger, func(snapshot device.InventorySnapshot) { updates <- snapshot })
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- reconciler.Run(ctx) }()
-	select {
-	case snapshot := <-updates:
-		if len(snapshot.Devices) != 128 {
-			t.Fatalf("initial device count = %d, want 128", len(snapshot.Devices))
-		}
-	case <-time.After(time.Second):
-		t.Fatal("initial inventory did not converge within one second")
-	}
-	started := time.Now()
-	trigger <- struct{}{}
-	select {
-	case <-updates:
-		if elapsed := time.Since(started); elapsed >= 30*time.Second {
-			t.Fatalf("triggered reconciliation took %s", elapsed)
-		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("triggered reconciliation exceeded 30 seconds")
-	}
-	cancel()
-	<-done
-}
-
 func TestFilesystemProviderReadsSyntheticSysfs(t *testing.T) {
 	root := t.TempDir()
 	deviceRoot := filepath.Join(root, "dev", "tenstorrent")
@@ -375,41 +329,6 @@ func TestFilesystemProviderRejectsPCIPathEscape(t *testing.T) {
 	}
 	if snapshot.Devices[0].RejectionReason == "" {
 		t.Fatal("path escape has no rejection reason")
-	}
-}
-
-func TestReconcilerRefreshesOnInitialPeriodicAndTriggeredEvents(t *testing.T) {
-	trigger := make(chan struct{}, 2)
-	updates := make(chan device.InventorySnapshot, 4)
-	reconciler, err := device.NewReconciler(
-		device.StaticProvider{Devices: []device.RawDevice{inventoryRaw("0000:00:01.0", "wormhole", "n150", "Healthy", true)}},
-		5*time.Millisecond,
-		trigger,
-		func(snapshot device.InventorySnapshot) { updates <- snapshot },
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- reconciler.Run(ctx) }()
-	for i := 0; i < 2; i++ {
-		select {
-		case <-updates:
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for inventory update")
-		}
-	}
-	trigger <- struct{}{}
-	select {
-	case <-updates:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for triggered inventory update")
-	}
-	cancel()
-	if err := <-done; err != context.Canceled {
-		t.Fatalf("Run error = %v, want context cancellation", err)
 	}
 }
 

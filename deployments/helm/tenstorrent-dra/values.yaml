@@ -1,0 +1,15 @@
+image:
+  repository: ghcr.io/tenstorrent/tenstorrent-dra
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+nodeSelector:
+  tenstorrent.com/enabled: "true"
+deviceRoot: /dev/tenstorrent
+sysfsRoot: /sys/class/tenstorrent
+pciSysfsRoot: /sys/bus/pci/devices
+stateDir: /var/lib/tenstorrent-dra
+cdiDir: /var/run/cdi
+pluginDir: /var/lib/kubelet/plugins/dra.tenstorrent.com
+registrarDir: /var/lib/kubelet/plugins_registry
+interval: 30s
+priorityClassName: system-node-critical

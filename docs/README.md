@@ -72,11 +72,13 @@ The Go DRA driver is rooted directly at `src/`:
 
 ## Documents
 
-The complete project documentation is intentionally limited to these three files:
+The complete project documentation is intentionally limited to these four files:
 
 - [DRA.md](DRA.md): DRA concepts, driver layout, resource-model constraints,
   generated manifests, and supported card specifications.
 - [VM.md](VM.md): QEMU `ttsim` boot and access, `tt-kmd`, Docker/`kind`, device
   mounting, validation, and troubleshooting.
+- [ADR.md](ADR.md): consolidated architecture decisions and the format for new
+  decisions.
 - `README.md` (this file): authoritative project-wide context and document
   routing.

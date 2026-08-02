@@ -12,8 +12,11 @@ FAKE_DEVICE_COUNT ?= 32
 FAKE_INTERVAL ?= 1
 FAKE_ITERATIONS ?= 0
 FAKE_FIXTURE ?= normal
+FAKE_DEVICE_ROOT ?=
+FAKE_CREATE_DEVICE_NODES ?=0
+FAKE_DEVICE_MAJOR ?=241
 
-.PHONY: help launcher-test load-tt-kmd vm-validate kind-smoke kind-clean fake-hardware sync-test-vm
+.PHONY: help launcher-test split-control-plane load-tt-kmd vm-validate kind-smoke kind-clean fake-hardware sync-test-vm
 
 help:
 	@printf '%s\n' 'Validation targets:'
@@ -23,9 +26,13 @@ help:
 	@printf '  %-16s %s\n' 'kind-clean' 'Delete the validation kind cluster'
 	@printf '  %-16s %s\n' 'fake-hardware' 'Generate synthetic sysfs and workload state (runs until interrupted)'
 	@printf '  %-16s %s\n' 'sync-test-vm' 'Copy test/vm into the running QEMU guest repository'
+	@printf '  %-16s %s\n' 'split-control-plane' 'Create host-native kind control plane for a future VM worker'
 
 launcher-test:
 	./host/test-launcher.sh
+
+split-control-plane:
+	./host/start-split-control-plane.sh
 
 load-tt-kmd:
 	TT_DEVICE_PATH="$(TT_DEVICE_PATH)" \
@@ -61,6 +68,9 @@ fake-hardware:
 		--fixture "$(FAKE_FIXTURE)" \
 		--interval "$(FAKE_INTERVAL)" \
 		--iterations "$(FAKE_ITERATIONS)" \
+		--device-major "$(FAKE_DEVICE_MAJOR)" \
+		$(if $(FAKE_DEVICE_ROOT),--device-root "$(FAKE_DEVICE_ROOT)",) \
+		$(if $(filter 1 true yes,$(FAKE_CREATE_DEVICE_NODES)),--create-device-nodes,) \
 		--simulate-workloads
 
 sync-test-vm:

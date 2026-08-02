@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -103,6 +102,8 @@ type FabricLink struct {
 }
 
 type FabricInfo struct {
+	FabricID   string       `json:"fabricID,omitempty"`
+	RingID     string       `json:"ringID,omitempty"`
 	EndpointID string       `json:"endpointID,omitempty"`
 	Links      []FabricLink `json:"links,omitempty"`
 }
@@ -133,98 +134,6 @@ type InventoryDevice struct {
 type InventorySnapshot struct {
 	Devices    []InventoryDevice `json:"devices"`
 	ObservedAt time.Time         `json:"observedAt"`
-}
-
-// SchedulerAttributes returns only policy-safe identity and topology fields.
-// Local paths, permissions, and major/minor numbers intentionally stay out of
-// this projection and are consumed only by node-side lifecycle code.
-func (d InventoryDevice) SchedulerAttributes() map[string]string {
-	attributes := map[string]string{
-		"deviceID":   d.StableID,
-		"chipSeries": d.ChipSeries,
-		"cardSeries": d.CardSeries,
-		"health":     string(d.Health),
-	}
-	if d.PCI.BDF != "" {
-		attributes["pciBDF"] = d.PCI.BDF
-	}
-	if d.PCI.NUMANode >= 0 {
-		attributes["numaNode"] = strconv.Itoa(d.PCI.NUMANode)
-	}
-	if d.Fabric.EndpointID != "" {
-		attributes["fabricID"] = d.Fabric.EndpointID
-	}
-	return attributes
-}
-
-// Reconciler periodically refreshes inventory and also accepts explicit
-// triggers from a filesystem watcher. Triggers are coalesced, so a hotplug
-// burst cannot create an unbounded refresh queue.
-type Reconciler struct {
-	provider Provider
-	interval time.Duration
-	trigger  <-chan struct{}
-	onUpdate func(InventorySnapshot)
-}
-
-func NewReconciler(provider Provider, interval time.Duration, trigger <-chan struct{}, onUpdate func(InventorySnapshot)) (*Reconciler, error) {
-	if provider == nil {
-		return nil, errors.New("inventory provider is nil")
-	}
-	if interval <= 0 {
-		return nil, fmt.Errorf("reconciliation interval must be positive")
-	}
-	if onUpdate == nil {
-		return nil, errors.New("inventory update callback is nil")
-	}
-	return &Reconciler{provider: provider, interval: interval, trigger: trigger, onUpdate: onUpdate}, nil
-}
-
-func (r *Reconciler) Refresh(ctx context.Context) error {
-	snapshot, err := BuildSnapshot(ctx, r.provider)
-	if err != nil {
-		return err
-	}
-	r.onUpdate(snapshot)
-	return nil
-}
-
-func (r *Reconciler) Run(ctx context.Context) error {
-	if err := r.Refresh(ctx); err != nil {
-		return err
-	}
-	ticker := time.NewTicker(r.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := r.Refresh(ctx); err != nil {
-				return err
-			}
-		case _, ok := <-r.trigger:
-			if !ok {
-				r.trigger = nil
-				continue
-			}
-			// Drain queued events so one refresh represents the entire burst.
-			for {
-				select {
-				case _, ok := <-r.trigger:
-					if !ok {
-						r.trigger = nil
-					}
-				default:
-					goto refreshed
-				}
-			}
-		refreshed:
-			if err := r.Refresh(ctx); err != nil {
-				return err
-			}
-		}
-	}
 }
 
 // RawDevice is the provider-neutral observation passed to the normalizer.
@@ -307,7 +216,7 @@ func (p FilesystemProvider) observeEntry(id string) RawDevice {
 		raw.DiscoveryError = fmt.Errorf("resolve Tenstorrent sysfs entry %q: %w", sysfsPath, err)
 		return raw
 	}
-	if values, err := readValues(dataPath); err != nil {
+	if values, err := readDeviceValues(dataPath); err != nil {
 		raw.DiscoveryError = err
 		return raw
 	} else {
@@ -318,6 +227,8 @@ func (p FilesystemProvider) observeEntry(id string) RawDevice {
 	raw.Node.Path = valuesPath(raw.Values, "uevent", "DEVNAME")
 	if raw.Node.Path == "" {
 		raw.Node.Path = filepath.Join(p.Roots.DeviceRoot, id)
+	} else if !filepath.IsAbs(raw.Node.Path) {
+		raw.Node.Path = filepath.Join("/dev", raw.Node.Path)
 	}
 	if info, err := os.Lstat(raw.Node.Path); err == nil && info.Mode()&os.ModeCharDevice != 0 {
 		if discovered, ok, discoverErr := classifyCharacterDevice(raw.Node.Path, info); discoverErr != nil {
@@ -390,10 +301,15 @@ func normalize(raw RawDevice, observedAt time.Time) InventoryDevice {
 			TotalBytes:     parseUint(raw.Values["memory_capacity_bytes"]),
 			AvailableBytes: parseUint(raw.Values["memory_available_bytes"]),
 		},
-		Compute:    ComputeInfo{TensixCores: parseUint(raw.Values["tensix_cores_total"])},
-		Health:     normalizeHealth(raw.Values["health"]),
-		Fault:      FaultInfo{Code: raw.Values["fault_code"]},
-		Fabric:     FabricInfo{EndpointID: firstValue(raw.Values, "fabric_id", "fabric_endpoint"), Links: raw.FabricLinks},
+		Compute: ComputeInfo{TensixCores: parseUint(raw.Values["tensix_cores_total"])},
+		Health:  normalizeHealth(raw.Values["health"]),
+		Fault:   FaultInfo{Code: raw.Values["fault_code"]},
+		Fabric: FabricInfo{
+			FabricID:   firstValue(raw.Values, "fabric_id", "fabric_domain"),
+			RingID:     firstValue(raw.Values, "ring_id", "fabric_ring"),
+			EndpointID: firstValue(raw.Values, "fabric_endpoint", "fabric_endpoint_id"),
+			Links:      raw.FabricLinks,
+		},
 		Provenance: map[string]Provenance{},
 		ObservedAt: observedAt,
 	}
@@ -462,7 +378,7 @@ func knownCard(chip, card string) bool {
 
 func pciIdentity(raw RawDevice) PCIIdentity {
 	return PCIIdentity{
-		BDF:             firstValue(raw.Values, "pci.PCI_SLOT_NAME", "pci.bdf"),
+		BDF:             firstValue(raw.Values, "pci.uevent.PCI_SLOT_NAME", "pci.PCI_SLOT_NAME", "pci.bdf"),
 		Vendor:          normalizeHex(raw.Values["pci.vendor"]),
 		Device:          normalizeHex(raw.Values["pci.device"]),
 		SubsystemVendor: normalizeHex(raw.Values["pci.subsystem_vendor"]),
@@ -475,29 +391,53 @@ func pciIdentity(raw RawDevice) PCIIdentity {
 	}
 }
 
-func readValues(root string) (map[string]string, error) {
-	values := map[string]string{}
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || path == root {
-			return nil
-		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return nil
-		}
-		key := strings.TrimPrefix(strings.TrimPrefix(path, root), string(filepath.Separator))
-		key = strings.ReplaceAll(key, string(filepath.Separator), ".")
-		values[key] = strings.TrimSpace(string(data))
-		return nil
+// readDeviceValues intentionally reads an allowlist. Some tt-kmd sysfs nodes
+// are hardware counters; reading them recursively can enter simulator-only
+// register paths and destabilize the guest. Discovery needs identity and
+// health metadata, not every exported sysfs file.
+func readDeviceValues(root string) (map[string]string, error) {
+	return readSelectedValues(root, []string{
+		"uevent", "dev", "architecture", "board_type", "health", "fault_code",
+		"firmware_version", "tt_fw_bundle_ver", "kmd_version", "driver_version",
+		"memory_capacity_bytes", "memory_available_bytes", "tensix_cores_total",
+		"fabric_id", "fabric_domain", "ring_id", "fabric_ring", "fabric_endpoint",
+		"fabric_endpoint_id",
 	})
-	return values, err
+}
+
+func readSelectedValues(root string, names []string) (map[string]string, error) {
+	values := map[string]string{}
+	for _, name := range names {
+		path := filepath.Join(root, name)
+		data, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			continue
+		}
+		values[name] = strings.TrimSpace(string(data))
+	}
+	return values, nil
 }
 
 func readPCIValues(root string) map[string]string {
-	values, _ := readValues(root)
+	values, _ := readSelectedValues(root, []string{
+		"uevent", "PCI_SLOT_NAME", "vendor", "device", "subsystem_vendor", "subsystem_device",
+		"revision", "numa_node", "current_link_state", "current_link_speed",
+		"current_link_width", "link_state",
+	})
+	if uevent := values["uevent"]; uevent != "" {
+		for _, line := range strings.Split(uevent, "\n") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				values["uevent."+parts[0]] = strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	if values["PCI_SLOT_NAME"] != "" {
+		values["PCI_SLOT_NAME"] = strings.TrimSpace(values["PCI_SLOT_NAME"])
+	}
 	return values
 }
 
@@ -522,7 +462,13 @@ func resolvePCIPath(linkPath, pciRoot string) (string, error) {
 	}
 	rel, err := filepath.Rel(root, target)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("PCI backing path %q escapes PCI root %q", target, root)
+		// /sys/bus/pci/devices is commonly a symlinked view of the canonical
+		// /sys/devices tree. Validate the BDF through the caller's PCI root
+		// before accepting the canonical target.
+		candidate, candidateErr := filepath.EvalSymlinks(filepath.Join(pciRoot, filepath.Base(target)))
+		if candidateErr != nil || candidate != target {
+			return "", fmt.Errorf("PCI backing path %q escapes PCI root %q", target, root)
+		}
 	}
 	return target, nil
 }
@@ -537,7 +483,7 @@ func readFabricLinks(root string) []FabricLink {
 		if !entry.IsDir() {
 			continue
 		}
-		values, err := readValues(filepath.Join(root, entry.Name()))
+		values, err := readSelectedValues(filepath.Join(root, entry.Name()), []string{"state", "speed_gbps", "remote_bdf"})
 		if err != nil {
 			continue
 		}
@@ -553,9 +499,11 @@ func readFabricLinks(root string) []FabricLink {
 }
 
 func valuesPath(values map[string]string, file, key string) string {
-	parts := strings.SplitN(values[file], "=", 2)
-	if len(parts) == 2 && strings.TrimSpace(parts[0]) == key {
-		return strings.TrimSpace(parts[1])
+	for _, line := range strings.Split(values[file], "\n") {
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 && strings.TrimSpace(parts[0]) == key {
+			return strings.TrimSpace(parts[1])
+		}
 	}
 	return ""
 }

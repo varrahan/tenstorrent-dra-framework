@@ -46,6 +46,7 @@ TTSIM_MONITOR_SOCKET="$test_root/monitor.sock" \
 TTSIM_SERIAL_LOG="$test_root/serial.log" \
 TTSIM_MEMORY="2G" \
 TTSIM_SMP="2" \
+TTSIM_CPUSET="0-1" \
 FAKE_QEMU_LOG="$fake_log" \
   "$(dirname "$0")/launch-ttsim-qemu.sh" >/dev/null
 
