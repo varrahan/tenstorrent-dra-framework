@@ -56,6 +56,22 @@ func provider(roots *device.Roots) (device.FilesystemProvider, error) {
 	return device.NewFilesystemProvider(*roots)
 }
 
+func clusterClients() (kubernetes.Interface, dynamic.Interface, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	kube, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, nil, err
+	}
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, nil, err
+	}
+	return kube, dynamicClient, nil
+}
+
 func runList(args []string) error {
 	set, roots := inventoryFlags("list")
 	if err := set.Parse(args); err != nil {
@@ -89,15 +105,10 @@ func runNode(args []string) error {
 	if nodeName == "" {
 		return fmt.Errorf("node name is required")
 	}
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return err
+	if interval <= 0 {
+		return fmt.Errorf("inventory interval must be positive")
 	}
-	kube, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return err
-	}
-	dynamicClient, err := dynamic.NewForConfig(config)
+	kube, dynamicClient, err := clusterClients()
 	if err != nil {
 		return err
 	}
@@ -105,7 +116,15 @@ func runNode(args []string) error {
 	if err != nil {
 		return err
 	}
-	manager, err := lifecycle.NewManager(lifecycle.Config{NodeName: nodeName, Driver: dra.DefaultDriverName, StateDir: roots.StateDir, CDIDir: cdiDir, Inventory: func(ctx context.Context) (device.InventorySnapshot, error) { return device.BuildSnapshot(ctx, source) }})
+	manager, err := lifecycle.NewManager(lifecycle.Config{
+		NodeName: nodeName,
+		Driver:   dra.DefaultDriverName,
+		StateDir: roots.StateDir,
+		CDIDir:   cdiDir,
+		Inventory: func(ctx context.Context) (device.InventorySnapshot, error) {
+			return device.BuildSnapshot(ctx, source)
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -120,6 +139,8 @@ func runNode(args []string) error {
 	if err != nil {
 		return err
 	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
 		snapshot, discoverErr := device.BuildSnapshot(ctx, source)
 		if discoverErr != nil {
@@ -135,7 +156,7 @@ func runNode(args []string) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(interval):
+		case <-ticker.C:
 		}
 	}
 }
@@ -148,15 +169,7 @@ func runController(args []string) error {
 	if err := set.Parse(args); err != nil {
 		return err
 	}
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return err
-	}
-	kube, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return err
-	}
-	dynamicClient, err := dynamic.NewForConfig(config)
+	kube, dynamicClient, err := clusterClients()
 	if err != nil {
 		return err
 	}

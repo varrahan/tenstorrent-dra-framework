@@ -44,7 +44,7 @@ func resourceDevice(nodeName string, item device.InventoryDevice) resourceapi.De
 		attrs[AttributeNUMANode] = intAttribute(int64(item.PCI.NUMANode))
 	}
 	capacities := map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{}
-	if profile, ok := CardSpecForClass(item.ChipSeries, item.CardSeries); ok {
+	if profile, ok := cardSpecForSeries(item.ChipSeries, item.CardSeries); ok {
 		cores := profile.TensixCores
 		if item.Compute.TensixCores > 0 {
 			cores = int64(item.Compute.TensixCores)
@@ -93,10 +93,10 @@ func quantityCapacity(value *resource.Quantity) resourceapi.DeviceCapacity {
 	return resourceapi.DeviceCapacity{Value: *value}
 }
 
-func StringAttribute(value string) resourceapi.DeviceAttribute { return stringAttribute(value) }
-func IntAttribute(value int64) resourceapi.DeviceAttribute     { return intAttribute(value) }
-func BoolAttribute(value bool) resourceapi.DeviceAttribute     { return boolAttribute(value) }
-func CapacityValue(value int64) resourceapi.DeviceCapacity     { return CapacityValueFromString(value, "") }
-func CapacityValueFromString(value int64, suffix string) resourceapi.DeviceCapacity {
+func capacityValue(value int64) resourceapi.DeviceCapacity {
+	return capacityValueWithSuffix(value, "")
+}
+
+func capacityValueWithSuffix(value int64, suffix string) resourceapi.DeviceCapacity {
 	return resourceapi.DeviceCapacity{Value: resource.MustParse(resource.NewQuantity(value, resource.DecimalSI).String() + suffix)}
 }

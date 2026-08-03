@@ -8,6 +8,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
+const (
+	TopologyAPIVersion   = "topology.tenstorrent.com/v1alpha1"
+	SchedulingAPIVersion = "scheduling.tenstorrent.com/v1alpha1"
+	NodeTopologyKind     = "TenstorrentNodeTopology"
+	FabricTopologyKind   = "TenstorrentFabricTopology"
+	WorkloadKind         = "TenstorrentWorkload"
+)
+
 var (
 	NodeTopologyGVR   = schema.GroupVersionResource{Group: "topology.tenstorrent.com", Version: "v1alpha1", Resource: "tenstorrentnodetopologies"}
 	FabricTopologyGVR = schema.GroupVersionResource{Group: "topology.tenstorrent.com", Version: "v1alpha1", Resource: "tenstorrentfabrictopologies"}
