@@ -1,128 +1,102 @@
 package dra
 
 import (
-	"fmt"
-
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	resourceslice "k8s.io/dynamic-resource-allocation/resourceslice"
 )
 
-const DefaultDriverName = "dra.tenstorrent.com"
+const maxDevicesPerSlice = 128
 
-const (
-	DefaultPoolGeneration int64 = 1
-	ReferenceNodeName           = "ttsim-node"
-)
-
-// NewResourceSlice builds the typed Kubernetes object the DRA driver publishes.
-func NewResourceSlice(driverName, sliceName, nodeName, poolName string, generation int64, devices []resourceapi.Device) resourceapi.ResourceSlice {
-	driverName = defaultDriverName(driverName)
-
-	return resourceapi.ResourceSlice{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: resourceapi.SchemeGroupVersion.String(),
-			Kind:       "ResourceSlice",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   sliceName,
-			Labels: resourceSliceLabels("", ""),
-		},
-		Spec: resourceapi.ResourceSliceSpec{
-			Driver:   driverName,
-			NodeName: &nodeName,
-			Pool: resourceapi.ResourcePool{
-				Name:               poolName,
-				Generation:         generation,
-				ResourceSliceCount: 1,
-			},
-			Devices: devices,
-		},
+func DriverResources(nodeName string, snapshot device.InventorySnapshot) resourceslice.DriverResources {
+	devices := make([]resourceapi.Device, 0, len(snapshot.Devices))
+	for _, item := range snapshot.Devices {
+		if item.Eligible && item.CharacterDevicePresent && item.Health != device.HealthUnhealthy {
+			devices = append(devices, resourceDevice(nodeName, item))
+		}
 	}
-}
-
-func NewReferenceResourceSlices(driverName, nodeName string) []resourceapi.ResourceSlice {
-	if nodeName == "" {
-		nodeName = ReferenceNodeName
+	slices := make([]resourceslice.Slice, 0, (len(devices)+maxDevicesPerSlice-1)/maxDevicesPerSlice)
+	for len(devices) > 0 {
+		count := min(len(devices), maxDevicesPerSlice)
+		slices = append(slices, resourceslice.Slice{Devices: devices[:count]})
+		devices = devices[count:]
 	}
-
-	slices := make([]resourceapi.ResourceSlice, 0, len(SupportedCardSpecs))
-	for _, spec := range SupportedCardSpecs {
-		slice := NewResourceSlice(
-			driverName,
-			ReferenceResourceSliceName(spec),
-			nodeName,
-			ReferenceResourcePoolName(nodeName, spec),
-			DefaultPoolGeneration,
-			[]resourceapi.Device{NewReferenceDevice(spec)},
-		)
-		slice.Labels = resourceSliceLabels(spec.ChipSeries, spec.CardSeries)
-		slices = append(slices, slice)
+	if len(slices) == 0 {
+		slices = append(slices, resourceslice.Slice{})
 	}
-	return slices
+	return resourceslice.DriverResources{Pools: map[string]resourceslice.Pool{nodeName: {Slices: slices}}}
 }
 
-func NewReferenceDevice(spec CardSpec) resourceapi.Device {
-	return resourceapi.Device{
-		Name:       "tt-" + spec.ChipSeries + "-" + spec.CardSeries + "-0",
-		Attributes: spec.Attributes(),
-		Capacity:   spec.Capacity(),
+func resourceDevice(nodeName string, item device.InventoryDevice) resourceapi.Device {
+	attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+		AttributeDeviceID:   stringAttribute(item.StableID),
+		AttributeNodeName:   stringAttribute(nodeName),
+		AttributeChipSeries: stringAttribute(item.ChipSeries),
+		AttributeCardSeries: stringAttribute(item.CardSeries),
+		AttributeHealth:     stringAttribute(string(item.Health)),
 	}
-}
-
-func ReferenceResourceSliceName(spec CardSpec) string {
-	return "ttsim-" + spec.ChipSeries + "-" + spec.CardSeries
-}
-
-func ReferenceResourcePoolName(nodeName string, spec CardSpec) string {
-	return nodeName + "/" + spec.ChipSeries + "-" + spec.CardSeries
-}
-
-func defaultDriverName(driverName string) string {
-	if driverName != "" {
-		return driverName
+	setString(attrs, AttributePCIBDF, item.PCI.BDF)
+	setString(attrs, AttributeFabricID, item.Fabric.FabricID)
+	setString(attrs, AttributeRingID, item.Fabric.RingID)
+	setString(attrs, AttributeEndpointID, item.Fabric.EndpointID)
+	if item.PCI.NUMANode >= 0 {
+		attrs[AttributeNUMANode] = intAttribute(int64(item.PCI.NUMANode))
 	}
-	return DefaultDriverName
-}
-
-func deviceResourceName(node device.Node) string {
-	if node.ChipSeries != "" && node.CardSeries != "" {
-		return "tt-" + node.ChipSeries + "-" + node.CardSeries + "-" + node.ID
+	capacities := map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{}
+	if profile, ok := CardSpecForClass(item.ChipSeries, item.CardSeries); ok {
+		cores := profile.TensixCores
+		if item.Compute.TensixCores > 0 {
+			cores = int64(item.Compute.TensixCores)
+		}
+		attrs[AttributeTensixCoreCount] = intAttribute(cores)
+		attrs[AttributeGDDRControllerCount] = intAttribute(profile.GDDRControllerCount())
+		attrs[AttributeGDDRControllersPerASIC] = intAttribute(profile.GDDRControllersPerASIC)
+		attrs[AttributeAIClockMHz] = intAttribute(profile.AIClockMHz)
+		attrs[AttributeMemoryType] = stringAttribute(profile.MemoryType)
+		attrs[AttributeConnectivity] = boolAttribute(profile.Connectivity)
+		attrs[AttributeSystemInterfaceType] = stringAttribute(profile.SystemInterfaceType)
+		if profile.BigRISCV > 0 {
+			attrs[AttributeBigRISCVCoreCount] = intAttribute(profile.BigRISCV)
+		}
+		if profile.WarpInterfaceCount > 0 {
+			attrs[AttributeWarpInterfaceCount] = intAttribute(profile.WarpInterfaceCount)
+		}
+		if profile.QSFPInterfaceCount > 0 {
+			attrs[AttributeQSFPInterfaceCount] = intAttribute(profile.QSFPInterfaceCount)
+		}
+		for name, value := range profile.Capacity() {
+			capacities[name] = value
+		}
 	}
-	return "tt-" + node.ID
+	if item.Memory.TotalBytes > 0 {
+		capacities[DeviceCapacityMemoryBytes] = quantityCapacity(resource.NewQuantity(int64(item.Memory.TotalBytes), resource.BinarySI))
+	}
+	return resourceapi.Device{Name: device.DRAName(item), Attributes: attrs, Capacity: capacities}
 }
 
-func StringAttribute(value string) resourceapi.DeviceAttribute {
+func stringAttribute(value string) resourceapi.DeviceAttribute {
 	return resourceapi.DeviceAttribute{StringValue: &value}
 }
-
-func IntAttribute(value int64) resourceapi.DeviceAttribute {
+func intAttribute(value int64) resourceapi.DeviceAttribute {
 	return resourceapi.DeviceAttribute{IntValue: &value}
 }
-
-func BoolAttribute(value bool) resourceapi.DeviceAttribute {
+func boolAttribute(value bool) resourceapi.DeviceAttribute {
 	return resourceapi.DeviceAttribute{BoolValue: &value}
 }
-
-func CapacityValue(value int64) resourceapi.DeviceCapacity {
-	return CapacityValueFromString(value, "")
+func setString(values map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, name, value string) {
+	if value != "" {
+		values[resourceapi.QualifiedName(name)] = stringAttribute(value)
+	}
+}
+func quantityCapacity(value *resource.Quantity) resourceapi.DeviceCapacity {
+	return resourceapi.DeviceCapacity{Value: *value}
 }
 
+func StringAttribute(value string) resourceapi.DeviceAttribute { return stringAttribute(value) }
+func IntAttribute(value int64) resourceapi.DeviceAttribute     { return intAttribute(value) }
+func BoolAttribute(value bool) resourceapi.DeviceAttribute     { return boolAttribute(value) }
+func CapacityValue(value int64) resourceapi.DeviceCapacity     { return CapacityValueFromString(value, "") }
 func CapacityValueFromString(value int64, suffix string) resourceapi.DeviceCapacity {
-	return resourceapi.DeviceCapacity{Value: resource.MustParse(fmt.Sprintf("%d%s", value, suffix))}
-}
-
-func resourceSliceLabels(chipSeries, cardSeries string) map[string]string {
-	labels := map[string]string{
-		"app.kubernetes.io/name":      "tt-dra-driver",
-		"app.kubernetes.io/component": "dra-resource-slice",
-	}
-	if chipSeries != "" {
-		labels["tenstorrent.com/chip-series"] = chipSeries
-	}
-	if cardSeries != "" {
-		labels["tenstorrent.com/card-series"] = cardSeries
-	}
-	return labels
+	return resourceapi.DeviceCapacity{Value: resource.MustParse(resource.NewQuantity(value, resource.DecimalSI).String() + suffix)}
 }

@@ -1,29 +1,35 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "tenstorrent-dra.name" . }}
+  name: {{ .Release.Name }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "tenstorrent-dra.name" . }}
+  name: {{ .Release.Name }}
 rules:
-- apiGroups: ["resource.k8s.io"]
-  resources: ["resourceslices"]
+- apiGroups: [""]
+  resources: ["nodes", "pods"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["resource.k8s.io"]
-  resources: ["resourceclaims"]
-  verbs: ["get", "list", "watch"]
+  resources: ["resourceslices", "resourceclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["topology.tenstorrent.com"]
+  resources: ["tenstorrentnodetopologies", "tenstorrentfabrictopologies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["scheduling.tenstorrent.com"]
+  resources: ["tenstorrentworkloads", "tenstorrentworkloads/status"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "tenstorrent-dra.name" . }}
+  name: {{ .Release.Name }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "tenstorrent-dra.name" . }}
+  name: {{ .Release.Name }}
 subjects:
 - kind: ServiceAccount
-  name: {{ include "tenstorrent-dra.name" . }}
+  name: {{ .Release.Name }}
   namespace: {{ .Release.Namespace }}

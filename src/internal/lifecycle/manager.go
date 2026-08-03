@@ -106,7 +106,7 @@ func (m *Manager) PrepareResourceClaims(ctx context.Context, claims []*resourcea
 	}
 	byName := make(map[string]device.InventoryDevice, len(snapshot.Devices))
 	for _, item := range snapshot.Devices {
-		byName[deviceName(item.Node)] = item
+		byName[device.DRAName(item)] = item
 	}
 	result := make(map[types.UID]kubeletplugin.PrepareResult, len(claims))
 	for _, claim := range claims {
@@ -270,13 +270,6 @@ func cdiResults(claim PreparedClaim) []kubeletplugin.Device {
 		result = append(result, kubeletplugin.Device{PoolName: item.Pool, DeviceName: item.Device, CDIDeviceIDs: []string{item.CDIID}})
 	}
 	return result
-}
-
-func deviceName(node device.Node) string {
-	if node.ChipSeries != "" && node.CardSeries != "" {
-		return "tt-" + node.ChipSeries + "-" + node.CardSeries + "-" + node.ID
-	}
-	return "tt-" + node.ID
 }
 
 func cdiID(uid types.UID, device string) string {

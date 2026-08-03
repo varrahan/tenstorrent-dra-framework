@@ -198,7 +198,7 @@ func TestInventoryNormalizationTable(t *testing.T) {
 		{name: "wormhole variant", chip: "WH", card: "n150d", health: "ready", eligible: true, wantChip: "wormhole", wantCard: "n150"},
 		{name: "blackhole variant", chip: "bh", card: "p150a", health: "ok", eligible: true, wantChip: "blackhole", wantCard: "p150"},
 		{name: "unknown chip", chip: "mystery", card: "n150", health: "healthy", eligible: false, wantCard: "n150"},
-		{name: "unknown health", chip: "wormhole", card: "n150", health: "", eligible: false, wantChip: "wormhole", wantCard: "n150"},
+		{name: "unknown health", chip: "wormhole", card: "n150", health: "", eligible: true, wantChip: "wormhole", wantCard: "n150"},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {

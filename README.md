@@ -1,168 +1,33 @@
-# Tenstorrent Kubernetes DRA Framework
+# Tenstorrent Kubernetes DRA
 
-This project is a Kubernetes orchestration layer for Tenstorrent accelerator
-hardware. Its design center is scale-out HPC and ML clusters where distributed
-jobs need topology-aware placement, health-aware scheduling, and strict device
-isolation across accelerator nodes.
+This repository contains a Kubernetes 1.34+ Dynamic Resource Allocation driver
+for Tenstorrent nodes. Each node publishes its locally observed
+`/dev/tenstorrent/<n>` devices as exclusive whole-card DRA devices. A node may
+contain any number of cards and may mix Wormhole, Blackhole, and future card
+series.
 
-The long-term direction is to move beyond legacy integer-count device plugins
-and use Kubernetes Dynamic Resource Allocation (DRA) so workloads can request
-hardware by attributes, topology, and health state. Instead of only asking for
-"one accelerator", a workload should be able to express requirements such as a
-specific device class, memory profile, health state, or accelerator placement
-with direct low-latency links to peer devices. Fine-grained sub-card sharing,
-such as core-group or memory-region allocation, is a later-stage capability and
-must not take priority over cluster-scale placement, isolation, and health.
+The driver provides three runtime paths:
 
-## What This Project Entails
+- `tt-dra-driver node` discovers cards, publishes ResourceSlices, serves the
+  kubelet DRA protocol, writes per-claim CDI entries, and publishes node links.
+- `tt-dra-driver controller` validates the cluster fabric graph and reconciles
+  connected multi-rank `TenstorrentWorkload` assignments.
+- `tt-dra-driver list` prints the complete local inventory for diagnostics.
 
-The repository is the foundation for a hardware-software co-design effort that
-connects Tenstorrent devices, kernel driver state, and Kubernetes scheduling.
+Install the Helm chart from `deployments/helm/tenstorrent-dra`. It installs the
+node DaemonSet, the single-replica controller, five DeviceClasses, three CRDs,
+and the required RBAC. Standard ResourceClaims can select card attributes
+directly. `TenstorrentWorkload` adds deterministic connected-ring placement for
+distributed rank Pods.
 
-The project targets the following environment:
+Inventory is collected from `tt-kmd` sysfs and PCI sysfs. The QEMU `ttsim` VM is
+the validation target; do not use `tt-smi` for discovery or simulator checks.
+Commands that require Docker, kind, Kubernetes, or `/dev/tenstorrent*` run
+inside the VM. Host-side Go tests remain independent of hardware.
 
-| Area | Technology | Role |
-| --- | --- | --- |
-| Hardware simulation | QEMU `ttsim` | Provides a simulated Tenstorrent Wormhole device for development and testing. |
-| Kernel interface | `tt-kmd` | Exposes Tenstorrent device paths and driver state to the guest system. |
-| Local Kubernetes | Docker and `kind` | Runs Kubernetes nodes for development and validation. |
-| Resource allocation | Kubernetes DRA | Publishes and allocates accelerator resources through `ResourceSlice` and resource claim APIs. |
-| Driver implementation | Go and C/C++ | Integrates Kubernetes control-plane logic with lower-level device interfaces. |
+The implementation intentionally does not partition cards, reset or scrub
+hardware, install scheduler plugins, or provide a release/security pipeline.
+Those concerns are outside this minimal DRA component.
 
-Development is expected to happen inside or against the QEMU `ttsim` VM
-described in [docs/VM.md](docs/VM.md), where Docker, `kind`, Kubernetes tooling,
-and simulated Tenstorrent hardware are available.
-
-## Core Features
-
-### Dynamic Resource Allocation
-
-The DRA driver is intended to publish Tenstorrent accelerator resources to the
-Kubernetes API as structured resources instead of opaque integer counts. This
-allows scheduling decisions to consider hardware attributes, device health, and
-allocation constraints.
-
-Planned DRA capabilities include:
-
-- Publishing Tenstorrent devices through Kubernetes `ResourceSlice` objects.
-- Supporting resource claims for accelerator-specific properties needed by
-  distributed HPC and ML workloads.
-- Allocating whole accelerators or coarse accelerator partitions as the default
-  scheduling units for scale-out jobs.
-- Deferring fine-grained single-card sharing until device isolation, reset,
-  accounting, and runtime support are proven.
-- Coordinating with kubelet so allocated devices and paths are exposed only to
-  the pods that requested them.
-
-### Topology-Aware Scheduling
-
-Tenstorrent deployments can depend heavily on device-to-device connectivity.
-This project is designed to discover and expose physical topology information so
-distributed workloads can be placed on accelerators with suitable interconnects.
-
-Planned topology capabilities include:
-
-- Discovering local accelerator inventory and device attributes.
-- Mapping Ethernet ring and scale-out links between accelerator devices.
-- Publishing topology metadata for scheduler consumption.
-- Supporting distributed job placement that prefers direct accelerator links
-  over slower host-network paths.
-- Treating multi-card and multi-node placement as a core scheduling requirement,
-  not an optional optimization.
-
-### Tenant Isolation and Hardware Hygiene
-
-The project includes a hardware janitor role to protect workloads from stale
-device state and prevent unhealthy accelerators from accepting new work.
-
-Planned isolation and health capabilities include:
-
-- Resetting or scrubbing devices before allocation to a new workload.
-- Preventing memory state leakage between tenants.
-- Detecting accelerator hangs, OOM conditions, and unrecoverable faults.
-- Tainting nodes or cordoning affected accelerator paths when hardware becomes
-  unhealthy.
-
-### QEMU-Based Development Loop
-
-The repository supports a local development flow built around a QEMU `ttsim`
-Ubuntu VM. This makes it possible to validate Kubernetes integration work
-against simulated Tenstorrent hardware before requiring physical cards.
-
-The VM workflow supports:
-
-- Booting a simulated Tenstorrent Wormhole device with custom QEMU support.
-- Accessing the guest over SSH through host port forwarding.
-- Running Docker and `kind` inside the VM.
-- Creating disposable Kubernetes clusters for driver and manifest testing.
-- Verifying simulated hardware visibility with tools such as `lspci`, `lsmod`,
-  `dmesg`, and `/dev` discovery.
-- Generating synthetic multi-device sysfs, topology, health, and workload state
-  with `make -C test/vm fake-hardware`.
-- Syncing the VM validation harness into a running guest checkout with
-  `make -C test/vm sync-test-vm`.
-
-## Project Phases
-
-1. Foundation: boot the QEMU `ttsim` VM, verify `tt-kmd`, and run Kubernetes
-   with `kind`.
-2. DRA driver: publish Tenstorrent resources through Kubernetes DRA APIs and
-   allocate whole-card or coarse-partition resources to distributed workloads.
-3. Topology: discover accelerator interconnects and surface topology metadata to
-   scheduling components.
-4. Hardware hygiene: add reset, scrubbing, health-check, and cordon/taint flows
-   for tenant isolation and reliability.
-
-## Repository Status
-
-This repository is currently in an early architecture and environment-validation
-stage. The existing documentation and validation assets focus on booting and
-accessing the QEMU `ttsim` VM. Initial source scaffolds exist for the Go DRA
-driver; Kubernetes API integration, topology discovery, and hardware janitor
-flows will be added as the implementation is built out.
-
-## Development checks
-
-Host-safe checks are available from the repository root:
-
-```bash
-make check
-```
-
-This runs Go build/tests/race/vet/lint checks, generated-manifest verification,
-Python compilation, shell validation, and the overridable QEMU launcher
-regression test. Run the hardware and Kubernetes
-foundation checks inside the QEMU VM:
-
-```bash
-make vm-validation
-```
-
-The VM workflow is required in CI on a self-hosted `ttsim` runner. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for change requirements and
-[RELEASE.md](RELEASE.md) for artifact and compatibility policy.
-
-The portable inventory command accepts `-device-root`, `-sysfs-root`,
-`-pci-sysfs-root`, and `-state-dir` flags. It emits the legacy device list plus
-the canonical inventory snapshot; synthetic sysfs roots can be supplied for
-host-side fixture tests.
-
-## Source Layout
-
-- `src/`: Go implementation of the Kubernetes DRA driver, with commands,
-  internal packages, generated manifests, and tests directly beneath it.
-- `test/vm/host/`: shared VM launcher/verification utilities and VM requirements.
-- `test/vm/`: VM validation scripts and kind smoke-test manifests.
-
-## Documentation
-
-- [ROADMAP.md](ROADMAP.md): gated production-readiness plan from the current
-  scaffold through the simulator-qualified v1.0 release.
-- [docs/README.md](docs/README.md): required documentation entry point with
-  project-wide DRA, Kubernetes version, and `kind` device-mount constraints.
-- [docs/DRA.md](docs/DRA.md): DRA implementation, resource model, manifests,
-  and Tenstorrent card specifications.
-- [docs/VM.md](docs/VM.md): QEMU `ttsim` VM boot, SSH access, kind validation,
-  and troubleshooting guide.
-- [AGENTS.md](AGENTS.md): project architecture notes and required agent workflow
-  instructions.
+See [docs/README.md](docs/README.md), [docs/DRA.md](docs/DRA.md), and
+[docs/VM.md](docs/VM.md) for the model, APIs, and VM workflow.

@@ -1,6 +1,6 @@
 apiVersion: v2
 name: tenstorrent-dra
-description: Tenstorrent Kubernetes DRA driver
+description: Tenstorrent Kubernetes DRA driver and topology controller
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

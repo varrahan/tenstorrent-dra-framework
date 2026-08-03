@@ -1,27 +1,38 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: {{ include "tenstorrent-dra.name" . }}-kubelet
+  name: {{ .Release.Name }}-node
 spec:
   selector:
-    matchLabels: {app: tenstorrent-dra-kubelet}
+    matchLabels:
+      app: tenstorrent-dra-node
   template:
     metadata:
-      labels: {app: tenstorrent-dra-kubelet}
+      labels:
+        app: tenstorrent-dra-node
     spec:
-      serviceAccountName: {{ include "tenstorrent-dra.name" . }}
-      priorityClassName: {{ .Values.priorityClassName }}
+      serviceAccountName: {{ .Release.Name }}
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
       containers:
-      - name: kubelet
-        image: {{ include "tenstorrent-dra.image" . }}
+      - name: node
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
-        args: ["-kubelet-plugin", "-node-name", "$(NODE_NAME)", "-device-root", "{{ .Values.deviceRoot }}", "-sysfs-root", "{{ .Values.sysfsRoot }}", "-pci-sysfs-root", "{{ .Values.pciSysfsRoot }}", "-state-dir", "{{ .Values.stateDir }}", "-cdi-dir", "{{ .Values.cdiDir }}", "-plugin-dir", "{{ .Values.pluginDir }}", "-registrar-dir", "{{ .Values.registrarDir }}"]
+        args:
+        - node
+        - -device-root={{ .Values.deviceRoot }}
+        - -sysfs-root={{ .Values.sysfsRoot }}
+        - -pci-sysfs-root={{ .Values.pciSysfsRoot }}
+        - -state-dir={{ .Values.stateDir }}
+        - -cdi-dir={{ .Values.cdiDir }}
+        - -plugin-dir={{ .Values.pluginDir }}
+        - -registrar-dir={{ .Values.registrarDir }}
+        - -interval={{ .Values.interval }}
         env:
         - name: NODE_NAME
-          valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
-        securityContext: {privileged: true}
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         volumeMounts:
         - {name: device, mountPath: {{ .Values.deviceRoot }}, readOnly: true}
         - {name: sysfs, mountPath: {{ .Values.sysfsRoot }}, readOnly: true}

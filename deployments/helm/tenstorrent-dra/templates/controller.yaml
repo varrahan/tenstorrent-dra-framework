@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tenstorrent-dra-controller
+  template:
+    metadata:
+      labels:
+        app: tenstorrent-dra-controller
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      containers:
+      - name: controller
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args:
+        - controller
+        - -interval={{ .Values.interval }}
+        - -topology-ttl={{ .Values.topologyTTL }}
