@@ -1,4 +1,4 @@
-package topology
+package test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	ttapi "github.com/varrahan/tenstorrent-dra-framework/src/internal/api"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
+	tttopology "github.com/varrahan/tenstorrent-dra-framework/src/internal/topology"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -22,7 +23,7 @@ func TestBuildFabricValidReciprocalGraph(t *testing.T) {
 		nodeTopology("worker-b", now, topologyDevice("b", "endpoint-b", "endpoint-a")),
 		nodeTopology("worker-a", now, topologyDevice("a", "endpoint-a", "endpoint-b")),
 	}
-	status := BuildFabric(nodes, time.Minute, now)
+	status := tttopology.BuildFabric(nodes, time.Minute, now)
 	if !status.Valid || len(status.Errors) != 0 || len(status.Endpoints) != 2 {
 		t.Fatalf("valid graph rejected: %#v", status)
 	}
@@ -59,7 +60,7 @@ func TestBuildFabricRejectsInvalidGraphs(t *testing.T) {
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			status := BuildFabric(testCase.nodes, time.Minute, now)
+			status := tttopology.BuildFabric(testCase.nodes, time.Minute, now)
 			if status.Valid || len(status.Errors) == 0 || !strings.Contains(strings.Join(status.Errors, "\n"), testCase.wantError) {
 				t.Fatalf("status = %#v, want error containing %q", status, testCase.wantError)
 			}
@@ -73,7 +74,7 @@ func TestPublishNodeCreatesAndUpdatesTopology(t *testing.T) {
 		StableID: "pci-a", Eligible: true, ChipSeries: "quasar", CardSeries: "q950x",
 		Fabric: device.FabricInfo{FabricID: "fabric-a", RingID: "ring-a", EndpointID: "endpoint-a"},
 	}}}
-	if err := PublishNode(context.Background(), client, "worker-a", types.UID("node-uid"), snapshot); err != nil {
+	if err := tttopology.PublishNode(context.Background(), client, "worker-a", types.UID("node-uid"), snapshot); err != nil {
 		t.Fatal(err)
 	}
 	object, err := client.Resource(ttapi.NodeTopologyGVR).Get(context.Background(), "worker-a", metav1.GetOptions{})
@@ -89,7 +90,7 @@ func TestPublishNodeCreatesAndUpdatesTopology(t *testing.T) {
 	}
 
 	snapshot.Devices = nil
-	if err := PublishNode(context.Background(), client, "worker-a", types.UID("node-uid"), snapshot); err != nil {
+	if err := tttopology.PublishNode(context.Background(), client, "worker-a", types.UID("node-uid"), snapshot); err != nil {
 		t.Fatal(err)
 	}
 	object, err = client.Resource(ttapi.NodeTopologyGVR).Get(context.Background(), "worker-a", metav1.GetOptions{})
@@ -109,7 +110,7 @@ func TestPublishNodePropagatesGetError(t *testing.T) {
 	client.PrependReactor("get", ttapi.NodeTopologyGVR.Resource, func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("API unavailable")
 	})
-	err := PublishNode(context.Background(), client, "worker-a", "node-uid", device.InventorySnapshot{})
+	err := tttopology.PublishNode(context.Background(), client, "worker-a", "node-uid", device.InventorySnapshot{})
 	if err == nil || !strings.Contains(err.Error(), "API unavailable") {
 		t.Fatalf("PublishNode error = %v", err)
 	}

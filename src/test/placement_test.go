@@ -1,4 +1,4 @@
-package placement
+package test
 
 import (
 	"reflect"
@@ -6,6 +6,7 @@ import (
 
 	ttapi "github.com/varrahan/tenstorrent-dra-framework/src/internal/api"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
+	"github.com/varrahan/tenstorrent-dra-framework/src/internal/placement"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -20,7 +21,7 @@ func TestSolveFindsConnectedCombinationAndDoesNotMutateInput(t *testing.T) {
 	original := append([]ttapi.FabricEndpoint(nil), endpoints...)
 	workload := workloadWithRanks(ttapi.WorkloadRank{Name: "rank-0", DeviceClassName: dra.GenericDeviceClassName, Count: 2})
 
-	assignments, ok := Solve(workload, endpoints, Reservations{})
+	assignments, ok := placement.Solve(workload, endpoints, placement.Reservations{})
 	if !ok {
 		t.Fatal("connected alternative combination was not found")
 	}
@@ -43,25 +44,25 @@ func TestSolveHonorsReservationsClassesAndTopology(t *testing.T) {
 		endpoints[i].Links = []ttapi.TopologyLink{{State: "up", RemoteEndpointID: endpoints[(i+1)%len(endpoints)].EndpointID}}
 	}
 	endpoints[2].CardSeries = "n300"
-	reserved := Reservations{}
+	reserved := placement.Reservations{}
 	reserved.Add("worker-a", "a")
 	workload := workloadWithRanks(ttapi.WorkloadRank{Name: "rank-0", DeviceClassName: "tenstorrent-wormhole-n150"})
 	workload.Spec.Topology = ttapi.WorkloadTopology{FabricID: "fabric-a", RingID: "ring-a"}
 
-	assignments, ok := Solve(workload, endpoints, reserved)
+	assignments, ok := placement.Solve(workload, endpoints, reserved)
 	if !ok || assignments[0].Devices[0].Name != "b" {
 		t.Fatalf("assignment = %#v, ok=%v; want unreserved n150 device b", assignments, ok)
 	}
 	reserved.Add("worker-a", "b")
-	if _, ok := Solve(workload, endpoints, reserved); ok {
+	if _, ok := placement.Solve(workload, endpoints, reserved); ok {
 		t.Fatal("solver ignored reservations or specialized DeviceClass")
 	}
 }
 
 func TestReservationsAddAssignments(t *testing.T) {
-	reservations := Reservations{}
+	reservations := placement.Reservations{}
 	reservations.AddAssignments([]ttapi.RankAssignment{{Devices: []ttapi.AssignedDevice{{Pool: "pool", Name: "device"}}}})
-	if _, found := reservations[DeviceID{Pool: "pool", Name: "device"}]; !found {
+	if _, found := reservations[placement.DeviceID{Pool: "pool", Name: "device"}]; !found {
 		t.Fatal("assignment was not reserved")
 	}
 }
