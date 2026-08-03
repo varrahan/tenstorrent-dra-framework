@@ -1,4 +1,4 @@
-package lifecycle_test
+package test
 
 import (
 	"context"
