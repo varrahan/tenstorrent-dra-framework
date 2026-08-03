@@ -11,20 +11,36 @@ import (
 
 	ttapi "github.com/varrahan/tenstorrent-dra-framework/src/internal/api"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 )
 
 func PublishNode(ctx context.Context, client dynamic.Interface, nodeName string, nodeUID types.UID, snapshot device.InventorySnapshot) error {
-	object := &ttapi.NodeTopology{TypeMeta: metav1.TypeMeta{APIVersion: "topology.tenstorrent.com/v1alpha1", Kind: "TenstorrentNodeTopology"}, ObjectMeta: metav1.ObjectMeta{Name: nodeName, OwnerReferences: []metav1.OwnerReference{{APIVersion: "v1", Kind: "Node", Name: nodeName, UID: nodeUID}}}, Spec: ttapi.NodeTopologySpec{NodeName: nodeName, ObservedAt: metav1.NewTime(snapshot.ObservedAt)}}
+	object := &ttapi.NodeTopology{
+		TypeMeta: metav1.TypeMeta{APIVersion: ttapi.TopologyAPIVersion, Kind: ttapi.NodeTopologyKind},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "v1", Kind: "Node", Name: nodeName, UID: nodeUID,
+			}},
+		},
+		Spec: ttapi.NodeTopologySpec{NodeName: nodeName, ObservedAt: metav1.NewTime(snapshot.ObservedAt)},
+	}
 	for _, item := range snapshot.Devices {
 		if !item.Eligible {
 			continue
 		}
-		entry := ttapi.TopologyDevice{Pool: nodeName, Name: device.DRAName(item), StableID: item.StableID, ChipSeries: item.ChipSeries, CardSeries: item.CardSeries, FabricID: item.Fabric.FabricID, RingID: item.Fabric.RingID, EndpointID: item.Fabric.EndpointID}
+		entry := ttapi.TopologyDevice{
+			Pool: nodeName, Name: device.DRAName(item), StableID: item.StableID,
+			ChipSeries: item.ChipSeries, CardSeries: item.CardSeries,
+			FabricID: item.Fabric.FabricID, RingID: item.Fabric.RingID, EndpointID: item.Fabric.EndpointID,
+		}
 		for _, link := range item.Fabric.Links {
-			entry.Links = append(entry.Links, ttapi.TopologyLink{Name: link.Name, State: link.State, SpeedGbps: link.SpeedGbps, RemoteEndpointID: link.RemoteEndpointID})
+			entry.Links = append(entry.Links, ttapi.TopologyLink{
+				Name: link.Name, State: link.State, SpeedGbps: link.SpeedGbps, RemoteEndpointID: link.RemoteEndpointID,
+			})
 		}
 		object.Spec.Devices = append(object.Spec.Devices, entry)
 	}
@@ -37,6 +53,9 @@ func PublishNode(ctx context.Context, client dynamic.Interface, nodeName string,
 	if err == nil {
 		desired.SetResourceVersion(current.GetResourceVersion())
 		_, err = resource.Update(ctx, desired, metav1.UpdateOptions{})
+		return err
+	}
+	if !apierrors.IsNotFound(err) {
 		return err
 	}
 	_, err = resource.Create(ctx, desired, metav1.CreateOptions{})
@@ -60,7 +79,11 @@ func BuildFabric(nodes []ttapi.NodeTopology, ttl time.Duration, now time.Time) t
 				continue
 			}
 			seen[item.EndpointID] = struct{}{}
-			status.Endpoints = append(status.Endpoints, ttapi.FabricEndpoint{NodeName: node.Spec.NodeName, Pool: item.Pool, DeviceName: item.Name, StableID: item.StableID, ChipSeries: item.ChipSeries, CardSeries: item.CardSeries, FabricID: item.FabricID, RingID: item.RingID, EndpointID: item.EndpointID, Links: item.Links})
+			status.Endpoints = append(status.Endpoints, ttapi.FabricEndpoint{
+				NodeName: node.Spec.NodeName, Pool: item.Pool, DeviceName: item.Name, StableID: item.StableID,
+				ChipSeries: item.ChipSeries, CardSeries: item.CardSeries,
+				FabricID: item.FabricID, RingID: item.RingID, EndpointID: item.EndpointID, Links: item.Links,
+			})
 		}
 	}
 	sort.Slice(status.Endpoints, func(i, j int) bool { return status.Endpoints[i].EndpointID < status.Endpoints[j].EndpointID })

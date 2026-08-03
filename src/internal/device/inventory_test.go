@@ -1,4 +1,4 @@
-package test
+package device_test
 
 import (
 	"context"
@@ -71,9 +71,9 @@ func TestPCIIdentityUsesObservedLinkState(t *testing.T) {
 func TestBuildSnapshotFailsClosedPerDevice(t *testing.T) {
 	badHealth := inventoryRaw("0000:00:01.0", "wormhole", "n150", "failed", true)
 	missingChar := inventoryRaw("0000:00:02.0", "wormhole", "n150", "Healthy", false)
-	unknownCard := inventoryRaw("0000:00:03.0", "unknown", "n999", "Healthy", true)
+	missingIdentity := inventoryRaw("0000:00:03.0", "", "", "Healthy", true)
 
-	snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{badHealth, missingChar, unknownCard}})
+	snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{badHealth, missingChar, missingIdentity}})
 	if err != nil {
 		t.Fatalf("BuildSnapshot returned error: %v", err)
 	}
@@ -197,7 +197,9 @@ func TestInventoryNormalizationTable(t *testing.T) {
 	}{
 		{name: "wormhole variant", chip: "WH", card: "n150d", health: "ready", eligible: true, wantChip: "wormhole", wantCard: "n150"},
 		{name: "blackhole variant", chip: "bh", card: "p150a", health: "ok", eligible: true, wantChip: "blackhole", wantCard: "p150"},
-		{name: "unknown chip", chip: "mystery", card: "n150", health: "healthy", eligible: false, wantCard: "n150"},
+		{name: "unknown chip", chip: " Mystery ", card: "n150", health: "healthy", eligible: true, wantChip: "mystery", wantCard: "n150"},
+		{name: "unknown card", chip: "quasar", card: "q950x", health: "healthy", eligible: true, wantChip: "quasar", wantCard: "q950x"},
+		{name: "missing identity", chip: "", card: "", health: "healthy", eligible: false},
 		{name: "unknown health", chip: "wormhole", card: "n150", health: "", eligible: true, wantChip: "wormhole", wantCard: "n150"},
 	}
 	for _, testCase := range tests {

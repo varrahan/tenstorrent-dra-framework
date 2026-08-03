@@ -5,15 +5,15 @@ import (
 )
 
 const (
-	DeviceCapacityASICs                      = DeviceAttributeDomain + "/asics"
-	DeviceCapacitySRAMBytes                  = DeviceAttributeDomain + "/sramBytes"
-	DeviceCapacityMemoryBytes                = DeviceAttributeDomain + "/memoryBytes"
-	DeviceCapacityMemorySpeedGTPerSecond     = DeviceAttributeDomain + "/memorySpeedGTPerSecond"
-	DeviceCapacityMemoryBandwidthBytesPerSec = DeviceAttributeDomain + "/memoryBandwidthBytesPerSecond"
-	DeviceCapacityFP8TeraFLOPS               = DeviceAttributeDomain + "/fp8TeraFLOPS"
-	DeviceCapacityFP16TeraFLOPS              = DeviceAttributeDomain + "/fp16TeraFLOPS"
-	DeviceCapacityBlockFP8TeraFLOPS          = DeviceAttributeDomain + "/blockFP8TeraFLOPS"
-	DeviceCapacityBoardPowerWatts            = DeviceAttributeDomain + "/boardPowerWatts"
+	DeviceCapacityASICs                      = AttributeDomain + "/asics"
+	DeviceCapacitySRAMBytes                  = AttributeDomain + "/sramBytes"
+	DeviceCapacityMemoryBytes                = AttributeDomain + "/memoryBytes"
+	DeviceCapacityMemorySpeedGTPerSecond     = AttributeDomain + "/memorySpeedGTPerSecond"
+	DeviceCapacityMemoryBandwidthBytesPerSec = AttributeDomain + "/memoryBandwidthBytesPerSecond"
+	DeviceCapacityFP8TeraFLOPS               = AttributeDomain + "/fp8TeraFLOPS"
+	DeviceCapacityFP16TeraFLOPS              = AttributeDomain + "/fp16TeraFLOPS"
+	DeviceCapacityBlockFP8TeraFLOPS          = AttributeDomain + "/blockFP8TeraFLOPS"
+	DeviceCapacityBoardPowerWatts            = AttributeDomain + "/boardPowerWatts"
 )
 
 // CardSpec captures compute-relevant specifications for a Tenstorrent card
@@ -45,7 +45,7 @@ type CardSpec struct {
 	SystemInterfaceCount    int64  `json:"systemInterfaceCount"`
 }
 
-var SupportedCardSpecs = []CardSpec{
+var supportedCardSpecs = []CardSpec{
 	{
 		ChipSeries:              "wormhole",
 		CardSeries:              "n150",
@@ -136,8 +136,8 @@ var SupportedCardSpecs = []CardSpec{
 	},
 }
 
-func CardSpecForClass(chipSeries, cardSeries string) (CardSpec, bool) {
-	for _, spec := range SupportedCardSpecs {
+func cardSpecForSeries(chipSeries, cardSeries string) (CardSpec, bool) {
+	for _, spec := range supportedCardSpecs {
 		if spec.ChipSeries == chipSeries && spec.CardSeries == cardSeries {
 			return spec, true
 		}
@@ -145,38 +145,12 @@ func CardSpecForClass(chipSeries, cardSeries string) (CardSpec, bool) {
 	return CardSpec{}, false
 }
 
-func (spec CardSpec) Attributes() map[resourceapi.QualifiedName]resourceapi.DeviceAttribute {
-	attributes := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-		DeviceAttributeChipSeries:             StringAttribute(spec.ChipSeries),
-		DeviceAttributeCardSeries:             StringAttribute(spec.CardSeries),
-		DeviceAttributeTensixCoreCount:        IntAttribute(spec.TensixCores),
-		DeviceAttributeTensixTopology:         StringAttribute(TensixTopology2DMesh),
-		DeviceAttributeTensixAllocation:       StringAttribute(TensixAllocationContiguous),
-		DeviceAttributeGDDRControllerLayout:   StringAttribute(GDDRControllerLayoutLocalized),
-		DeviceAttributeGDDRControllerCount:    IntAttribute(spec.GDDRControllerCount()),
-		DeviceAttributeGDDRControllersPerASIC: IntAttribute(spec.GDDRControllersPerASIC),
-		DeviceAttributeAIClockMHz:             IntAttribute(spec.AIClockMHz),
-		DeviceAttributeMemoryType:             StringAttribute(spec.MemoryType),
-		DeviceAttributeConnectivity:           BoolAttribute(spec.Connectivity),
-		DeviceAttributeSystemInterfaceType:    StringAttribute(spec.SystemInterfaceType),
-		DeviceAttributeSystemInterfaceCount:   IntAttribute(spec.SystemInterfaceCount),
+func MatchesDeviceClass(name, chipSeries, cardSeries string) bool {
+	if name == GenericDeviceClassName {
+		return true
 	}
-	if spec.WarpInterfaceCount > 0 {
-		attributes[DeviceAttributeWarpInterfaceCount] = IntAttribute(spec.WarpInterfaceCount)
-	}
-	if spec.WarpSpeedGbps > 0 {
-		attributes[DeviceAttributeWarpSpeedGbps] = IntAttribute(spec.WarpSpeedGbps)
-	}
-	if spec.QSFPInterfaceCount > 0 {
-		attributes[DeviceAttributeQSFPInterfaceCount] = IntAttribute(spec.QSFPInterfaceCount)
-	}
-	if spec.QSFPSpeedGbps > 0 {
-		attributes[DeviceAttributeQSFPSpeedGbps] = IntAttribute(spec.QSFPSpeedGbps)
-	}
-	if spec.BigRISCV > 0 {
-		attributes[DeviceAttributeBigRISCVCoreCount] = IntAttribute(spec.BigRISCV)
-	}
-	return attributes
+	_, known := cardSpecForSeries(chipSeries, cardSeries)
+	return known && name == GenericDeviceClassName+"-"+chipSeries+"-"+cardSeries
 }
 
 func (spec CardSpec) GDDRControllerCount() int64 {
@@ -185,19 +159,19 @@ func (spec CardSpec) GDDRControllerCount() int64 {
 
 func (spec CardSpec) Capacity() map[resourceapi.QualifiedName]resourceapi.DeviceCapacity {
 	capacity := map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-		DeviceCapacityASICs:                      CapacityValue(spec.ASICCount),
-		DeviceCapacitySRAMBytes:                  CapacityValueFromString(spec.SRAMMB, "M"),
-		DeviceCapacityMemoryBytes:                CapacityValueFromString(spec.MemoryGB, "G"),
-		DeviceCapacityMemorySpeedGTPerSecond:     CapacityValue(spec.MemorySpeedGTPerSecond),
-		DeviceCapacityMemoryBandwidthBytesPerSec: CapacityValueFromString(spec.MemoryBandwidthGBPerSec, "G"),
-		DeviceCapacityBlockFP8TeraFLOPS:          CapacityValue(spec.BlockFP8TeraFLOPS),
-		DeviceCapacityBoardPowerWatts:            CapacityValue(spec.TBPWatts),
+		DeviceCapacityASICs:                      capacityValue(spec.ASICCount),
+		DeviceCapacitySRAMBytes:                  capacityValueWithSuffix(spec.SRAMMB, "M"),
+		DeviceCapacityMemoryBytes:                capacityValueWithSuffix(spec.MemoryGB, "G"),
+		DeviceCapacityMemorySpeedGTPerSecond:     capacityValue(spec.MemorySpeedGTPerSecond),
+		DeviceCapacityMemoryBandwidthBytesPerSec: capacityValueWithSuffix(spec.MemoryBandwidthGBPerSec, "G"),
+		DeviceCapacityBlockFP8TeraFLOPS:          capacityValue(spec.BlockFP8TeraFLOPS),
+		DeviceCapacityBoardPowerWatts:            capacityValue(spec.TBPWatts),
 	}
 	if spec.FP8TeraFLOPS > 0 {
-		capacity[DeviceCapacityFP8TeraFLOPS] = CapacityValue(spec.FP8TeraFLOPS)
+		capacity[DeviceCapacityFP8TeraFLOPS] = capacityValue(spec.FP8TeraFLOPS)
 	}
 	if spec.FP16TeraFLOPS > 0 {
-		capacity[DeviceCapacityFP16TeraFLOPS] = CapacityValue(spec.FP16TeraFLOPS)
+		capacity[DeviceCapacityFP16TeraFLOPS] = capacityValue(spec.FP16TeraFLOPS)
 	}
 	return capacity
 }
