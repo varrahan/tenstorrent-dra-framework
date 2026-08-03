@@ -95,10 +95,11 @@ type FaultInfo struct {
 }
 
 type FabricLink struct {
-	Name      string `json:"name"`
-	State     string `json:"state,omitempty"`
-	SpeedGbps uint64 `json:"speedGbps,omitempty"`
-	RemoteBDF string `json:"remoteBdf,omitempty"`
+	Name             string `json:"name"`
+	State            string `json:"state,omitempty"`
+	SpeedGbps        uint64 `json:"speedGbps,omitempty"`
+	RemoteBDF        string `json:"remoteBdf,omitempty"`
+	RemoteEndpointID string `json:"remoteEndpointID,omitempty"`
 }
 
 type FabricInfo struct {
@@ -323,6 +324,8 @@ func normalize(raw RawDevice, observedAt time.Time) InventoryDevice {
 		}
 	}
 	device.Eligible, device.RejectionReason = eligibility(device, raw.DiscoveryError)
+	device.Node.ChipSeries = device.ChipSeries
+	device.Node.CardSeries = device.CardSeries
 	populateProvenance(&device, raw, observedAt)
 	return device
 }
@@ -362,18 +365,13 @@ func eligibility(device InventoryDevice, discoveryErr error) (bool, string) {
 	if device.PCI.BDF == "" || device.PCI.Vendor == "" {
 		return false, "PCI identity is incomplete"
 	}
-	if device.ChipSeries == "" || device.CardSeries == "" || !knownCard(device.ChipSeries, device.CardSeries) {
-		return false, "unknown chip/card combination"
+	if device.ChipSeries == "" || device.CardSeries == "" {
+		return false, "chip/card identity is incomplete"
 	}
-	if device.Health != HealthHealthy {
+	if device.Health == HealthUnhealthy {
 		return false, "device health is " + string(device.Health)
 	}
 	return true, ""
-}
-
-func knownCard(chip, card string) bool {
-	return (chip == "wormhole" && (card == "n150" || card == "n300")) ||
-		(chip == "blackhole" && (card == "p100" || card == "p150"))
 }
 
 func pciIdentity(raw RawDevice) PCIIdentity {
@@ -483,15 +481,16 @@ func readFabricLinks(root string) []FabricLink {
 		if !entry.IsDir() {
 			continue
 		}
-		values, err := readSelectedValues(filepath.Join(root, entry.Name()), []string{"state", "speed_gbps", "remote_bdf"})
+		values, err := readSelectedValues(filepath.Join(root, entry.Name()), []string{"state", "speed_gbps", "remote_bdf", "remote_endpoint_id"})
 		if err != nil {
 			continue
 		}
 		links = append(links, FabricLink{
-			Name:      entry.Name(),
-			State:     values["state"],
-			SpeedGbps: parseUint(values["speed_gbps"]),
-			RemoteBDF: values["remote_bdf"],
+			Name:             entry.Name(),
+			State:            values["state"],
+			SpeedGbps:        parseUint(values["speed_gbps"]),
+			RemoteBDF:        values["remote_bdf"],
+			RemoteEndpointID: values["remote_endpoint_id"],
 		})
 	}
 	sort.Slice(links, func(i, j int) bool { return links[i].Name < links[j].Name })
@@ -604,4 +603,28 @@ func parseDeviceNumbers(value string) (uint64, uint64) {
 	major, _ := strconv.ParseUint(parts[0], 10, 64)
 	minor, _ := strconv.ParseUint(parts[1], 10, 64)
 	return major, minor
+}
+
+// DRAName returns the stable DNS-label name used in ResourceSlices and claims.
+func DRAName(item InventoryDevice) string {
+	if item.StableID == "" && item.Node.ChipSeries != "" && item.Node.CardSeries != "" {
+		return "tt-" + item.Node.ChipSeries + "-" + item.Node.CardSeries + "-" + item.Node.ID
+	}
+	value := strings.ToLower(item.StableID)
+	if value == "" {
+		value = item.Node.ID
+	}
+	var name strings.Builder
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' {
+			name.WriteRune(char)
+		} else {
+			name.WriteByte('-')
+		}
+	}
+	result := strings.Trim(name.String(), "-")
+	if len(result) > 59 {
+		result = result[:59]
+	}
+	return "tt-" + result
 }

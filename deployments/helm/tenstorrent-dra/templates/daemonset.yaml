@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Release.Name }}-node
+spec:
+  selector:
+    matchLabels:
+      app: tenstorrent-dra-node
+  template:
+    metadata:
+      labels:
+        app: tenstorrent-dra-node
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      containers:
+      - name: node
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args:
+        - node
+        - -device-root={{ .Values.deviceRoot }}
+        - -sysfs-root={{ .Values.sysfsRoot }}
+        - -pci-sysfs-root={{ .Values.pciSysfsRoot }}
+        - -state-dir={{ .Values.stateDir }}
+        - -cdi-dir={{ .Values.cdiDir }}
+        - -plugin-dir={{ .Values.pluginDir }}
+        - -registrar-dir={{ .Values.registrarDir }}
+        - -interval={{ .Values.interval }}
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - {name: device, mountPath: {{ .Values.deviceRoot }}, readOnly: true}
+        - {name: sysfs, mountPath: {{ .Values.sysfsMountRoot }}, readOnly: true}
+        - {name: state, mountPath: {{ .Values.stateDir }}}
+        - {name: cdi, mountPath: {{ .Values.cdiDir }}}
+        - {name: plugin, mountPath: {{ .Values.pluginDir }}}
+        - {name: registrar, mountPath: {{ .Values.registrarDir }}}
+      volumes:
+      - {name: device, hostPath: {path: {{ .Values.deviceRoot }}, type: Directory}}
+      - {name: sysfs, hostPath: {path: {{ .Values.sysfsMountRoot }}, type: Directory}}
+      - {name: state, hostPath: {path: {{ .Values.stateDir }}, type: DirectoryOrCreate}}
+      - {name: cdi, hostPath: {path: {{ .Values.cdiDir }}, type: DirectoryOrCreate}}
+      - {name: plugin, hostPath: {path: {{ .Values.pluginDir }}, type: DirectoryOrCreate}}
+      - {name: registrar, hostPath: {path: {{ .Values.registrarDir }}, type: DirectoryOrCreate}}

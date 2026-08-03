@@ -1,14 +1,44 @@
-{{- range $class := list "wormhole-n150" "wormhole-n300" "blackhole-p100" "blackhole-p150" }}
-{{- $parts := splitList "-" $class }}
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: tenstorrent-{{ $class }}
-  labels:
-    app.kubernetes.io/name: tenstorrent-dra
+  name: tenstorrent
 spec:
   selectors:
   - cel:
-      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent"].chipSeries == "{{ index $parts 0 }}" && device.attributes["tenstorrent"].cardSeries == "{{ index $parts 1 }}"
+      expression: device.driver == "dra.tenstorrent.com"
 ---
-{{- end }}
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: tenstorrent-wormhole-n150
+spec:
+  selectors:
+  - cel:
+      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent.com"].chipSeries == "wormhole" && device.attributes["tenstorrent.com"].cardSeries == "n150"
+---
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: tenstorrent-wormhole-n300
+spec:
+  selectors:
+  - cel:
+      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent.com"].chipSeries == "wormhole" && device.attributes["tenstorrent.com"].cardSeries == "n300"
+---
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: tenstorrent-blackhole-p100
+spec:
+  selectors:
+  - cel:
+      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent.com"].chipSeries == "blackhole" && device.attributes["tenstorrent.com"].cardSeries == "p100"
+---
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: tenstorrent-blackhole-p150
+spec:
+  selectors:
+  - cel:
+      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent.com"].chipSeries == "blackhole" && device.attributes["tenstorrent.com"].cardSeries == "p150"

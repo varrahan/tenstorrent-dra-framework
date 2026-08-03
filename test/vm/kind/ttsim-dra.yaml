@@ -3,7 +3,13 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
   image: kindest/node:v1.34.0
+- role: worker
+  image: kindest/node:v1.34.0
   extraMounts:
-  - hostPath: /dev/tenstorrent
-    containerPath: /dev/tenstorrent
-    propagation: HostToContainer
+  - {hostPath: /tmp/tt-node-a/dev/tenstorrent, containerPath: /dev/tenstorrent}
+  - {hostPath: /tmp/tt-node-a/sys, containerPath: /tt-sys}
+- role: worker
+  image: kindest/node:v1.34.0
+  extraMounts:
+  - {hostPath: /tmp/tt-node-b/dev/tenstorrent, containerPath: /dev/tenstorrent}
+  - {hostPath: /tmp/tt-node-b/sys, containerPath: /tt-sys}
