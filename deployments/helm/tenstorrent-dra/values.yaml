@@ -5,6 +5,7 @@ image:
 nodeSelector:
   tenstorrent.com/enabled: "true"
 deviceRoot: /dev/tenstorrent
+sysfsMountRoot: /sys
 sysfsRoot: /sys/class/tenstorrent
 pciSysfsRoot: /sys/bus/pci/devices
 stateDir: /var/lib/tenstorrent-dra

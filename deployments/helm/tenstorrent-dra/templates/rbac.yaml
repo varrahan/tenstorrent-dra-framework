@@ -15,7 +15,7 @@ rules:
   resources: ["resourceslices", "resourceclaims"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["topology.tenstorrent.com"]
-  resources: ["tenstorrentnodetopologies", "tenstorrentfabrictopologies"]
+  resources: ["tenstorrentnodetopologies", "tenstorrentfabrictopologies", "tenstorrentfabrictopologies/status"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["scheduling.tenstorrent.com"]
   resources: ["tenstorrentworkloads", "tenstorrentworkloads/status"]

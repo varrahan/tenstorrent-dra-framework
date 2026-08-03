@@ -24,7 +24,29 @@ spec:
             properties:
               nodeName: {type: string}
               observedAt: {type: string, format: date-time}
-              devices: {type: array, items: {type: object}}
+              devices:
+                type: array
+                items:
+                  type: object
+                  required: [pool, name, stableID, chipSeries, cardSeries]
+                  properties:
+                    pool: {type: string}
+                    name: {type: string}
+                    stableID: {type: string}
+                    chipSeries: {type: string}
+                    cardSeries: {type: string}
+                    fabricID: {type: string}
+                    ringID: {type: string}
+                    endpointID: {type: string}
+                    links:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name: {type: string}
+                          state: {type: string}
+                          speedGbps: {type: integer}
+                          remoteEndpointID: {type: string}
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -51,9 +73,34 @@ spec:
             type: object
             properties:
               generation: {type: string}
+              observedAt: {type: string, format: date-time}
               valid: {type: boolean}
-              endpoints: {type: array, items: {type: object}}
+              endpoints:
+                type: array
+                items:
+                  type: object
+                  required: [nodeName, pool, deviceName, stableID, chipSeries, cardSeries, endpointID]
+                  properties:
+                    nodeName: {type: string}
+                    pool: {type: string}
+                    deviceName: {type: string}
+                    stableID: {type: string}
+                    chipSeries: {type: string}
+                    cardSeries: {type: string}
+                    fabricID: {type: string}
+                    ringID: {type: string}
+                    endpointID: {type: string}
+                    links:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name: {type: string}
+                          state: {type: string}
+                          speedGbps: {type: integer}
+                          remoteEndpointID: {type: string}
               errors: {type: array, items: {type: string}}
+              conditions: {type: array, items: {type: object, x-kubernetes-preserve-unknown-fields: true}}
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -82,8 +129,12 @@ spec:
             required: [containerName, podTemplate, ranks]
             properties:
               containerName: {type: string}
-              podTemplate: {type: object}
-              topology: {type: object}
+              podTemplate: {type: object, x-kubernetes-preserve-unknown-fields: true}
+              topology:
+                type: object
+                properties:
+                  fabricID: {type: string}
+                  ringID: {type: string}
               ranks:
                 type: array
                 minItems: 1
@@ -96,3 +147,27 @@ spec:
                     count: {type: integer, minimum: 1}
                     chipSeries: {type: string}
                     cardSeries: {type: string}
+          status:
+            type: object
+            properties:
+              phase: {type: string}
+              fabricGeneration: {type: string}
+              assignments:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    rank: {type: string}
+                    nodeName: {type: string}
+                    claimName: {type: string}
+                    podName: {type: string}
+                    devices:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          pool: {type: string}
+                          name: {type: string}
+                          stableID: {type: string}
+                          endpointID: {type: string}
+              conditions: {type: array, items: {type: object, x-kubernetes-preserve-unknown-fields: true}}

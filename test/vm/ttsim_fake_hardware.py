@@ -20,10 +20,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.root.exists():
         for path in sorted(args.root.rglob("*"), reverse=True):
-            if path.is_file() or path.is_symlink():
-                path.unlink()
-            elif path.is_dir():
+            if path.is_dir() and not path.is_symlink():
                 path.rmdir()
+            else:
+                path.unlink()
     class_root = args.root / "sys" / "class" / "tenstorrent"
     pci_root = args.root / "sys" / "bus" / "pci" / "devices"
     device_root = args.root / "dev" / "tenstorrent"
@@ -38,7 +38,7 @@ def main() -> None:
         class_entry = class_root / name
         class_entry.parent.mkdir(parents=True, exist_ok=True)
         class_entry.symlink_to(Path("../../devices/tt") / name)
-        (data / "device").symlink_to(Path("../../bus/pci/devices") / bdf)
+        (data / "device").symlink_to(Path("../../../bus/pci/devices") / bdf)
         write(data / "uevent", f"DEVNAME=/dev/tenstorrent/{name}")
         write(data / "dev", f"226:{index}")
         write(data / "architecture", chip)

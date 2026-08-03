@@ -54,6 +54,8 @@ type ClaimDevice struct {
 	Pool   string `json:"pool"`
 	Device string `json:"device"`
 	Path   string `json:"path"`
+	Major  uint64 `json:"major"`
+	Minor  uint64 `json:"minor"`
 	CDIID  string `json:"cdiID"`
 }
 
@@ -183,7 +185,7 @@ func (m *Manager) prepareOne(claim *resourceapi.ResourceClaim, byName map[string
 			}
 		}
 		id := cdiID(claim.UID, allocation.Device)
-		prepared.Devices = append(prepared.Devices, ClaimDevice{Pool: allocation.Pool, Device: allocation.Device, Path: item.Node.Path, CDIID: id})
+		prepared.Devices = append(prepared.Devices, ClaimDevice{Pool: allocation.Pool, Device: allocation.Device, Path: item.Node.Path, Major: item.Node.Major, Minor: item.Node.Minor, CDIID: id})
 	}
 	if err := m.writeCDI(prepared); err != nil {
 		return nil, err
@@ -198,7 +200,7 @@ func (m *Manager) writeCDI(claim PreparedClaim) error {
 	}
 	spec := cdiSpec{CDIVersion: cdiVersion, Kind: cdiKind}
 	for _, item := range claim.Devices {
-		spec.Devices = append(spec.Devices, cdiDevice{Name: cdiName(item.CDIID), ContainerEdits: cdiEdits{DeviceNodes: []cdiNode{{Path: item.Path, Type: "c", FileMode: ptr(uint32(0o600))}}}})
+		spec.Devices = append(spec.Devices, cdiDevice{Name: cdiName(item.CDIID), ContainerEdits: cdiEdits{DeviceNodes: []cdiNode{{Path: item.Path, Type: "c", Major: int64(item.Major), Minor: int64(item.Minor), FileMode: ptr(uint32(0o600))}}}})
 	}
 	return atomicJSON(filepath.Join(m.config.CDIDir, cdiFilename(claim.UID)), spec, 0o644)
 }
@@ -276,7 +278,12 @@ func cdiID(uid types.UID, device string) string {
 	return cdiVendor + "/" + cdiClass + "=" + string(uid) + "-" + strings.ReplaceAll(device, "/", "-")
 }
 
-func cdiName(id string) string { return strings.ReplaceAll(strings.ReplaceAll(id, "/", "-"), "=", "-") }
+func cdiName(id string) string {
+	if kindPrefix := cdiKind + "="; strings.HasPrefix(id, kindPrefix) {
+		return strings.TrimPrefix(id, kindPrefix)
+	}
+	return id
+}
 func cdiFilename(uid types.UID) string {
 	return "claim-" + strings.ReplaceAll(string(uid), "/", "-") + ".json"
 }
