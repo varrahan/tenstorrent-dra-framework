@@ -53,6 +53,12 @@ func TestDriverResourcesFiltersAndChunksDevices(t *testing.T) {
 	if got := len(resources.Pools["worker-a"].Slices[0].Devices); got != 0 {
 		t.Fatalf("ineligible device count = %d, want 0", got)
 	}
+	devices[0].Eligible = true
+	devices[0].Health = device.HealthUnknown
+	resources = dra.DriverResources("worker-a", device.InventorySnapshot{Devices: devices[:1]})
+	if got := len(resources.Pools["worker-a"].Slices[0].Devices); got != 0 {
+		t.Fatalf("unknown-health device count = %d, want 0", got)
+	}
 }
 
 func TestMatchesDeviceClass(t *testing.T) {

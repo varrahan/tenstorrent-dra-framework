@@ -15,21 +15,21 @@ devices as its hardware source of truth.
 | Kubernetes scheduler | Kubernetes control plane | Allocates DRA devices and places Pods using `DeviceClass`, `ResourceSlice`, claim, and Pod constraints. |
 | `tt-dra-driver node`: kubelet DRA plugin | Selected Kubernetes node | Revalidates allocated devices, enforces exclusive claim ownership, persists claim state, and creates per-claim CDI specs. |
 | Kubelet and container runtime | Selected Kubernetes node | Ask the plugin to prepare or unprepare a claim and inject the returned CDI devices into the workload container. |
-| Hardware Janitor | Planned; not implemented | Will reset and scrub devices, monitor active health, and taint or cordon unhealthy capacity. |
+| Hardware Janitor | Node command | Resets and scrubs devices around claim use, quarantines unhealthy capacity, audits lifecycle decisions, and marks nodes with no healthy accelerator capacity. |
 
 ## System stages
 
 ```mermaid
 flowchart TB
-  S1["1. Discover and publish node state<br/><b>Node command</b><br/>tt-kmd → ResourceSlices + NodeTopology"]
+  S1["1. Discover, monitor, and publish node state<br/><b>Node command</b><br/>tt-kmd → quarantine → ResourceSlices + NodeTopology"]
   S2["2. Validate the fabric graph<br/><b>Controller</b><br/>NodeTopology → FabricTopology<br/><i>topology-aware workloads only</i>"]
   S3{"3. Submit a request"}
   Standard["Standard DRA path<br/>Pod + ResourceClaim<br/><b>skips the Tenstorrent controller</b>"]
   Topology["Topology-aware path<br/>TenstorrentWorkload<br/><b>controller creates exact claims + rank Pods</b>"]
   S4["4. Allocate devices and place Pods<br/><b>Kubernetes scheduler</b>"]
-  S5["5. Prepare the claim on the selected node<br/><b>Kubelet → node DRA plugin</b><br/>validate ownership + write CDI spec"]
+  S5["5. Prepare the claim on the selected node<br/><b>Kubelet → node DRA plugin</b><br/>validate ownership + reset/scrub + write CDI spec"]
   S6["6. Run the container<br/><b>Container runtime</b><br/>inject allocated character devices only"]
-  S7["7. Release the claim<br/><b>Kubelet → node DRA plugin</b><br/>delete CDI spec + persisted ownership"]
+  S7["7. Release the claim<br/><b>Kubelet → node DRA plugin</b><br/>reset/scrub + delete CDI spec + persisted ownership"]
 
   S1 --> S2
   S1 --> S3
@@ -49,10 +49,13 @@ does not depend on the fabric graph or the Tenstorrent workload controller.
 
 1. **Discover and publish node state.** The node command periodically discovers
    host-visible Tenstorrent character devices and their `tt-kmd`, PCI, health,
-   capability, and fabric metadata. It does not use `tt-smi`. Each eligible
-   character device is published as an exclusive whole-card DRA device in a
-   node-owned `ResourceSlice`; eligible fabric endpoints and links are published
-   in `TenstorrentNodeTopology`.
+   capability, and fabric metadata. It does not use `tt-smi`. The Hardware
+   Janitor quarantines unhealthy, missing, faulted, or fabric-disconnected
+   devices and requires a dedicated IOMMU group by default. Only healthy,
+   non-quarantined devices are published in ResourceSlices and node topology.
+   If none remain, the node receives the
+   `tenstorrent.com/accelerator-unhealthy:NoSchedule` taint and a false
+   `TenstorrentAcceleratorsHealthy` condition.
 2. **Validate the fabric graph.** The controller combines fresh node topology
    objects into the cluster-scoped `TenstorrentFabricTopology` named `cluster`.
    Duplicate endpoints, stale observations, missing peers, asymmetric links,
@@ -70,24 +73,48 @@ does not depend on the fabric graph or the Tenstorrent workload controller.
    created for a `TenstorrentWorkload` constrain this choice to the controller's
    topology-aware assignment.
 5. **Prepare the claim.** On the selected node, kubelet calls the DRA plugin to
-   prepare the allocated claim. The plugin refreshes local inventory, requires
-   each allocated device to be local and healthy, prevents concurrent claim
-   ownership, persists claim state, and writes a CDI spec containing only the
-   allocated character-device nodes.
+   prepare the allocated claim. The plugin refreshes local inventory, prevents
+   concurrent ownership, issues `tt-kmd` ASIC_RESET and POST_RESET ioctls,
+   verifies that the device returned healthy, persists claim state, and writes a
+   CDI spec containing only the allocated character-device nodes. A reset,
+   verification, or audit failure quarantines the device and fails preparation.
 6. **Run the container.** Kubelet and the container runtime apply the returned
    CDI device IDs, exposing only the allocated character devices to the
    workload.
-7. **Release the claim.** Unpreparing a claim removes its CDI spec and persisted
-   ownership. Hardware reset, memory scrubbing, active fault recovery, and node
-   tainting or cordoning are roadmap responsibilities of the Hardware Janitor
-   and are not implemented by the current component.
+7. **Release the claim.** Unpreparing a claim resets and scrubs every allocated
+   device before removing its CDI spec and persisted ownership. Any failure
+   retains ownership and quarantine so the device cannot be reused. The
+   operation is retried by kubelet.
+
+## Tenant-isolation contract
+
+- CDI exposes only each claim's allocated character-device nodes, including the
+  exact major and minor numbers used by the container runtime's device cgroup.
+- Production mode requires each accelerator to be the sole member of an IOMMU
+  group. A missing or shared group quarantines the device.
+- Sanitization uses the `tt-kmd` RESET_DEVICE ioctl with ASIC_RESET followed by
+  POST_RESET. This invalidates pre-reset mappings and is the whole-card scrub
+  boundary. A platform that cannot certify that this reset clears tenant-visible
+  accelerator state is unsupported.
+- The node agent is a privileged host component because it must open the
+  character devices and manage kubelet CDI/plugin paths. It does not protect
+  devices from host root or other privileged workloads; those remain outside the
+  Kubernetes tenant boundary.
+- An active health failure, non-zero `fault_code` (including OOM or hang faults
+  reported by `tt-kmd`), or fabric-link failure quarantines the device and
+  removes it from new capacity. The janitor does not reset or evict a running
+  claim. Ownership remains frozen until kubelet unprepares the claim, when
+  post-use sanitization must succeed before release.
+- Sanitization, quarantine, recovery, and claim decisions are appended as JSON
+  lines to `/var/lib/tenstorrent-dra/audit.jsonl` with mode `0600`.
 
 ## Scope boundaries
 
 - Allocation is exclusive and whole-card; Tensix core groups, SRAM regions,
   and other fine-grained partitions are not exposed.
-- Periodic inventory updates and prepare-time health validation are implemented.
-  Active health remediation and pre-start ASIC scrubbing are not.
+- Periodic inventory updates, active health fencing, pre-start and post-use ASIC
+  reset/scrubbing, quarantine, node safety state, and audit logging are
+  implemented.
 - The validation harness proves synthetic QEMU/kind discovery, publication, and
   CDI-backed allocation. Physical hardware certification is outside the
   repository's current validation scope.

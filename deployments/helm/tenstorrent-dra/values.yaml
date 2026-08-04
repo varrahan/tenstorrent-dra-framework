@@ -14,3 +14,5 @@ pluginDir: /var/lib/kubelet/plugins/dra.tenstorrent.com
 registrarDir: /var/lib/kubelet/plugins_registry
 interval: 30s
 topologyTTL: 90s
+resetMode: ioctl
+requireIOMMU: true

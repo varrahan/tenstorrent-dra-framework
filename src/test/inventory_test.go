@@ -291,6 +291,16 @@ func TestFilesystemProviderReadsSyntheticSysfs(t *testing.T) {
 	if err := os.Symlink(pciPath, filepath.Join(devicePath, "device")); err != nil {
 		t.Fatal(err)
 	}
+	iommuGroup := filepath.Join(root, "sys", "kernel", "iommu_groups", "7")
+	if err := os.MkdirAll(filepath.Join(iommuGroup, "devices"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(iommuGroup, filepath.Join(pciPath, "iommu_group")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(pciPath, filepath.Join(iommuGroup, "devices", "0000:00:01.0")); err != nil {
+		t.Fatal(err)
+	}
 
 	provider, err := device.NewFilesystemProvider(device.Roots{
 		DeviceRoot:           deviceRoot,
@@ -314,6 +324,9 @@ func TestFilesystemProviderReadsSyntheticSysfs(t *testing.T) {
 	}
 	if observed.ChipSeries != "wormhole" {
 		t.Fatalf("identity = %s, want wormhole", observed.ChipSeries)
+	}
+	if observed.PCI.IOMMUGroup != 7 || observed.PCI.IOMMUGroupSize != 1 {
+		t.Fatalf("IOMMU group = %d/%d, want 7/1", observed.PCI.IOMMUGroup, observed.PCI.IOMMUGroupSize)
 	}
 	if observed.CharacterDevicePresent {
 		t.Fatal("synthetic tree without a character node should not be allocatable")

@@ -12,7 +12,7 @@ const maxDevicesPerSlice = 128
 func DriverResources(nodeName string, snapshot device.InventorySnapshot) resourceslice.DriverResources {
 	devices := make([]resourceapi.Device, 0, len(snapshot.Devices))
 	for _, item := range snapshot.Devices {
-		if item.Eligible && item.CharacterDevicePresent && item.Health != device.HealthUnhealthy {
+		if item.Eligible && item.CharacterDevicePresent && item.Health == device.HealthHealthy {
 			devices = append(devices, resourceDevice(nodeName, item))
 		}
 	}

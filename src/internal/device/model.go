@@ -65,6 +65,8 @@ type PCIIdentity struct {
 	SubsystemDevice string `json:"subsystemDevice,omitempty"`
 	Revision        string `json:"revision,omitempty"`
 	NUMANode        int    `json:"numaNode"`
+	IOMMUGroup      int    `json:"iommuGroup"`
+	IOMMUGroupSize  int    `json:"iommuGroupSize"`
 	LinkState       string `json:"linkState,omitempty"`
 	LinkSpeed       string `json:"linkSpeed,omitempty"`
 	LinkWidth       int    `json:"linkWidth,omitempty"`

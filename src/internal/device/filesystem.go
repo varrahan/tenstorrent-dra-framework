@@ -99,6 +99,7 @@ func (p FilesystemProvider) observeEntry(id string) RawDevice {
 		for key, value := range readPCIValues(raw.PCIPath) {
 			raw.Values["pci."+key] = value
 		}
+		raw.Values["pci.iommu_group"], raw.Values["pci.iommu_group_size"] = readIOMMUGroup(raw.PCIPath)
 	}
 	raw.FabricLinks = readFabricLinks(filepath.Join(dataPath, "fabric_links"))
 	return raw
@@ -154,6 +155,24 @@ func readPCIValues(root string) map[string]string {
 		values["PCI_SLOT_NAME"] = strings.TrimSpace(values["PCI_SLOT_NAME"])
 	}
 	return values
+}
+
+func readIOMMUGroup(root string) (string, string) {
+	link := filepath.Join(root, "iommu_group")
+	target, err := os.Readlink(link)
+	if err != nil {
+		return "", ""
+	}
+	group := filepath.Base(filepath.Clean(target))
+	resolved, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		return group, ""
+	}
+	entries, err := os.ReadDir(filepath.Join(resolved, "devices"))
+	if err != nil {
+		return group, ""
+	}
+	return group, fmt.Sprint(len(entries))
 }
 
 func resolvePCIPath(linkPath, pciRoot string) (string, error) {

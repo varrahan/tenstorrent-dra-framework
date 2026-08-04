@@ -20,6 +20,7 @@ helm version
 test -e /dev/tenstorrent
 test -d /sys/class/tenstorrent
 test -d /sys/bus/pci/devices
+test -L /sys/bus/pci/devices/<bdf>/iommu_group
 ```
 
 ## 2. Enter the repository
@@ -83,7 +84,10 @@ make -C test/vm vm-validate
 ```
 
 The validation script mounts the synthetic trees as `/tt-sys` in the kind
-workers and passes these paths to the driver:
+workers and passes these paths to the driver. Synthetic character devices do
+not implement the `tt-kmd` reset ioctl, so this disposable path explicitly uses
+`resetMode=noop` and disables the IOMMU requirement. Never use those overrides
+for production hardware.
 
 ```text
 sysfsRoot=/tt-sys/class/tenstorrent
@@ -119,10 +123,19 @@ kubectl get deviceclasses
 kubectl get resourceslices -o yaml
 kubectl get tenstorrentnodetopologies -o yaml
 kubectl get tenstorrentfabrictopologies -o yaml
+kubectl get node -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="TenstorrentAcceleratorsHealthy")].status}{"\n"}{end}'
 ```
 
 The synthetic run should show two devices on the first worker, one device on the
 second worker, and a valid fabric topology when all expected links are present.
+
+Production uses `resetMode=ioctl` and `requireIOMMU=true`, the chart defaults.
+The node agent calls the `tt-kmd` ASIC_RESET and POST_RESET ioctls before and
+after each claim. Audit records are stored on the node at:
+
+```bash
+sudo tail -n 50 /var/lib/tenstorrent-dra/audit.jsonl
+```
 
 ## 8. Inspect claims and workload placement
 
@@ -159,6 +172,7 @@ kubectl logs deployment/tt-dra-controller
 kubectl logs daemonset/tt-dra-node
 kubectl describe pod <pod-name>
 kubectl get events --sort-by=.lastTimestamp
+kubectl describe node <node-name>
 ```
 
 Check the guest's simulated hardware paths if discovery is empty:

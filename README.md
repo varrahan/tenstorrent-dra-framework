@@ -8,7 +8,8 @@ contain any number of cards and may mix Wormhole or Blackhole series.
 The driver provides three runtime paths:
 
 - `tt-dra-driver node` discovers cards, publishes ResourceSlices, serves the
-  kubelet DRA protocol, writes per-claim CDI entries, and publishes node links.
+  kubelet DRA protocol, sanitizes devices, writes per-claim CDI entries,
+  monitors health, and publishes node links.
 - `tt-dra-driver controller` validates the cluster fabric graph and reconciles
   connected multi-rank `TenstorrentWorkload` assignments.
 - `tt-dra-driver list` prints the complete local inventory for diagnostics.
@@ -24,9 +25,9 @@ the validation target; do not use `tt-smi` for discovery or simulator checks.
 Commands that require Docker, kind, Kubernetes, or `/dev/tenstorrent*` run
 inside the VM. Host-side Go tests remain independent of hardware.
 
-The implementation intentionally does not partition cards, reset or scrub
-hardware, install scheduler plugins, or provide a release/security pipeline.
-Those concerns are outside this minimal DRA component.
+The implementation intentionally does not partition cards, install scheduler
+plugins, or provide a release/security pipeline. Those concerns are outside
+this minimal DRA component.
 
 See [docs/README.md](docs/README.md), [docs/DRA.md](docs/DRA.md), and
 [docs/VM.md](docs/VM.md) for the model, APIs, and VM workflow.

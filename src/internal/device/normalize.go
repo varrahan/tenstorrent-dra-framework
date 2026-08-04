@@ -137,6 +137,8 @@ func pciIdentity(raw RawDevice) PCIIdentity {
 		SubsystemDevice: normalizeHex(raw.Values["pci.subsystem_device"]),
 		Revision:        normalizeHex(raw.Values["pci.revision"]),
 		NUMANode:        parseOptionalInt(raw.Values["pci.numa_node"]),
+		IOMMUGroup:      parseOptionalInt(raw.Values["pci.iommu_group"]),
+		IOMMUGroupSize:  parseOptionalInt(raw.Values["pci.iommu_group_size"]),
 		LinkState:       firstValue(raw.Values, "pci.current_link_state", "pci.link_state"),
 		LinkSpeed:       raw.Values["pci.current_link_speed"],
 		LinkWidth:       parseInt(raw.Values["pci.current_link_width"]),

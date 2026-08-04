@@ -7,6 +7,9 @@ Docker, kind, Kubernetes v1.34+, and `tt-kmd`. The driver reads the guest's
 The minimal validation harness creates heterogeneous synthetic device trees,
 mounts separate trees into two kind workers, installs the Helm chart, and checks
 node-owned ResourceSlices and CDI-backed claims. It does not use `tt-smi`.
+Synthetic device nodes do not implement the `tt-kmd` reset ioctl, so the harness
+uses the explicit validation-only `resetMode=noop` and `requireIOMMU=false`
+overrides. Production defaults remain ioctl reset and dedicated IOMMU groups.
 
 ```bash
 make -C test/vm fake-hardware

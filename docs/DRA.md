@@ -16,6 +16,10 @@ ResourceSlices use one node-owned pool and are split at the Kubernetes limit of
 were actually observed. Host paths, permissions, provenance, and timestamps
 remain in `tt-dra-driver list` output rather than scheduler objects.
 
+Only explicitly healthy, non-quarantined devices are published. The node
+janitor also requires a dedicated IOMMU group by default and removes devices
+with hardware faults or failed fabric links from new capacity.
+
 The installed DeviceClasses are:
 
 - `tenstorrent`
@@ -28,7 +32,8 @@ A Pod can request the generic class and select `chipSeries`, `fabricID`, or
 `ringID` with CEL. A multi-device request can use DRA's
 `matchAttribute` constraint to require a shared fabric or ring. The kubelet
 plugin validates the allocation against local inventory and exposes only the
-allocated character devices through CDI.
+allocated character devices through CDI. It resets and scrubs each device
+before CDI exposure and again before releasing claim ownership.
 
 ## Topology APIs
 

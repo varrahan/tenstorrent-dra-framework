@@ -9,7 +9,9 @@ kubectl label node "${cluster}-worker2" tenstorrent.com/enabled=true --overwrite
 helm upgrade --install tt-dra deployments/helm/tenstorrent-dra \
   --set sysfsMountRoot=/tt-sys \
   --set sysfsRoot=/tt-sys/class/tenstorrent \
-  --set pciSysfsRoot=/tt-sys/bus/pci/devices
+  --set pciSysfsRoot=/tt-sys/bus/pci/devices \
+  --set resetMode=noop \
+  --set requireIOMMU=false
 kubectl wait --for=condition=Established crd/tenstorrentworkloads.scheduling.tenstorrent.com --timeout=120s
 kubectl get resourceslices
 kubectl get tenstorrentnodetopologies

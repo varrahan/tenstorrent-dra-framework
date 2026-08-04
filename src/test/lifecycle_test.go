@@ -21,7 +21,7 @@ func TestLifecycleManagerPrepareIsIdempotentAndIsolated(t *testing.T) {
 		Node:                   device.Node{ID: "0", Path: "/dev/tenstorrent/0", ChipSeries: "wormhole", Major: 241, Minor: 0},
 		CharacterDevicePresent: true, Health: device.HealthHealthy, Eligible: true,
 	}}}
-	m, err := lifecycle.NewManager(lifecycle.Config{NodeName: "node-a", Driver: "dra.tenstorrent.com", StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"), Inventory: func(context.Context) (device.InventorySnapshot, error) { return snapshot, nil }})
+	m, err := lifecycle.NewManager(lifecycle.Config{NodeName: "node-a", Driver: "dra.tenstorrent.com", StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"), Resetter: lifecycle.NoopResetter{}, Inventory: func(context.Context) (device.InventorySnapshot, error) { return snapshot, nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +101,7 @@ func TestPrepareRejectsNilAndDuplicateAllocations(t *testing.T) {
 	manager, err := lifecycle.NewManager(lifecycle.Config{
 		NodeName: "node-a", Driver: "dra.tenstorrent.com",
 		StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"),
+		Resetter:  lifecycle.NoopResetter{},
 		Inventory: func(context.Context) (device.InventorySnapshot, error) { return snapshot, nil },
 	})
 	if err != nil {

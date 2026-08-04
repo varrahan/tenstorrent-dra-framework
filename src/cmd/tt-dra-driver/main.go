@@ -93,9 +93,13 @@ func runList(args []string) error {
 func runNode(args []string) error {
 	set, roots := inventoryFlags("node")
 	nodeName := os.Getenv("NODE_NAME")
+	resetMode := "ioctl"
+	requireIOMMU := true
 	interval, cdiDir, pluginDir, registrarDir := 30*time.Second, "/var/run/cdi", "/var/lib/kubelet/plugins/dra.tenstorrent.com", kubeletplugin.KubeletRegistryDir
 	set.StringVar(&nodeName, "node-name", nodeName, "Kubernetes node name")
 	set.DurationVar(&interval, "interval", interval, "inventory interval")
+	set.StringVar(&resetMode, "reset-mode", resetMode, "device reset mode: ioctl or noop")
+	set.BoolVar(&requireIOMMU, "require-iommu", requireIOMMU, "quarantine devices without an IOMMU group")
 	set.StringVar(&cdiDir, "cdi-dir", cdiDir, "CDI directory")
 	set.StringVar(&pluginDir, "plugin-dir", pluginDir, "kubelet plugin directory")
 	set.StringVar(&registrarDir, "registrar-dir", registrarDir, "kubelet registrar directory")
@@ -108,6 +112,18 @@ func runNode(args []string) error {
 	if interval <= 0 {
 		return fmt.Errorf("inventory interval must be positive")
 	}
+	var resetter lifecycle.Resetter
+	switch resetMode {
+	case "ioctl":
+		resetter = lifecycle.KMDResetter{}
+	case "noop":
+		if requireIOMMU {
+			return fmt.Errorf("noop reset mode requires -require-iommu=false and is for synthetic validation only")
+		}
+		resetter = lifecycle.NoopResetter{}
+	default:
+		return fmt.Errorf("unsupported reset mode %q", resetMode)
+	}
 	kube, dynamicClient, err := clusterClients()
 	if err != nil {
 		return err
@@ -117,10 +133,12 @@ func runNode(args []string) error {
 		return err
 	}
 	manager, err := lifecycle.NewManager(lifecycle.Config{
-		NodeName: nodeName,
-		Driver:   dra.DefaultDriverName,
-		StateDir: roots.StateDir,
-		CDIDir:   cdiDir,
+		NodeName:     nodeName,
+		Driver:       dra.DefaultDriverName,
+		StateDir:     roots.StateDir,
+		CDIDir:       cdiDir,
+		Resetter:     resetter,
+		RequireIOMMU: requireIOMMU,
 		Inventory: func(ctx context.Context) (device.InventorySnapshot, error) {
 			return device.BuildSnapshot(ctx, source)
 		},
@@ -143,15 +161,25 @@ func runNode(args []string) error {
 	defer ticker.Stop()
 	for {
 		snapshot, discoverErr := device.BuildSnapshot(ctx, source)
+		var safety lifecycle.Safety
+		var monitorErr error
 		if discoverErr != nil {
 			log.Printf("inventory: %v", discoverErr)
+			snapshot, safety, monitorErr = manager.InventoryFailed(discoverErr)
 		} else {
-			if err := helper.PublishResources(ctx, dra.DriverResources(nodeName, snapshot)); err != nil {
-				log.Printf("publish resources: %v", err)
-			}
-			if err := topology.PublishNode(ctx, dynamicClient, nodeName, node.UID, snapshot); err != nil {
-				log.Printf("publish topology: %v", err)
-			}
+			snapshot, safety, monitorErr = manager.Monitor(ctx, snapshot)
+		}
+		if monitorErr != nil {
+			log.Printf("hardware janitor: %v", monitorErr)
+		}
+		if err := helper.PublishResources(ctx, dra.DriverResources(nodeName, snapshot)); err != nil {
+			log.Printf("publish resources: %v", err)
+		}
+		if err := topology.PublishNode(ctx, dynamicClient, nodeName, node.UID, snapshot); err != nil {
+			log.Printf("publish topology: %v", err)
+		}
+		if err := lifecycle.UpdateNodeSafety(ctx, kube, nodeName, safety); err != nil {
+			log.Printf("publish node safety: %v", err)
 		}
 		select {
 		case <-ctx.Done():

@@ -5,13 +5,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
-const stateVersion = 1
+const stateVersion = 2
+
+type QuarantineRecord struct {
+	Reason         string    `json:"reason"`
+	Since          time.Time `json:"since"`
+	AwaitingHealth bool      `json:"awaitingHealth,omitempty"`
+}
+
+type KnownDevice struct {
+	Path     string    `json:"path"`
+	LastSeen time.Time `json:"lastSeen"`
+}
 
 type persistedState struct {
-	Version int                      `json:"version"`
-	Claims  map[string]PreparedClaim `json:"claims"`
+	Version     int                         `json:"version"`
+	Claims      map[string]PreparedClaim    `json:"claims"`
+	Quarantined map[string]QuarantineRecord `json:"quarantined"`
+	Known       map[string]KnownDevice      `json:"known"`
 }
 
 func (m *Manager) load() error {
@@ -25,8 +39,17 @@ func (m *Manager) load() error {
 	if err := json.Unmarshal(data, &m.state); err != nil {
 		return fmt.Errorf("decode claim state: %w", err)
 	}
+	if m.state.Version == 1 {
+		m.state.Version = stateVersion
+	}
 	if m.state.Version != stateVersion || m.state.Claims == nil {
 		return fmt.Errorf("unsupported claim state version %d", m.state.Version)
+	}
+	if m.state.Quarantined == nil {
+		m.state.Quarantined = map[string]QuarantineRecord{}
+	}
+	if m.state.Known == nil {
+		m.state.Known = map[string]KnownDevice{}
 	}
 	return nil
 }
