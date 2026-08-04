@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// TestSolveFindsConnectedCombinationAndDoesNotMutateInput verifies deterministic connected placement preserves inputs.
 func TestSolveFindsConnectedCombinationAndDoesNotMutateInput(t *testing.T) {
 	endpoints := []ttapi.FabricEndpoint{
 		endpoint("worker-a", "b", "e2"),
@@ -34,6 +35,7 @@ func TestSolveFindsConnectedCombinationAndDoesNotMutateInput(t *testing.T) {
 	}
 }
 
+// TestSolveHonorsReservationsClassesAndTopology verifies every placement constraint is enforced.
 func TestSolveHonorsReservationsClassesAndTopology(t *testing.T) {
 	endpoints := []ttapi.FabricEndpoint{
 		endpoint("worker-a", "a", "e1"),
@@ -59,6 +61,7 @@ func TestSolveHonorsReservationsClassesAndTopology(t *testing.T) {
 	}
 }
 
+// TestReservationsAddAssignments verifies assignment devices are indexed as reserved.
 func TestReservationsAddAssignments(t *testing.T) {
 	reservations := placement.Reservations{}
 	reservations.AddAssignments([]ttapi.RankAssignment{{Devices: []ttapi.AssignedDevice{{Pool: "pool", Name: "device"}}}})
@@ -67,6 +70,7 @@ func TestReservationsAddAssignments(t *testing.T) {
 	}
 }
 
+// endpoint constructs a healthy Wormhole fabric endpoint for placement tests.
 func endpoint(node, name, id string) ttapi.FabricEndpoint {
 	return ttapi.FabricEndpoint{
 		NodeName:   node,
@@ -80,6 +84,7 @@ func endpoint(node, name, id string) ttapi.FabricEndpoint {
 	}
 }
 
+// workloadWithRanks constructs a workload around the supplied placement ranks.
 func workloadWithRanks(ranks ...ttapi.WorkloadRank) *ttapi.Workload {
 	return &ttapi.Workload{Spec: ttapi.WorkloadSpec{Ranks: ranks}, ObjectMeta: metav1.ObjectMeta{Name: "job"}}
 }

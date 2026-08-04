@@ -9,6 +9,7 @@ import (
 
 const maxDevicesPerSlice = 128
 
+// DriverResources projects healthy eligible inventory into bounded DRA ResourceSlices.
 func DriverResources(nodeName string, snapshot device.InventorySnapshot) resourceslice.DriverResources {
 	devices := make([]resourceapi.Device, 0, len(snapshot.Devices))
 	for _, item := range snapshot.Devices {
@@ -28,6 +29,7 @@ func DriverResources(nodeName string, snapshot device.InventorySnapshot) resourc
 	return resourceslice.DriverResources{Pools: map[string]resourceslice.Pool{nodeName: {Slices: slices}}}
 }
 
+// resourceDevice converts canonical inventory attributes and capacities into one DRA device.
 func resourceDevice(nodeName string, item device.InventoryDevice) resourceapi.Device {
 	attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
 		AttributeDeviceID:   stringAttribute(item.StableID),
@@ -52,17 +54,24 @@ func resourceDevice(nodeName string, item device.InventoryDevice) resourceapi.De
 	return resourceapi.Device{Name: device.DRAName(item), Attributes: attrs, Capacity: capacities}
 }
 
+// stringAttribute wraps a string in the DRA attribute representation.
 func stringAttribute(value string) resourceapi.DeviceAttribute {
 	return resourceapi.DeviceAttribute{StringValue: &value}
 }
+
+// intAttribute wraps an integer in the DRA attribute representation.
 func intAttribute(value int64) resourceapi.DeviceAttribute {
 	return resourceapi.DeviceAttribute{IntValue: &value}
 }
+
+// setString adds a string attribute only when its observed value is non-empty.
 func setString(values map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, name, value string) {
 	if value != "" {
 		values[resourceapi.QualifiedName(name)] = stringAttribute(value)
 	}
 }
+
+// quantityCapacity wraps a Kubernetes quantity in the DRA capacity representation.
 func quantityCapacity(value *resource.Quantity) resourceapi.DeviceCapacity {
 	return resourceapi.DeviceCapacity{Value: *value}
 }

@@ -9,6 +9,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 )
 
+// TestDriverResourcesProjectsObservedDeviceData verifies inventory fields become DRA attributes and capacities.
 func TestDriverResourcesProjectsObservedDeviceData(t *testing.T) {
 	item := eligibleDevice("0000:01:00.0", "wormhole")
 	item.Compute.TensixCores = 70
@@ -27,6 +28,7 @@ func TestDriverResourcesProjectsObservedDeviceData(t *testing.T) {
 	}
 }
 
+// TestDriverResourcesDoesNotSynthesizeUnobservedCapabilities verifies missing hardware data stays unpublished.
 func TestDriverResourcesDoesNotSynthesizeUnobservedCapabilities(t *testing.T) {
 	item := eligibleDevice("0000:01:00.0", "wormhole")
 	resources := dra.DriverResources("worker-a", device.InventorySnapshot{Devices: []device.InventoryDevice{item}})
@@ -37,6 +39,7 @@ func TestDriverResourcesDoesNotSynthesizeUnobservedCapabilities(t *testing.T) {
 	}
 }
 
+// TestDriverResourcesFiltersAndChunksDevices verifies only usable devices are published in bounded slices.
 func TestDriverResourcesFiltersAndChunksDevices(t *testing.T) {
 	devices := make([]device.InventoryDevice, 129)
 	for i := range devices {
@@ -61,6 +64,7 @@ func TestDriverResourcesFiltersAndChunksDevices(t *testing.T) {
 	}
 }
 
+// TestMatchesDeviceClass verifies generic and chip-specific DeviceClass matching.
 func TestMatchesDeviceClass(t *testing.T) {
 	tests := []struct {
 		name, class, chip string
@@ -83,6 +87,7 @@ func TestMatchesDeviceClass(t *testing.T) {
 	}
 }
 
+// eligibleDevice constructs a minimal publishable inventory device for DRA tests.
 func eligibleDevice(bdf, chip string) device.InventoryDevice {
 	return device.InventoryDevice{
 		StableID:               "pci-" + bdf,
@@ -95,6 +100,7 @@ func eligibleDevice(bdf, chip string) device.InventoryDevice {
 	}
 }
 
+// assertStringAttribute checks that a DRA device exposes the expected string attribute.
 func assertStringAttribute(t *testing.T, item resourceapi.Device, name, want string) {
 	t.Helper()
 	attribute, ok := item.Attributes[resourceapi.QualifiedName(name)]
@@ -103,6 +109,7 @@ func assertStringAttribute(t *testing.T, item resourceapi.Device, name, want str
 	}
 }
 
+// assertIntAttribute checks that a DRA device exposes the expected integer attribute.
 func assertIntAttribute(t *testing.T, item resourceapi.Device, name string, want int64) {
 	t.Helper()
 	attribute, ok := item.Attributes[resourceapi.QualifiedName(name)]

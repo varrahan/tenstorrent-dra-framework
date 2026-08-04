@@ -17,6 +17,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 )
 
+// TestBuildFabricValidReciprocalGraph verifies reciprocal links produce a valid deterministic graph.
 func TestBuildFabricValidReciprocalGraph(t *testing.T) {
 	now := time.Now().UTC()
 	nodes := []ttapi.NodeTopology{
@@ -32,6 +33,7 @@ func TestBuildFabricValidReciprocalGraph(t *testing.T) {
 	}
 }
 
+// TestBuildFabricRejectsInvalidGraphs verifies stale, duplicate, missing, and nonreciprocal topology is rejected.
 func TestBuildFabricRejectsInvalidGraphs(t *testing.T) {
 	now := time.Now().UTC()
 	tests := []struct {
@@ -68,6 +70,7 @@ func TestBuildFabricRejectsInvalidGraphs(t *testing.T) {
 	}
 }
 
+// TestPublishNodeCreatesAndUpdatesTopology verifies node topology publication supports create and update.
 func TestPublishNodeCreatesAndUpdatesTopology(t *testing.T) {
 	client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
 	snapshot := device.InventorySnapshot{ObservedAt: time.Now().UTC(), Devices: []device.InventoryDevice{{
@@ -105,6 +108,7 @@ func TestPublishNodeCreatesAndUpdatesTopology(t *testing.T) {
 	}
 }
 
+// TestPublishNodePropagatesGetError verifies unexpected API lookup failures reach the caller.
 func TestPublishNodePropagatesGetError(t *testing.T) {
 	client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
 	client.PrependReactor("get", ttapi.NodeTopologyGVR.Resource, func(k8stesting.Action) (bool, runtime.Object, error) {
@@ -116,10 +120,12 @@ func TestPublishNodePropagatesGetError(t *testing.T) {
 	}
 }
 
+// nodeTopology constructs one timestamped node observation for fabric tests.
 func nodeTopology(name string, observedAt time.Time, devices ...ttapi.TopologyDevice) ttapi.NodeTopology {
 	return ttapi.NodeTopology{Spec: ttapi.NodeTopologySpec{NodeName: name, ObservedAt: metav1.NewTime(observedAt), Devices: devices}}
 }
 
+// topologyDevice constructs one endpoint with an optional reciprocal-link target.
 func topologyDevice(name, endpointID, remoteID string) ttapi.TopologyDevice {
 	item := ttapi.TopologyDevice{
 		Pool: name, Name: name, StableID: "pci-" + name, ChipSeries: "wormhole",

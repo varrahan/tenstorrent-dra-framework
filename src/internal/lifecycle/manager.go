@@ -48,6 +48,7 @@ type ClaimDevice struct {
 	CDIID  string `json:"cdiID"`
 }
 
+// NewManager validates lifecycle dependencies and restores persisted allocation state.
 func NewManager(config Config) (*Manager, error) {
 	if strings.TrimSpace(config.NodeName) == "" || strings.TrimSpace(config.Driver) == "" {
 		return nil, errors.New("node name and driver are required")
@@ -71,6 +72,7 @@ func NewManager(config Config) (*Manager, error) {
 	return m, nil
 }
 
+// PrepareResourceClaims sanitizes, verifies, and exposes each locally allocated device.
 func (m *Manager) PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -105,6 +107,7 @@ func (m *Manager) PrepareResourceClaims(ctx context.Context, claims []*resourcea
 	return result, nil
 }
 
+// UnprepareResourceClaims sanitizes released devices before removing their CDI and ownership state.
 func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -161,12 +164,14 @@ func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletp
 	return result, nil
 }
 
+// HandleError leaves recoverable kubelet helper errors to the caller without mutating state.
 func (m *Manager) HandleError(_ context.Context, _ error, _ string) {
 	// The caller decides whether a helper error is fatal. Keeping this callback
 	// side-effect free avoids turning a recoverable kubelet reconnect into data
 	// loss or premature CDI cleanup.
 }
 
+// prepareOne validates one allocation, performs preflight sanitization, and writes its CDI spec.
 func (m *Manager) prepareOne(ctx context.Context, claim *resourceapi.ResourceClaim, byName map[string]device.InventoryDevice, owners map[string]string) ([]kubeletplugin.Device, error) {
 	if claim == nil || claim.Status.Allocation == nil {
 		return nil, errors.New("claim has no allocation")
@@ -255,6 +260,7 @@ func (m *Manager) prepareOne(ctx context.Context, claim *resourceapi.ResourceCla
 	return cdiResults(prepared), nil
 }
 
+// deviceOwners indexes prepared devices by the claim UID that currently owns them.
 func (m *Manager) deviceOwners() map[string]string {
 	owners := map[string]string{}
 	for uid, claim := range m.state.Claims {

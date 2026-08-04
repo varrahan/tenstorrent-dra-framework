@@ -10,6 +10,7 @@ import (
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
 )
 
+// TestBuildSnapshotNormalizesAndSortsStableDevices verifies canonical values and stable PCI ordering.
 func TestBuildSnapshotNormalizesAndSortsStableDevices(t *testing.T) {
 	provider := device.StaticProvider{Devices: []device.RawDevice{
 		inventoryRaw("0000:00:02.0", "wormhole", "Healthy", true),
@@ -43,6 +44,7 @@ func TestBuildSnapshotNormalizesAndSortsStableDevices(t *testing.T) {
 	}
 }
 
+// TestFilesystemProviderRequiresAbsoluteRoots verifies unsafe relative host paths are rejected.
 func TestFilesystemProviderRequiresAbsoluteRoots(t *testing.T) {
 	_, err := device.NewFilesystemProvider(device.Roots{
 		DeviceRoot:           "dev/tenstorrent",
@@ -55,6 +57,7 @@ func TestFilesystemProviderRequiresAbsoluteRoots(t *testing.T) {
 	}
 }
 
+// TestPCIIdentityUsesObservedLinkState verifies PCI link metadata comes from provider observations.
 func TestPCIIdentityUsesObservedLinkState(t *testing.T) {
 	raw := inventoryRaw("0000:00:01.0", "wormhole", "Healthy", true)
 	raw.Values["pci.current_link_state"] = "L0"
@@ -68,6 +71,7 @@ func TestPCIIdentityUsesObservedLinkState(t *testing.T) {
 	}
 }
 
+// TestBuildSnapshotFailsClosedPerDevice verifies discovery and health faults affect only their device.
 func TestBuildSnapshotFailsClosedPerDevice(t *testing.T) {
 	badHealth := inventoryRaw("0000:00:01.0", "wormhole", "failed", true)
 	missingChar := inventoryRaw("0000:00:02.0", "wormhole", "Healthy", false)
@@ -91,6 +95,7 @@ func TestBuildSnapshotFailsClosedPerDevice(t *testing.T) {
 	}
 }
 
+// TestBuildSnapshotRejectsDuplicateStableIdentity verifies colliding PCI identities are all ineligible.
 func TestBuildSnapshotRejectsDuplicateStableIdentity(t *testing.T) {
 	first := inventoryRaw("0000:00:01.0", "wormhole", "Healthy", true)
 	second := inventoryRaw("0000:00:01.0", "wormhole", "Healthy", true)
@@ -105,6 +110,7 @@ func TestBuildSnapshotRejectsDuplicateStableIdentity(t *testing.T) {
 	}
 }
 
+// TestBuildSnapshotDoesNotInventMissingCapacity verifies absent memory and compute data remain zero.
 func TestBuildSnapshotDoesNotInventMissingCapacity(t *testing.T) {
 	raw := inventoryRaw("0000:00:04.0", "wormhole", "Healthy", true)
 	delete(raw.Values, "memory_capacity_bytes")
@@ -117,6 +123,7 @@ func TestBuildSnapshotDoesNotInventMissingCapacity(t *testing.T) {
 	}
 }
 
+// TestFilesystemAndStaticProvidersHaveEquivalentCanonicalSemantics verifies provider-independent normalization.
 func TestFilesystemAndStaticProvidersHaveEquivalentCanonicalSemantics(t *testing.T) {
 	root := t.TempDir()
 	ttRoot := filepath.Join(root, "sys", "class", "tenstorrent")
@@ -171,6 +178,7 @@ func TestFilesystemAndStaticProvidersHaveEquivalentCanonicalSemantics(t *testing
 	}
 }
 
+// TestInventorySnapshotJSONRoundTrip verifies the canonical inventory model survives JSON encoding.
 func TestInventorySnapshotJSONRoundTrip(t *testing.T) {
 	snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{inventoryRaw("0000:00:01.0", "wormhole", "Healthy", true)}})
 	if err != nil {
@@ -189,6 +197,7 @@ func TestInventorySnapshotJSONRoundTrip(t *testing.T) {
 	}
 }
 
+// TestInventoryNormalizationTable exercises supported aliases and malformed observed values.
 func TestInventoryNormalizationTable(t *testing.T) {
 	tests := []struct {
 		name, chip, health string
@@ -215,6 +224,7 @@ func TestInventoryNormalizationTable(t *testing.T) {
 	}
 }
 
+// TestInventoryDerivesMissingIdentityFromKnownPCI verifies known PCI IDs fill missing chip identity.
 func TestInventoryDerivesMissingIdentityFromKnownPCI(t *testing.T) {
 	tests := []struct {
 		name, pciDevice, wantChip string
@@ -240,6 +250,7 @@ func TestInventoryDerivesMissingIdentityFromKnownPCI(t *testing.T) {
 	}
 }
 
+// FuzzBuildSnapshotNeverPanics checks arbitrary observation strings cannot crash normalization.
 func FuzzBuildSnapshotNeverPanics(f *testing.F) {
 	f.Add("0000:00:01.0", "wormhole", "Healthy", "0x1e52")
 	f.Add("", "", "", "")
@@ -261,6 +272,7 @@ func FuzzBuildSnapshotNeverPanics(f *testing.F) {
 	})
 }
 
+// TestFilesystemProviderReadsSyntheticSysfs verifies discovery against a representative synthetic host tree.
 func TestFilesystemProviderReadsSyntheticSysfs(t *testing.T) {
 	root := t.TempDir()
 	deviceRoot := filepath.Join(root, "dev", "tenstorrent")
@@ -336,6 +348,7 @@ func TestFilesystemProviderReadsSyntheticSysfs(t *testing.T) {
 	}
 }
 
+// TestFilesystemProviderRejectsPCIPathEscape verifies PCI symlinks cannot escape the configured root.
 func TestFilesystemProviderRejectsPCIPathEscape(t *testing.T) {
 	root := t.TempDir()
 	ttRoot := filepath.Join(root, "tt")
@@ -371,6 +384,7 @@ func TestFilesystemProviderRejectsPCIPathEscape(t *testing.T) {
 	}
 }
 
+// inventoryRaw constructs a configurable raw Tenstorrent observation for normalization tests.
 func inventoryRaw(bdf, chip, health string, characterDevice bool) device.RawDevice {
 	return device.RawDevice{
 		ID:                     bdf,
@@ -391,6 +405,7 @@ func inventoryRaw(bdf, chip, health string, characterDevice bool) device.RawDevi
 	}
 }
 
+// writeInventoryValue creates one synthetic sysfs value and any missing parent directories.
 func writeInventoryValue(t *testing.T, path, value string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
@@ -398,6 +413,7 @@ func writeInventoryValue(t *testing.T, path, value string) {
 	}
 }
 
+// canonicalSemantics serializes provider-independent fields for concise equality checks.
 func canonicalSemantics(observed device.InventoryDevice) string {
 	value := struct {
 		StableID        string

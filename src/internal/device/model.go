@@ -16,6 +16,7 @@ type Roots struct {
 	StateDir             string
 }
 
+// DefaultRoots returns the production host paths used for discovery and state.
 func DefaultRoots() Roots {
 	return Roots{
 		DeviceRoot:           "/dev/tenstorrent",
@@ -25,6 +26,7 @@ func DefaultRoots() Roots {
 	}
 }
 
+// validate ensures every configured discovery and state path is absolute and non-empty.
 func (r Roots) validate() error {
 	paths := map[string]string{
 		"device root":            r.DeviceRoot,
@@ -147,6 +149,7 @@ type StaticProvider struct {
 	Devices []RawDevice
 }
 
+// Observe returns a copy of the static device observations for deterministic callers.
 func (p StaticProvider) Observe(context.Context) ([]RawDevice, error) {
 	return append([]RawDevice(nil), p.Devices...), nil
 }

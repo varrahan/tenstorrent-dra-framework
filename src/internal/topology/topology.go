@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
+// PublishNode creates or updates the node's eligible accelerator topology observation.
 func PublishNode(ctx context.Context, client dynamic.Interface, nodeName string, nodeUID types.UID, snapshot device.InventorySnapshot) error {
 	object := &ttapi.NodeTopology{
 		TypeMeta: metav1.TypeMeta{APIVersion: ttapi.TopologyAPIVersion, Kind: ttapi.NodeTopologyKind},
@@ -62,6 +63,7 @@ func PublishNode(ctx context.Context, client dynamic.Interface, nodeName string,
 	return err
 }
 
+// BuildFabric validates fresh node observations and produces a deterministic cluster fabric graph.
 func BuildFabric(nodes []ttapi.NodeTopology, ttl time.Duration, now time.Time) ttapi.FabricTopologyStatus {
 	status := ttapi.FabricTopologyStatus{ObservedAt: metav1.NewTime(now), Valid: true}
 	seen := map[string]struct{}{}

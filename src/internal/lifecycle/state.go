@@ -28,6 +28,7 @@ type persistedState struct {
 	Known       map[string]KnownDevice      `json:"known"`
 }
 
+// load restores claims and quarantine metadata from the manager's durable state file.
 func (m *Manager) load() error {
 	data, err := os.ReadFile(filepath.Join(m.config.StateDir, "claims.json"))
 	if os.IsNotExist(err) {
@@ -54,6 +55,7 @@ func (m *Manager) load() error {
 	return nil
 }
 
+// persist atomically writes the manager's current lifecycle state to disk.
 func (m *Manager) persist() error {
 	if err := os.MkdirAll(m.config.StateDir, 0o755); err != nil {
 		return err
@@ -61,6 +63,7 @@ func (m *Manager) persist() error {
 	return atomicJSON(filepath.Join(m.config.StateDir, "claims.json"), m.state, 0o600)
 }
 
+// atomicJSON writes formatted JSON through a synced temporary file and atomic rename.
 func atomicJSON(path string, value any, mode os.FileMode) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {

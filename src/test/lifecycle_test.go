@@ -15,6 +15,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 )
 
+// TestLifecycleManagerPrepareIsIdempotentAndIsolated verifies exclusive ownership, CDI state, and safe release.
 func TestLifecycleManagerPrepareIsIdempotentAndIsolated(t *testing.T) {
 	root := t.TempDir()
 	snapshot := device.InventorySnapshot{Devices: []device.InventoryDevice{{
@@ -88,6 +89,7 @@ func TestLifecycleManagerPrepareIsIdempotentAndIsolated(t *testing.T) {
 	}
 }
 
+// TestPrepareRejectsNilAndDuplicateAllocations verifies malformed claims fail without exposing devices.
 func TestPrepareRejectsNilAndDuplicateAllocations(t *testing.T) {
 	root := t.TempDir()
 	snapshot := device.InventorySnapshot{Devices: []device.InventoryDevice{{

@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// ensureChildren creates the ResourceClaim and Pod required for every assigned rank.
 func (c *Controller) ensureChildren(ctx context.Context, workload *ttapi.Workload) error {
 	if len(workload.Status.Assignments) != len(workload.Spec.Ranks) {
 		return fmt.Errorf("workload has %d assignments for %d ranks", len(workload.Status.Assignments), len(workload.Spec.Ranks))
@@ -28,6 +29,7 @@ func (c *Controller) ensureChildren(ctx context.Context, workload *ttapi.Workloa
 	return nil
 }
 
+// ensureClaim idempotently creates the exact-device ResourceClaim for one rank.
 func (c *Controller) ensureClaim(ctx context.Context, workload *ttapi.Workload, rank ttapi.WorkloadRank, assignment ttapi.RankAssignment) error {
 	_, err := c.Kube.ResourceV1().ResourceClaims(workload.Namespace).Create(ctx, buildClaim(workload, rank, assignment), metav1.CreateOptions{})
 	if apierrors.IsAlreadyExists(err) {
@@ -36,6 +38,7 @@ func (c *Controller) ensureClaim(ctx context.Context, workload *ttapi.Workload, 
 	return err
 }
 
+// buildClaim selects the assignment's exact stable device IDs on its chosen node.
 func buildClaim(workload *ttapi.Workload, rank ttapi.WorkloadRank, assignment ttapi.RankAssignment) *resourceapi.ResourceClaim {
 	ids := make([]string, 0, len(assignment.Devices))
 	for _, item := range assignment.Devices {
@@ -64,6 +67,7 @@ func buildClaim(workload *ttapi.Workload, rank ttapi.WorkloadRank, assignment tt
 	}
 }
 
+// ensurePod idempotently creates the node-pinned Pod for one assigned rank.
 func (c *Controller) ensurePod(ctx context.Context, workload *ttapi.Workload, rankIndex int, assignment ttapi.RankAssignment) error {
 	pod, err := buildPod(workload, rankIndex, assignment)
 	if err != nil {
@@ -76,6 +80,7 @@ func (c *Controller) ensurePod(ctx context.Context, workload *ttapi.Workload, ra
 	return err
 }
 
+// buildPod injects node placement, the DRA claim, and distributed rank environment variables.
 func buildPod(workload *ttapi.Workload, rankIndex int, assignment ttapi.RankAssignment) (*corev1.Pod, error) {
 	pod := &corev1.Pod{
 		ObjectMeta: *workload.Spec.PodTemplate.ObjectMeta.DeepCopy(),
@@ -108,6 +113,7 @@ func buildPod(workload *ttapi.Workload, rankIndex int, assignment ttapi.RankAssi
 	return nil, fmt.Errorf("container %q not found in Pod template", workload.Spec.ContainerName)
 }
 
+// deleteChildren removes unstarted Pods and claims before an assignment is recomputed.
 func (c *Controller) deleteChildren(ctx context.Context, workload *ttapi.Workload) error {
 	for _, assignment := range workload.Status.Assignments {
 		if err := c.Kube.CoreV1().Pods(workload.Namespace).Delete(ctx, assignment.PodName, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
@@ -120,6 +126,7 @@ func (c *Controller) deleteChildren(ctx context.Context, workload *ttapi.Workloa
 	return nil
 }
 
+// owner returns the controlling owner reference used by workload child resources.
 func owner(workload *ttapi.Workload) []metav1.OwnerReference {
 	controller := true
 	return []metav1.OwnerReference{{

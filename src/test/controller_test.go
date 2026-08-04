@@ -17,6 +17,7 @@ import (
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
 )
 
+// TestControllerCreatesExactChildrenAndReservesWithinPass verifies distinct claims and Pods are created for concurrent workloads.
 func TestControllerCreatesExactChildrenAndReservesWithinPass(t *testing.T) {
 	dynamicClient := controllerDynamicClient(t, controllerNodeTopology(), controllerWorkload("first"), controllerWorkload("second"))
 	kube := kubernetesfake.NewSimpleClientset()
@@ -59,6 +60,7 @@ func TestControllerCreatesExactChildrenAndReservesWithinPass(t *testing.T) {
 	}
 }
 
+// TestControllerFreezesStartedAssignmentAfterFabricChange verifies running ranks are not moved after topology changes.
 func TestControllerFreezesStartedAssignmentAfterFabricChange(t *testing.T) {
 	workload := controllerWorkload("job")
 	workload.Status = ttapi.WorkloadStatus{
@@ -93,6 +95,7 @@ func TestControllerFreezesStartedAssignmentAfterFabricChange(t *testing.T) {
 	}
 }
 
+// controllerDynamicClient builds a fake dynamic client with the project's custom resource list kinds.
 func controllerDynamicClient(t *testing.T, objects ...any) *dynamicfake.FakeDynamicClient {
 	t.Helper()
 	runtimeObjects := make([]runtime.Object, 0, len(objects))
@@ -113,6 +116,7 @@ func controllerDynamicClient(t *testing.T, objects ...any) *dynamicfake.FakeDyna
 	)
 }
 
+// runController starts a fast test reconciliation loop and returns cancellation and completion handles.
 func runController(kube *kubernetesfake.Clientset, dynamicClient *dynamicfake.FakeDynamicClient) (context.CancelFunc, <-chan error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -122,6 +126,7 @@ func runController(kube *kubernetesfake.Clientset, dynamicClient *dynamicfake.Fa
 	return cancel, done
 }
 
+// workloadPhase reads and decodes the current phase of a fake workload resource.
 func workloadPhase(t *testing.T, client *dynamicfake.FakeDynamicClient, name string) string {
 	t.Helper()
 	object, err := client.Resource(ttapi.WorkloadGVR).Namespace("default").Get(context.Background(), name, metav1.GetOptions{})
@@ -135,6 +140,7 @@ func workloadPhase(t *testing.T, client *dynamicfake.FakeDynamicClient, name str
 	return workload.Status.Phase
 }
 
+// waitFor polls a test condition until it succeeds or the short deadline expires.
 func waitFor(t *testing.T, ready func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -147,6 +153,7 @@ func waitFor(t *testing.T, ready func() bool) {
 	t.Fatal("timed out waiting for controller reconciliation")
 }
 
+// controllerNodeTopology returns the connected two-device fabric used by controller tests.
 func controllerNodeTopology() *ttapi.NodeTopology {
 	return &ttapi.NodeTopology{
 		TypeMeta:   metav1.TypeMeta{APIVersion: ttapi.TopologyAPIVersion, Kind: ttapi.NodeTopologyKind},
@@ -161,6 +168,7 @@ func controllerNodeTopology() *ttapi.NodeTopology {
 	}
 }
 
+// controllerWorkload returns a minimal single-rank workload with stable test metadata.
 func controllerWorkload(name string) *ttapi.Workload {
 	return &ttapi.Workload{
 		TypeMeta: metav1.TypeMeta{APIVersion: ttapi.SchedulingAPIVersion, Kind: ttapi.WorkloadKind},

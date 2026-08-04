@@ -18,6 +18,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 )
 
+// TestJanitorSanitizesBeforeAndAfterUse verifies resets and audit events bracket claim ownership.
 func TestJanitorSanitizesBeforeAndAfterUse(t *testing.T) {
 	root := t.TempDir()
 	snapshot := janitorSnapshot(device.HealthHealthy)
@@ -62,6 +63,7 @@ func TestJanitorSanitizesBeforeAndAfterUse(t *testing.T) {
 	}
 }
 
+// TestJanitorRetainsOwnershipWhenPostflightSanitizationFails verifies failed cleanup remains fenced and owned.
 func TestJanitorRetainsOwnershipWhenPostflightSanitizationFails(t *testing.T) {
 	root := t.TempDir()
 	snapshot := janitorSnapshot(device.HealthHealthy)
@@ -108,6 +110,7 @@ func TestJanitorRetainsOwnershipWhenPostflightSanitizationFails(t *testing.T) {
 	}
 }
 
+// TestJanitorMonitorsAndRecoversIdleDevices verifies faults quarantine capacity until reset and healthy observation.
 func TestJanitorMonitorsAndRecoversIdleDevices(t *testing.T) {
 	root := t.TempDir()
 	snapshot := janitorSnapshot(device.HealthUnhealthy)
@@ -152,6 +155,7 @@ func TestJanitorMonitorsAndRecoversIdleDevices(t *testing.T) {
 	}
 }
 
+// TestJanitorRequiresDedicatedIOMMUGroup verifies shared or missing groups fail tenant isolation.
 func TestJanitorRequiresDedicatedIOMMUGroup(t *testing.T) {
 	root := t.TempDir()
 	snapshot := janitorSnapshot(device.HealthHealthy)
@@ -176,6 +180,7 @@ func TestJanitorRequiresDedicatedIOMMUGroup(t *testing.T) {
 	}
 }
 
+// TestInventoryFailureFencesKnownCapacity verifies discovery outages quarantine all previously known devices.
 func TestInventoryFailureFencesKnownCapacity(t *testing.T) {
 	root := t.TempDir()
 	manager, err := lifecycle.NewManager(lifecycle.Config{
@@ -198,6 +203,7 @@ func TestInventoryFailureFencesKnownCapacity(t *testing.T) {
 	}
 }
 
+// TestNodeSafetyConditionAndTaint verifies node fencing and health status follow the safety summary.
 func TestNodeSafetyConditionAndTaint(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewSimpleClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}})
@@ -227,6 +233,7 @@ func TestNodeSafetyConditionAndTaint(t *testing.T) {
 	}
 }
 
+// janitorSnapshot constructs one isolated device with configurable health for lifecycle tests.
 func janitorSnapshot(health device.HealthState) device.InventorySnapshot {
 	return device.InventorySnapshot{ObservedAt: metav1.Now().Time, Devices: []device.InventoryDevice{{
 		StableID:               "pci-0000:00:01.0",
@@ -236,6 +243,7 @@ func janitorSnapshot(health device.HealthState) device.InventorySnapshot {
 	}}}
 }
 
+// janitorClaim constructs a local exact-device allocation for the supplied claim UID.
 func janitorClaim(uid types.UID) *resourceapi.ResourceClaim {
 	return &resourceapi.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "claim", UID: uid},
@@ -247,6 +255,7 @@ func janitorClaim(uid types.UID) *resourceapi.ResourceClaim {
 	}
 }
 
+// readAuditEvents decodes every JSONL lifecycle record from an audit file.
 func readAuditEvents(t *testing.T, path string) []lifecycle.AuditEvent {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -264,6 +273,7 @@ func readAuditEvents(t *testing.T, path string) []lifecycle.AuditEvent {
 	return events
 }
 
+// bytesLines splits newline-delimited bytes while omitting empty records.
 func bytesLines(data []byte) [][]byte {
 	var lines [][]byte
 	start := 0
@@ -279,6 +289,7 @@ func bytesLines(data []byte) [][]byte {
 	return lines
 }
 
+// conditionStatus returns the Tenstorrent health condition from a test node.
 func conditionStatus(node *corev1.Node) corev1.ConditionStatus {
 	for _, condition := range node.Status.Conditions {
 		if condition.Type == lifecycle.NodeConditionType {

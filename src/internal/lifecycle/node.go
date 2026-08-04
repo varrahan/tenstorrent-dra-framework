@@ -14,6 +14,7 @@ const (
 	NodeTaintKey      = "tenstorrent.com/accelerator-unhealthy"
 )
 
+// UpdateNodeSafety reconciles the accelerator safety taint and health condition on a node.
 func UpdateNodeSafety(ctx context.Context, client kubernetes.Interface, nodeName string, safety Safety) error {
 	nodes := client.CoreV1().Nodes()
 	node, err := nodes.Get(ctx, nodeName, metav1.GetOptions{})
@@ -31,6 +32,7 @@ func UpdateNodeSafety(ctx context.Context, client kubernetes.Interface, nodeName
 	return err
 }
 
+// setSafetyTaint adds or removes the NoSchedule taint and reports whether the node changed.
 func setSafetyTaint(node *corev1.Node, unsafe bool) bool {
 	for index, taint := range node.Spec.Taints {
 		if taint.Key != NodeTaintKey {
@@ -49,6 +51,7 @@ func setSafetyTaint(node *corev1.Node, unsafe bool) bool {
 	return true
 }
 
+// setSafetyCondition upserts accelerator health while preserving its last transition time.
 func setSafetyCondition(node *corev1.Node, safety Safety) {
 	now := metav1.NewTime(time.Now().UTC())
 	status := corev1.ConditionTrue

@@ -20,6 +20,7 @@ const (
 	DeviceCapacityMemoryBytes = AttributeDomain + "/memoryBytes"
 )
 
+// MatchesDeviceClass reports whether a chip series satisfies a supported DeviceClass.
 func MatchesDeviceClass(name, chipSeries string) bool {
 	switch name {
 	case GenericDeviceClassName:

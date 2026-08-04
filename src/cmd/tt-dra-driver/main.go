@@ -23,6 +23,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 )
 
+// main dispatches the requested inventory, node-driver, or controller command.
 func main() {
 	if len(os.Args) < 2 {
 		fatal("usage: tt-dra-driver <list|node|controller>")
@@ -43,6 +44,7 @@ func main() {
 	}
 }
 
+// inventoryFlags defines the shared host-path flags for inventory-backed commands.
 func inventoryFlags(name string) (*flag.FlagSet, *device.Roots) {
 	roots := device.DefaultRoots()
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -52,10 +54,13 @@ func inventoryFlags(name string) (*flag.FlagSet, *device.Roots) {
 	set.StringVar(&roots.StateDir, "state-dir", roots.StateDir, "claim state directory")
 	return set, &roots
 }
+
+// provider constructs the filesystem inventory source from parsed root flags.
 func provider(roots *device.Roots) (device.FilesystemProvider, error) {
 	return device.NewFilesystemProvider(*roots)
 }
 
+// clusterClients creates typed and dynamic Kubernetes clients from in-cluster configuration.
 func clusterClients() (kubernetes.Interface, dynamic.Interface, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -72,6 +77,7 @@ func clusterClients() (kubernetes.Interface, dynamic.Interface, error) {
 	return kube, dynamicClient, nil
 }
 
+// runList prints one normalized inventory snapshot as JSON.
 func runList(args []string) error {
 	set, roots := inventoryFlags("list")
 	if err := set.Parse(args); err != nil {
@@ -90,6 +96,7 @@ func runList(args []string) error {
 	return encoder.Encode(snapshot)
 }
 
+// runNode starts discovery, lifecycle enforcement, DRA publication, and health reporting for one node.
 func runNode(args []string) error {
 	set, roots := inventoryFlags("node")
 	nodeName := os.Getenv("NODE_NAME")
@@ -189,6 +196,7 @@ func runNode(args []string) error {
 	}
 }
 
+// runController starts the cluster topology and workload reconciliation loop.
 func runController(args []string) error {
 	set := flag.NewFlagSet("controller", flag.ContinueOnError)
 	interval, ttl := 5*time.Second, 90*time.Second
@@ -205,4 +213,6 @@ func runController(args []string) error {
 	defer stop()
 	return (&controller.Controller{Kube: kube, Dynamic: dynamicClient, Interval: interval, TopologyTTL: ttl}).Run(ctx)
 }
+
+// fatal writes a command error to stderr and terminates with a failure status.
 func fatal(message string) { fmt.Fprintln(os.Stderr, message); os.Exit(1) }

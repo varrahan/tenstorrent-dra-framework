@@ -21,6 +21,7 @@ type Controller struct {
 	TopologyTTL time.Duration
 }
 
+// Run continuously reconciles cluster fabric state and Tenstorrent workloads.
 func (c *Controller) Run(ctx context.Context) error {
 	if c.Interval <= 0 {
 		c.Interval = 5 * time.Second
@@ -39,6 +40,7 @@ func (c *Controller) Run(ctx context.Context) error {
 	}
 }
 
+// reconcile updates the fabric topology before reconciling workloads against it.
 func (c *Controller) reconcile(ctx context.Context) error {
 	fabric, err := c.reconcileFabric(ctx)
 	if err != nil {
@@ -47,6 +49,7 @@ func (c *Controller) reconcile(ctx context.Context) error {
 	return c.reconcileWorkloads(ctx, fabric)
 }
 
+// reconcileFabric aggregates node topology objects and publishes cluster fabric status.
 func (c *Controller) reconcileFabric(ctx context.Context) (ttapi.FabricTopologyStatus, error) {
 	list, err := c.Dynamic.Resource(ttapi.NodeTopologyGVR).List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -82,6 +85,7 @@ func (c *Controller) reconcileFabric(ctx context.Context) (ttapi.FabricTopologyS
 	return status, err
 }
 
+// reconcileWorkloads collects existing reservations and reconciles each workload in one pass.
 func (c *Controller) reconcileWorkloads(ctx context.Context, fabric ttapi.FabricTopologyStatus) error {
 	list, err := c.Dynamic.Resource(ttapi.WorkloadGVR).Namespace(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -119,6 +123,7 @@ func (c *Controller) reconcileWorkloads(ctx context.Context, fabric ttapi.Fabric
 	return nil
 }
 
+// reconcileWorkload preserves safe assignments or computes and materializes a new one.
 func (c *Controller) reconcileWorkload(ctx context.Context, workload *ttapi.Workload, fabric ttapi.FabricTopologyStatus, used placement.Reservations) error {
 	if len(workload.Status.Assignments) > 0 {
 		started, err := c.anyRankStarted(ctx, workload)
@@ -159,6 +164,7 @@ func (c *Controller) reconcileWorkload(ctx context.Context, workload *ttapi.Work
 	return c.ensureChildren(ctx, workload)
 }
 
+// updateWorkloadStatus writes only the latest status subresource for a workload.
 func (c *Controller) updateWorkloadStatus(ctx context.Context, workload *ttapi.Workload) error {
 	resource := c.Dynamic.Resource(ttapi.WorkloadGVR).Namespace(workload.Namespace)
 	current, err := resource.Get(ctx, workload.Name, metav1.GetOptions{})
@@ -174,6 +180,7 @@ func (c *Controller) updateWorkloadStatus(ctx context.Context, workload *ttapi.W
 	return err
 }
 
+// anyRankStarted reports whether Kubernetes has started any assigned rank Pod.
 func (c *Controller) anyRankStarted(ctx context.Context, workload *ttapi.Workload) (bool, error) {
 	for _, assignment := range workload.Status.Assignments {
 		pod, err := c.Kube.CoreV1().Pods(workload.Namespace).Get(ctx, assignment.PodName, metav1.GetOptions{})
@@ -190,6 +197,7 @@ func (c *Controller) anyRankStarted(ctx context.Context, workload *ttapi.Workloa
 	return false, nil
 }
 
+// condition builds the workload's single Ready condition for a reconciliation outcome.
 func condition(ok bool, reason, message string) []metav1.Condition {
 	status := metav1.ConditionFalse
 	if ok {

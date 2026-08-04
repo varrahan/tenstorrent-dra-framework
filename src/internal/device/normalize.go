@@ -16,6 +16,7 @@ const (
 	blackholePCIDevice   = "0xb140"
 )
 
+// BuildSnapshot observes, normalizes, sorts, and validates the current device inventory.
 func BuildSnapshot(ctx context.Context, provider Provider) (InventorySnapshot, error) {
 	if provider == nil {
 		return InventorySnapshot{}, errors.New("inventory provider is nil")
@@ -35,6 +36,7 @@ func BuildSnapshot(ctx context.Context, provider Provider) (InventorySnapshot, e
 	return InventorySnapshot{Devices: devices, ObservedAt: observedAt}, nil
 }
 
+// markDuplicateIdentities makes every device sharing a stable identity ineligible.
 func markDuplicateIdentities(devices []InventoryDevice) {
 	for i := 1; i < len(devices); i++ {
 		if devices[i].StableID != devices[i-1].StableID {
@@ -47,6 +49,7 @@ func markDuplicateIdentities(devices []InventoryDevice) {
 	}
 }
 
+// normalize converts one provider observation into the canonical inventory model.
 func normalize(raw RawDevice, observedAt time.Time) InventoryDevice {
 	pci := pciIdentity(raw)
 	chipSeries := normalizeChip(raw.Values["architecture"])
@@ -92,6 +95,7 @@ func normalize(raw RawDevice, observedAt time.Time) InventoryDevice {
 	return device
 }
 
+// populateProvenance records the source path and observation time for inventory fields.
 func populateProvenance(device *InventoryDevice, raw RawDevice, observedAt time.Time) {
 	add := func(field, source, path string) {
 		device.Provenance[field] = Provenance{Source: source, Path: path, ObservedAt: observedAt}
@@ -109,6 +113,7 @@ func populateProvenance(device *InventoryDevice, raw RawDevice, observedAt time.
 	add("observedAt", "observer", raw.SysfsPath)
 }
 
+// eligibility applies fail-closed hardware identity and health requirements.
 func eligibility(device InventoryDevice, discoveryErr error) (bool, string) {
 	switch {
 	case discoveryErr != nil:
@@ -128,6 +133,7 @@ func eligibility(device InventoryDevice, discoveryErr error) (bool, string) {
 	}
 }
 
+// pciIdentity builds normalized PCI and isolation metadata from raw sysfs values.
 func pciIdentity(raw RawDevice) PCIIdentity {
 	return PCIIdentity{
 		BDF:             firstValue(raw.Values, "pci.uevent.PCI_SLOT_NAME", "pci.PCI_SLOT_NAME", "pci.bdf"),
@@ -145,6 +151,7 @@ func pciIdentity(raw RawDevice) PCIIdentity {
 	}
 }
 
+// firstValue returns the first non-empty value among equivalent observation keys.
 func firstValue(values map[string]string, keys ...string) string {
 	for _, key := range keys {
 		if value := strings.TrimSpace(values[key]); value != "" {
@@ -154,6 +161,7 @@ func firstValue(values map[string]string, keys ...string) string {
 	return ""
 }
 
+// normalizeChip converts chip aliases into canonical series names.
 func normalizeChip(value string) string {
 	normalized := strings.ToLower(strings.TrimSpace(value))
 	switch normalized {
@@ -166,6 +174,7 @@ func normalizeChip(value string) string {
 	}
 }
 
+// chipSeriesFromPCI infers a supported chip series from a known PCI device ID.
 func chipSeriesFromPCI(identity PCIIdentity) string {
 	if identity.Vendor != tenstorrentPCIVendor {
 		return ""
@@ -180,6 +189,7 @@ func chipSeriesFromPCI(identity PCIIdentity) string {
 	}
 }
 
+// normalizeHealth maps provider-specific health strings into the canonical states.
 func normalizeHealth(value string) HealthState {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "healthy", "ok", "ready", "available":
@@ -191,6 +201,7 @@ func normalizeHealth(value string) HealthState {
 	}
 }
 
+// normalizeHex converts hexadecimal identifiers into a lowercase 0x-prefixed form.
 func normalizeHex(value string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
 	if value == "" || strings.HasPrefix(value, "0x") {
@@ -202,6 +213,7 @@ func normalizeHex(value string) string {
 	return value
 }
 
+// parseUint parses decimal or 0x-prefixed unsigned values, returning zero on failure.
 func parseUint(value string) uint64 {
 	value = strings.TrimSpace(value)
 	base := 10
@@ -213,11 +225,13 @@ func parseUint(value string) uint64 {
 	return parsed
 }
 
+// parseInt parses a decimal integer, returning zero on failure.
 func parseInt(value string) int {
 	parsed, _ := strconv.Atoi(strings.TrimSpace(value))
 	return parsed
 }
 
+// parseOptionalInt distinguishes a missing integer with -1 and otherwise parses it.
 func parseOptionalInt(value string) int {
 	if strings.TrimSpace(value) == "" {
 		return -1
@@ -225,6 +239,7 @@ func parseOptionalInt(value string) int {
 	return parseInt(value)
 }
 
+// parseDeviceNumbers parses a sysfs major:minor device-number pair.
 func parseDeviceNumbers(value string) (uint64, uint64) {
 	parts := strings.SplitN(strings.TrimSpace(value), ":", 2)
 	if len(parts) != 2 {

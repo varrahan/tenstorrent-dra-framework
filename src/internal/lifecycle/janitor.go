@@ -35,6 +35,7 @@ type AuditEvent struct {
 	Reason    string    `json:"reason,omitempty"`
 }
 
+// Monitor updates health and quarantine state, recovers idle devices, and filters unsafe capacity.
 func (m *Manager) Monitor(ctx context.Context, snapshot device.InventorySnapshot) (device.InventorySnapshot, Safety, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -45,6 +46,7 @@ func (m *Manager) Monitor(ctx context.Context, snapshot device.InventorySnapshot
 	return filtered, safety, monitorErr
 }
 
+// InventoryFailed quarantines all known devices when discovery cannot prove current health.
 func (m *Manager) InventoryFailed(err error) (device.InventorySnapshot, Safety, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -64,6 +66,7 @@ func (m *Manager) InventoryFailed(err error) (device.InventorySnapshot, Safety, 
 	return snapshot, safety, auditErr
 }
 
+// observeLocked reconciles observations with known devices and quarantine state while holding the manager lock.
 func (m *Manager) observeLocked(ctx context.Context, snapshot device.InventorySnapshot, recoverIdle bool) (device.InventorySnapshot, Safety, error) {
 	observed := make(map[string]device.InventoryDevice, len(snapshot.Devices))
 	owners := m.deviceOwners()
@@ -109,6 +112,7 @@ func (m *Manager) observeLocked(ctx context.Context, snapshot device.InventorySn
 	return filtered, safetyFor(filtered, m.state.Known, m.state.Quarantined), resultErr
 }
 
+// filterLocked returns a snapshot copy with quarantined devices marked ineligible.
 func (m *Manager) filterLocked(snapshot device.InventorySnapshot) device.InventorySnapshot {
 	filtered := snapshot
 	filtered.Devices = append([]device.InventoryDevice(nil), snapshot.Devices...)
@@ -122,6 +126,7 @@ func (m *Manager) filterLocked(snapshot device.InventorySnapshot) device.Invento
 	return filtered
 }
 
+// deviceUnsafeReason returns the first health, isolation, or fabric fault blocking a device.
 func (m *Manager) deviceUnsafeReason(item device.InventoryDevice) string {
 	switch {
 	case !item.CharacterDevicePresent:
@@ -144,6 +149,7 @@ func (m *Manager) deviceUnsafeReason(item device.InventoryDevice) string {
 	return ""
 }
 
+// safetyFor summarizes healthy advertised capacity and decides whether the node must be fenced.
 func safetyFor(snapshot device.InventorySnapshot, known map[string]KnownDevice, quarantined map[string]QuarantineRecord) Safety {
 	safety := Safety{Total: len(known)}
 	for _, item := range snapshot.Devices {
@@ -162,6 +168,7 @@ func safetyFor(snapshot device.InventorySnapshot, known map[string]KnownDevice, 
 	return safety
 }
 
+// healthAction labels a health audit according to whether the device has an active owner.
 func healthAction(owner string) string {
 	if owner != "" {
 		return "active-health"
@@ -169,6 +176,7 @@ func healthAction(owner string) string {
 	return "idle-health"
 }
 
+// claimForOwner looks up prepared claim context for health and audit events.
 func (m *Manager) claimForOwner(uid string) *PreparedClaim {
 	if uid == "" {
 		return nil
@@ -180,6 +188,7 @@ func (m *Manager) claimForOwner(uid string) *PreparedClaim {
 	return &claim
 }
 
+// quarantineLocked records an unsafe device and appends its transition to the audit log.
 func (m *Manager) quarantineLocked(name, path, reason string, claim *PreparedClaim, action string) error {
 	current, found := m.state.Quarantined[name]
 	if found && current.Reason == reason {
@@ -196,6 +205,7 @@ func (m *Manager) quarantineLocked(name, path, reason string, claim *PreparedCla
 	}, claim)
 }
 
+// sanitizeLocked resets one device and updates quarantine state from the reset and audit outcomes.
 func (m *Manager) sanitizeLocked(ctx context.Context, action, name, path string, claim *PreparedClaim) error {
 	err := m.config.Resetter.Reset(ctx, path)
 	event := AuditEvent{Time: time.Now().UTC(), Action: action, Outcome: "success", Device: name, Path: path}
@@ -223,6 +233,7 @@ func (m *Manager) sanitizeLocked(ctx context.Context, action, name, path string,
 	return errors.Join(err, auditErr)
 }
 
+// auditLocked durably appends one lifecycle event and optional claim identity to the JSONL log.
 func (m *Manager) auditLocked(event AuditEvent, claim *PreparedClaim) error {
 	if event.Time.IsZero() {
 		event.Time = time.Now().UTC()

@@ -116,10 +116,13 @@ type Workload struct {
 	Status            WorkloadStatus `json:"status,omitempty"`
 }
 
+// ToUnstructured converts a typed API object into the dynamic-client representation.
 func ToUnstructured(value any) (*unstructured.Unstructured, error) {
 	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(value)
 	return &unstructured.Unstructured{Object: object}, err
 }
+
+// FromUnstructured decodes a dynamic-client object into the supplied typed object.
 func FromUnstructured(value *unstructured.Unstructured, out any) error {
 	return runtime.DefaultUnstructuredConverter.FromUnstructured(value.Object, out)
 }

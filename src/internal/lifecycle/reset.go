@@ -21,10 +21,12 @@ type Resetter interface {
 
 type ResetFunc func(context.Context, string) error
 
+// Reset adapts a function to the Resetter interface.
 func (f ResetFunc) Reset(ctx context.Context, path string) error { return f(ctx, path) }
 
 type KMDResetter struct{}
 
+// Reset performs the tt-kmd ASIC and post-reset ioctl sequence on one device.
 func (KMDResetter) Reset(ctx context.Context, path string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -45,6 +47,7 @@ func (KMDResetter) Reset(ctx context.Context, path string) error {
 
 type NoopResetter struct{}
 
+// Reset intentionally performs no hardware operation for synthetic validation environments.
 func (NoopResetter) Reset(context.Context, string) error { return nil }
 
 type resetRequest struct {
@@ -54,6 +57,7 @@ type resetRequest struct {
 	Result     uint32
 }
 
+// resetIoctl submits one tt-kmd reset request and checks both syscall and driver results.
 func resetIoctl(fd int, flag uint32) error {
 	request := resetRequest{OutputSize: 8, Flags: flag}
 	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), ttIoctlResetDevice, uintptr(unsafe.Pointer(&request)))
