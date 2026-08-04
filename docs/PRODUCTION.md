@@ -102,7 +102,11 @@ RuntimeDefault seccomp and AppArmor, non-root execution, no privilege
 escalation, a read-only root filesystem, and all capabilities dropped. Workload
 images must write through mounted writable volumes when needed.
 
-The privileged node DaemonSet is the sole Pod Security exception. It needs
+Every image process uses UID and GID 65532. Controller and cleanup containers
+run without privilege escalation or Linux capabilities. The privileged,
+non-root node DaemonSet is the sole Pod Security exception; privileged mode
+still grants the capabilities required to cross root-owned host-path and
+device permission boundaries. It needs
 read/write access to `/dev/tenstorrent`, read-only access to the configured
 Tenstorrent class, PCI, and backing device sysfs roots, and write access to the
 state, CDI, kubelet plugin, and registrar directories. No whole `/sys` mount is

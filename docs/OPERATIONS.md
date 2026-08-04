@@ -41,6 +41,9 @@ The startup probe succeeds after command initialization, readiness means the
 component can perform its Kubernetes role, and liveness means its HTTP serving
 loop remains alive. Accelerator health does not fail process liveness; it
 withdraws capacity, changes the node condition, and raises operational alerts.
+Verify the release signature and attestations before installation, and record
+the resolved digest with the change ticket. The exact commands and immutable
+artifact policy are in [`RELEASE.md`](RELEASE.md).
 
 ## NetworkPolicy decision
 

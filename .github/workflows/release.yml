@@ -1,0 +1,271 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    name: Build, attest, sign, and publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.25.12
+          cache: true
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.2.3
+      - name: Validate release identity
+        id: release
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release tag must be vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          chart_version="$(awk '$1 == "version:" { print $2; exit }' deployments/helm/tenstorrent-dra/Chart.yaml)"
+          app_version="$(awk '$1 == "appVersion:" { gsub(/\"/, "", $2); print $2; exit }' deployments/helm/tenstorrent-dra/Chart.yaml)"
+          image_tag="$(awk '$1 == "tag:" { gsub(/\"/, "", $2); print $2; exit }' deployments/helm/tenstorrent-dra/values.yaml)"
+          [[ "$chart_version" == "$version" && "$app_version" == "$version" && "$image_tag" == "$version" ]]
+          grep -qF "## [$version]" CHANGELOG.md
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          image_repository="$(awk '$1 == "repository:" { print $2; exit }' deployments/helm/tenstorrent-dra/values.yaml)"
+          [[ "$image_repository" == "ghcr.io/$owner/tenstorrent-dra" ]]
+          epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u --date="@$epoch" +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "image_name=ghcr.io/$owner/tenstorrent-dra" >> "$GITHUB_OUTPUT"
+          echo "chart_registry=oci://ghcr.io/$owner/charts" >> "$GITHUB_OUTPUT"
+      - name: Validate source release gates
+        run: go mod verify && make build ci
+      - name: Build release files
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          COMMIT: ${{ github.sha }}
+          SOURCE_DATE_EPOCH: ${{ steps.release.outputs.epoch }}
+          BUILD_DATE: ${{ steps.release.outputs.date }}
+        run: make release release-reproducibility
+      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Enforce immutable package versions
+        env:
+          IMAGE_NAME: ${{ steps.release.outputs.image_name }}
+          CHART_REGISTRY: ${{ steps.release.outputs.chart_registry }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE_NAME:$VERSION" >/dev/null 2>&1; then
+            echo "refusing to overwrite existing image tag $IMAGE_NAME:$VERSION" >&2
+            exit 1
+          fi
+          if helm show chart "$CHART_REGISTRY/tenstorrent-dra" --version "$VERSION" >/dev/null 2>&1; then
+            echo "refusing to overwrite existing chart version $VERSION" >&2
+            exit 1
+          fi
+      - name: Build scan candidate
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: tt-dra-release-candidate:${{ github.sha }}
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ steps.release.outputs.date }}
+            SOURCE_DATE_EPOCH=${{ steps.release.outputs.epoch }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Verify reproducible AMD64 release image
+        env:
+          BUILD_DATE: ${{ steps.release.outputs.date }}
+          SOURCE_DATE_EPOCH: ${{ steps.release.outputs.epoch }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          first="$(docker image inspect "tt-dra-release-candidate:${GITHUB_SHA}" --format '{{.Id}}')"
+          docker build --no-cache --provenance=false --tag tt-dra-release-rebuild:${GITHUB_SHA} \
+            --build-arg VERSION="$VERSION" \
+            --build-arg VCS_REF="$GITHUB_SHA" \
+            --build-arg BUILD_DATE="$BUILD_DATE" \
+            --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" .
+          second="$(docker image inspect "tt-dra-release-rebuild:${GITHUB_SHA}" --format '{{.Id}}')"
+          test "$first" = "$second"
+      - name: Verify reproducible ARM64 release image
+        env:
+          BUILD_DATE: ${{ steps.release.outputs.date }}
+          SOURCE_DATE_EPOCH: ${{ steps.release.outputs.epoch }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          for attempt in first second; do
+            no_cache=()
+            if [[ "$attempt" == second ]]; then
+              no_cache=(--no-cache)
+            fi
+            docker buildx build "${no_cache[@]}" --load --provenance=false \
+              --platform linux/arm64 \
+              --tag "tt-dra-arm64-${attempt}:${GITHUB_SHA}" \
+              --build-arg VERSION="$VERSION" \
+              --build-arg VCS_REF="$GITHUB_SHA" \
+              --build-arg BUILD_DATE="$BUILD_DATE" \
+              --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" .
+          done
+          first="$(docker image inspect "tt-dra-arm64-first:${GITHUB_SHA}" --format '{{.Id}}')"
+          second="$(docker image inspect "tt-dra-arm64-second:${GITHUB_SHA}" --format '{{.Id}}')"
+          test "$first" = "$second"
+          arm64_container="$(docker create --platform linux/arm64 "tt-dra-arm64-first:${GITHUB_SHA}")"
+          trap 'docker rm -f "$arm64_container" >/dev/null 2>&1 || true' EXIT
+          docker cp "$arm64_container:/tt-dra-driver-bin" "$RUNNER_TEMP/tt-dra-driver-linux-arm64"
+          file "$RUNNER_TEMP/tt-dra-driver-linux-arm64" | grep -q 'ARM aarch64'
+      - name: Scan release candidate
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: tt-dra-release-candidate:${{ github.sha }}
+          fail-build: true
+          severity-cutoff: high
+          output-format: table
+          grype-version: v0.112.0
+          cache-db: true
+      - name: Build and push multi-architecture image
+        id: image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.release.outputs.image_name }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.release.outputs.date }}
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ steps.release.outputs.date }}
+            SOURCE_DATE_EPOCH=${{ steps.release.outputs.epoch }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Resolve platform manifest digests
+        id: platforms
+        env:
+          IMAGE: ${{ steps.release.outputs.image_name }}@${{ steps.image.outputs.digest }}
+        run: |
+          manifest="$(docker buildx imagetools inspect "$IMAGE" --raw)"
+          amd64="$(jq -r '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' <<<"$manifest")"
+          arm64="$(jq -r '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest' <<<"$manifest")"
+          [[ "$amd64" == sha256:* && "$arm64" == sha256:* ]]
+          echo "amd64=$amd64" >> "$GITHUB_OUTPUT"
+          echo "arm64=$arm64" >> "$GITHUB_OUTPUT"
+      - name: Generate AMD64 image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.release.outputs.image_name }}@${{ steps.platforms.outputs.amd64 }}
+          format: spdx-json
+          output-file: dist/tenstorrent-dra-${{ steps.release.outputs.version }}-linux-amd64.spdx.json
+          upload-artifact: false
+          syft-version: v1.44.0
+      - name: Generate ARM64 image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.release.outputs.image_name }}@${{ steps.platforms.outputs.arm64 }}
+          format: spdx-json
+          output-file: dist/tenstorrent-dra-${{ steps.release.outputs.version }}-linux-arm64.spdx.json
+          upload-artifact: false
+          syft-version: v1.44.0
+      - name: Finalize release checksums
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: make release-checksums
+      - name: Attest image build provenance
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: ${{ steps.release.outputs.image_name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - name: Attest AMD64 image SBOM
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: ${{ steps.release.outputs.image_name }}
+          subject-digest: ${{ steps.platforms.outputs.amd64 }}
+          sbom-path: dist/tenstorrent-dra-${{ steps.release.outputs.version }}-linux-amd64.spdx.json
+          push-to-registry: true
+      - name: Attest ARM64 image SBOM
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: ${{ steps.release.outputs.image_name }}
+          subject-digest: ${{ steps.platforms.outputs.arm64 }}
+          sbom-path: dist/tenstorrent-dra-${{ steps.release.outputs.version }}-linux-arm64.spdx.json
+          push-to-registry: true
+      - name: Attest release files
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-checksums: dist/checksums.txt
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+      - name: Sign and verify release image
+        env:
+          IMAGE: ${{ steps.release.outputs.image_name }}@${{ steps.image.outputs.digest }}
+        run: |
+          cosign sign --yes "$IMAGE"
+          cosign verify "$IMAGE" \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}"
+      - name: Publish verified immutable image version
+        env:
+          IMAGE_NAME: ${{ steps.release.outputs.image_name }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: docker buildx imagetools create --tag "$IMAGE_NAME:$VERSION" "$IMAGE_NAME@$IMAGE_DIGEST"
+      - name: Publish Helm chart
+        env:
+          CHART_REGISTRY: ${{ steps.release.outputs.chart_registry }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: helm push "dist/tenstorrent-dra-$VERSION.tgz" "$CHART_REGISTRY"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          awk -v version="$VERSION" '
+            index($0, "## [" version "]") == 1 { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > dist/release-notes.md
+          test -s dist/release-notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/tt-dra-driver-linux-amd64" \
+            "dist/tt-dra-driver-linux-arm64" \
+            "dist/tenstorrent-dra-$VERSION.tgz" \
+            "dist/tenstorrent-dra-$VERSION-linux-amd64.spdx.json" \
+            "dist/tenstorrent-dra-$VERSION-linux-arm64.spdx.json" \
+            "dist/checksums.txt" \
+            --verify-tag \
+            --title "Tenstorrent DRA $VERSION" \
+            --notes-file dist/release-notes.md

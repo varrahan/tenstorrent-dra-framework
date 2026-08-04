@@ -10,6 +10,8 @@
 # Common Go binary output directories
 bin/
 obj/
+/dist/
+/coverage/
 
 # Core dumps
 gmon.out

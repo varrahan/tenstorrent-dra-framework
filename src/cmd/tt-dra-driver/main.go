@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -37,14 +38,34 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 )
 
+// These values are replaced with deterministic release metadata through
+// -ldflags. Defaults keep local development builds useful and explicit.
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
+
+type buildInformation struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	BuildDate string `json:"buildDate"`
+}
+
 // main dispatches the requested inventory, node-driver, or controller command.
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})).With(
+		"version", version,
+		"commit", commit,
+	)
+	slog.SetDefault(logger)
 	if len(os.Args) < 2 {
-		fatal("usage: tt-dra-driver <list|node|controller|cleanup>")
+		fatal("usage: tt-dra-driver <version|list|node|controller|cleanup>")
 	}
 	var err error
 	switch os.Args[1] {
+	case "version":
+		err = runVersion(os.Stdout)
 	case "list":
 		err = runList(os.Args[2:])
 	case "node":
@@ -59,6 +80,13 @@ func main() {
 	if err != nil {
 		fatal(err.Error())
 	}
+}
+
+// runVersion emits machine-readable provenance for the running binary.
+func runVersion(writer io.Writer) error {
+	return json.NewEncoder(writer).Encode(buildInformation{
+		Version: version, Commit: commit, BuildDate: buildDate,
+	})
 }
 
 // runCleanup removes driver-generated cluster objects during Helm uninstall.

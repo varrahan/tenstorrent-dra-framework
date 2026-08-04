@@ -29,7 +29,7 @@ wait_claim_cleanup() {
   local node="$1"
   local uid="$2"
   local attempt
-  for attempt in {1..120}; do
+  for ((attempt = 0; attempt < 120; attempt++)); do
     if docker exec "$node" test ! -f "/var/run/cdi/claim-$uid.json" &&
       ! docker exec "$node" grep -q "$uid" /var/lib/tenstorrent-dra/claims.json; then
       return
@@ -160,14 +160,14 @@ for pod in $topology_pods; do
   kubectl --context "$kubectl_context" logs "$pod" | grep -Eq '^rank=[01] world=2 devices=/dev/tenstorrent/[01]$'
 done
 
-topology_artifacts=""
+topology_artifacts=()
 for claim in $topology_claims; do
   claim_name="${claim##*/}"
   claim_uid="$(kubectl --context "$kubectl_context" get resourceclaim "$claim_name" -o jsonpath='{.metadata.uid}')"
   claim_node="$(kubectl --context "$kubectl_context" get resourceclaim "$claim_name" -o jsonpath='{.status.allocation.devices.results[0].pool}')"
   docker exec "$claim_node" test -f "/var/run/cdi/claim-$claim_uid.json"
   docker exec "$claim_node" grep -q "$claim_uid" /var/lib/tenstorrent-dra/claims.json
-  topology_artifacts+="$claim_node $claim_uid "
+  topology_artifacts+=("$claim_node" "$claim_uid")
 done
 
 kubectl --context "$kubectl_context" delete tenstorrentworkload tt-e2e-topology --wait=true
@@ -176,7 +176,7 @@ kubectl --context "$kubectl_context" delete resourceclaim -l tenstorrent.com/wor
 for resource in $topology_pods $topology_claims; do
   kubectl --context "$kubectl_context" wait --for=delete "$resource" --timeout=120s
 done
-set -- $topology_artifacts
+set -- "${topology_artifacts[@]}"
 while [[ "$#" -gt 0 ]]; do
   wait_claim_cleanup "$1" "$2"
   docker exec "$1" sh -c "grep -F '\"claimUID\":\"$2\"' /var/lib/tenstorrent-dra/audit.jsonl | grep -q '\"action\":\"claim-release\"'"

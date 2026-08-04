@@ -5,22 +5,138 @@ on:
   push:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
+env:
+  GO_VERSION: 1.25.12
+  HELM_VERSION: v4.2.3
+
 jobs:
-  go:
+  quality:
+    name: Go, policy, and workflow gates
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v7.0.1
-    - uses: actions/setup-go@v7.0.0
-      with:
-        go-version: '1.24.0'
-        cache: true
-    - run: make build test fmt-check
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Verify modules and build
+        run: go mod verify && make fmt-check vet build
+      - name: Static analysis
+        run: make staticcheck
+      - name: Race detector and coverage policy
+        run: make coverage-check
+      - name: Go vulnerability database
+        run: make govulncheck
+      - name: Dependency license policy
+        run: make license-check
+      - name: Secret history scan
+        run: make secret-scan
+      - name: Workflow and packaging policy
+        run: make actionlint supply-chain-check
+      - name: Shell analysis
+        run: make shellcheck
+
   helm:
+    name: Helm package
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v7.0.1
-    - uses: azure/setup-helm@v5.0.1
-    - run: make helm-lint
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - run: make helm-lint helm-package
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
+        with:
+          fail-on-severity: moderate
+          allow-licenses: Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, ImageMagick, MIT, MPL-2.0
+          retry-on-snapshot-warnings: true
+
+  image:
+    name: Production image and SBOM
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: Derive reproducible metadata
+        id: metadata
+        shell: bash
+        run: |
+          epoch="$(git show -s --format=%ct HEAD)"
+          echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u --date="@$epoch" +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - name: Build production image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          load: true
+          tags: tt-dra-ci:${{ github.sha }}
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=0.0.0-ci.${{ github.run_number }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ steps.metadata.outputs.date }}
+            SOURCE_DATE_EPOCH=${{ steps.metadata.outputs.epoch }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Verify runtime identity and metadata
+        run: |
+          test "$(docker image inspect "tt-dra-ci:${GITHUB_SHA}" --format '{{.Config.User}}')" = '65532:65532'
+          docker run --rm "tt-dra-ci:${GITHUB_SHA}" version | grep -F "\"commit\":\"${GITHUB_SHA}\""
+      - name: Verify reproducible image output
+        env:
+          BUILD_DATE: ${{ steps.metadata.outputs.date }}
+          SOURCE_DATE_EPOCH: ${{ steps.metadata.outputs.epoch }}
+        run: |
+          first="$(docker image inspect "tt-dra-ci:${GITHUB_SHA}" --format '{{.Id}}')"
+          docker build --no-cache --provenance=false --tag tt-dra-ci-rebuild:${GITHUB_SHA} \
+            --build-arg VERSION="0.0.0-ci.${GITHUB_RUN_NUMBER}" \
+            --build-arg VCS_REF="$GITHUB_SHA" \
+            --build-arg BUILD_DATE="$BUILD_DATE" \
+            --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" .
+          second="$(docker image inspect "tt-dra-ci-rebuild:${GITHUB_SHA}" --format '{{.Id}}')"
+          test "$first" = "$second"
+      - name: Scan production image
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: tt-dra-ci:${{ github.sha }}
+          fail-build: true
+          severity-cutoff: high
+          output-format: table
+          grype-version: v0.112.0
+          cache-db: true
+      - name: Generate CI image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: tt-dra-ci:${{ github.sha }}
+          format: spdx-json
+          output-file: tt-dra-ci.spdx.json
+          upload-artifact: false
+          syft-version: v1.44.0
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: tt-dra-ci-sbom
+          path: tt-dra-ci.spdx.json
+          if-no-files-found: error
+          retention-days: 14

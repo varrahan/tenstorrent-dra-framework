@@ -15,6 +15,8 @@ The driver provides three runtime paths:
 - `tt-dra-driver list` prints the complete local inventory for diagnostics.
 - `tt-dra-driver cleanup` is the guarded Helm pre-delete operation; it refuses
   to stop the release while Tenstorrent allocations or workloads are active.
+- `tt-dra-driver version` prints the embedded release, commit, and build time as
+  JSON for runtime provenance checks.
 
 Install the Helm chart from `deployments/helm/tenstorrent-dra`. It installs the
 node DaemonSet, a two-replica leader-elected controller, three DeviceClasses,
@@ -33,6 +35,14 @@ plugins. Production compatibility, recovery, and security boundaries are in
 [`docs/PRODUCTION.md`](docs/PRODUCTION.md). Deployment, observability, SLOs,
 alerts, incident response, and lifecycle runbooks are in
 [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+
+CI runs the race detector, risk-weighted coverage policy, static and
+vulnerability analysis, dependency-license and secret checks, Helm/workflow
+validation, and a scan of the production image. Tagged releases publish
+multi-architecture images and binaries, an SPDX SBOM, signed GitHub
+attestations, a keyless Cosign signature, and a versioned OCI Helm chart. See
+[`docs/RELEASE.md`](docs/RELEASE.md) for release and verification procedures and
+[`SECURITY.md`](SECURITY.md) for private vulnerability reporting.
 
 See [docs/README.md](docs/README.md), [docs/DRA.md](docs/DRA.md), and
 [docs/VM.md](docs/VM.md) for the model, APIs, and VM workflow.

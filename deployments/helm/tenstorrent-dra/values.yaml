@@ -2,7 +2,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: ghcr.io/tenstorrent/tenstorrent-dra
+  repository: ghcr.io/varrahan/tenstorrent-dra
   tag: "0.1.0"
   digest: ""
   pullPolicy: IfNotPresent

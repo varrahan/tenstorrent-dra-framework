@@ -1,0 +1,4 @@
+title = "Tenstorrent DRA secret scanning"
+
+[extend]
+useDefault = true
