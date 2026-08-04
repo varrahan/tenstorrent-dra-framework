@@ -47,6 +47,7 @@ spec:
         - {name: device, mountPath: {{ .Values.deviceRoot }}}
         - {name: tt-sysfs, mountPath: {{ .Values.sysfsRoot }}, readOnly: true}
         - {name: pci-sysfs, mountPath: {{ .Values.pciSysfsRoot }}, readOnly: true}
+        - {name: sysfs-devices, mountPath: {{ .Values.sysfsDevicesRoot }}, readOnly: true}
         - {name: state, mountPath: {{ .Values.stateDir }}}
         - {name: cdi, mountPath: {{ .Values.cdiDir }}}
         - {name: plugin, mountPath: {{ .Values.pluginDir }}}
@@ -55,6 +56,7 @@ spec:
       - {name: device, hostPath: {path: {{ .Values.deviceRoot }}, type: Directory}}
       - {name: tt-sysfs, hostPath: {path: {{ .Values.sysfsRoot }}, type: Directory}}
       - {name: pci-sysfs, hostPath: {path: {{ .Values.pciSysfsRoot }}, type: Directory}}
+      - {name: sysfs-devices, hostPath: {path: {{ .Values.sysfsDevicesRoot }}, type: Directory}}
       - {name: state, hostPath: {path: {{ .Values.stateDir }}, type: DirectoryOrCreate}}
       - {name: cdi, hostPath: {path: {{ .Values.cdiDir }}, type: DirectoryOrCreate}}
       - {name: plugin, hostPath: {path: {{ .Values.pluginDir }}, type: DirectoryOrCreate}}

@@ -75,12 +75,22 @@ Alpine container to create the `/dev/tenstorrent` character devices.
 
 ## 6. Run the supported VM validation flow
 
-This is the current automated validation run. It creates a kind cluster named
-`tt-dra`, labels both workers for the node DaemonSet, installs the Helm chart,
-waits for the workload CRD, and prints ResourceSlices and node topology.
+This automated validation creates a kind cluster named `tt-dra`, builds and
+loads the exact driver and test images, installs the Helm chart, and asserts
+exact inventory and topology. It exercises a native DRA claim and a connected
+two-rank topology workload through CDI preparation, isolated device visibility,
+sanitization, audit, teardown, and device reuse.
 
 ```bash
 make -C test/vm vm-validate
+```
+
+On a nested development kernel without AppArmor, the topology workload can use
+the explicit synthetic-only override. Production and the normal VM path retain
+`RuntimeDefault` AppArmor:
+
+```bash
+SYNTHETIC_DISABLE_WORKLOAD_APPARMOR=true make -C test/vm vm-validate
 ```
 
 The validation script mounts the synthetic trees as `/tt-sys` in the kind
@@ -92,6 +102,7 @@ for production hardware.
 ```text
 sysfsRoot=/tt-sys/class/tenstorrent
 pciSysfsRoot=/tt-sys/bus/pci/devices
+sysfsDevicesRoot=/tt-sys/devices
 ```
 
 If using a locally built image rather than a pullable registry image, create
@@ -108,6 +119,7 @@ helm upgrade --install tt-dra deployments/helm/tenstorrent-dra \
   --set image.tag=dev \
   --set sysfsRoot=/tt-sys/class/tenstorrent \
   --set pciSysfsRoot=/tt-sys/bus/pci/devices \
+  --set sysfsDevicesRoot=/tt-sys/devices \
   --set resetMode=noop \
   --set requireIOMMU=false
 ```

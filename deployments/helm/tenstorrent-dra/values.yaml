@@ -7,6 +7,7 @@ nodeSelector:
 deviceRoot: /dev/tenstorrent
 sysfsRoot: /sys/class/tenstorrent
 pciSysfsRoot: /sys/bus/pci/devices
+sysfsDevicesRoot: /sys/devices
 stateDir: /var/lib/tenstorrent-dra
 cdiDir: /var/run/cdi
 pluginDir: /var/lib/kubelet/plugins/dra.tenstorrent.com
@@ -18,3 +19,4 @@ placementTimeout: 2s
 controllerReplicas: 2
 resetMode: ioctl
 requireIOMMU: true
+syntheticDisableWorkloadAppArmor: false
