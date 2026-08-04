@@ -251,7 +251,13 @@ func (m *Manager) quarantineLocked(name, path, reason string, claim *PreparedCla
 
 // sanitizeLocked resets one device and updates quarantine state from the reset and audit outcomes.
 func (m *Manager) sanitizeLocked(ctx context.Context, action, name, path string, claim *PreparedClaim) error {
+	started := time.Now()
 	err := m.config.Resetter.Reset(ctx, path)
+	if m.config.Metrics != nil {
+		duration := time.Since(started)
+		m.config.Metrics.ObserveHardware(m.config.NodeName, "reset", action, duration, err)
+		m.config.Metrics.ObserveHardware(m.config.NodeName, "scrub", action, duration, err)
+	}
 	event := AuditEvent{Time: time.Now().UTC(), Action: action, Outcome: "success", Device: name, Path: path}
 	if err != nil {
 		event.Outcome = "failure"
@@ -306,5 +312,21 @@ func (m *Manager) auditLocked(event AuditEvent, claim *PreparedClaim) error {
 		file.Close()
 		return err
 	}
-	return file.Close()
+	if err := file.Close(); err != nil {
+		return err
+	}
+	m.config.Logger.Info("lifecycle decision",
+		"action", event.Action,
+		"outcome", event.Outcome,
+		"device", event.Device,
+		"device_path", event.Path,
+		"claim_uid", event.ClaimUID,
+		"claim_namespace", event.Namespace,
+		"claim", event.ClaimName,
+		"reason", event.Reason,
+	)
+	if m.config.EventSink != nil {
+		m.config.EventSink(event, claim)
+	}
+	return nil
 }

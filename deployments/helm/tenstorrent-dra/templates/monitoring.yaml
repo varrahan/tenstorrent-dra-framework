@@ -1,0 +1,177 @@
+{{ if .Values.metrics.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-metrics
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "observability") | nindent 4 }}
+  {{- with .Values.metrics.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ include "tenstorrent-dra.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+  - name: http
+    port: {{ .Values.httpPort }}
+    targetPort: http
+    protocol: TCP
+{{ end }}
+{{ if .Values.metrics.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "observability") | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "tenstorrent-dra.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: observability
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace | quote }}]
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: {{ .Values.metrics.serviceMonitor.interval }}
+    scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+{{ end }}
+{{ if .Values.dashboard.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-dashboard
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "observability") | nindent 4 }}
+    {{- with .Values.dashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  tenstorrent-dra.json: |-
+    {
+      "annotations": {"list": []},
+      "editable": false,
+      "graphTooltip": 1,
+      "panels": [
+        {"type":"stat","title":"Ready controller replicas","targets":[{"expr":"sum(tenstorrent_dra_component_ready{component=\"controller\"})"}],"gridPos":{"h":4,"w":6,"x":0,"y":0}},
+        {"type":"stat","title":"Ready node agents","targets":[{"expr":"sum(tenstorrent_dra_component_ready{component=\"node\"})"}],"gridPos":{"h":4,"w":6,"x":6,"y":0}},
+        {"type":"stat","title":"Published devices","targets":[{"expr":"sum(tenstorrent_dra_devices{state=\"published\"})"}],"gridPos":{"h":4,"w":6,"x":12,"y":0}},
+        {"type":"stat","title":"Quarantined devices","targets":[{"expr":"sum(tenstorrent_dra_devices{state=\"quarantined\"})"}],"gridPos":{"h":4,"w":6,"x":18,"y":0}},
+        {"type":"timeseries","title":"Inventory age by node","targets":[{"expr":"tenstorrent_dra_inventory_age_seconds","legendFormat":"{{`{{node}}`}}"}],"gridPos":{"h":8,"w":12,"x":0,"y":4}},
+        {"type":"timeseries","title":"Claim latency p95","targets":[{"expr":"histogram_quantile(0.95, sum by (le, operation) (rate(tenstorrent_dra_claim_operation_duration_seconds_bucket[5m])))","legendFormat":"{{`{{operation}}`}}"}],"gridPos":{"h":8,"w":12,"x":12,"y":4}},
+        {"type":"timeseries","title":"Sanitization failures","targets":[{"expr":"sum by (node, operation, phase) (rate(tenstorrent_dra_hardware_operations_total{outcome=\"failure\"}[5m]))"}],"gridPos":{"h":8,"w":12,"x":0,"y":12}},
+        {"type":"timeseries","title":"Reconciliation failures","targets":[{"expr":"sum by (component, kind) (rate(tenstorrent_dra_reconciliation_failures_total[5m]))"}],"gridPos":{"h":8,"w":12,"x":12,"y":12}},
+        {"type":"timeseries","title":"Placement latency p99","targets":[{"expr":"histogram_quantile(0.99, sum by (le) (rate(tenstorrent_dra_placement_duration_seconds_bucket[5m])))"}],"gridPos":{"h":8,"w":12,"x":0,"y":20}},
+        {"type":"stat","title":"Fabric topology valid","targets":[{"expr":"tenstorrent_dra_topology_valid"}],"gridPos":{"h":8,"w":12,"x":12,"y":20}}
+        ,{"type":"stat","title":"Allocated devices","targets":[{"expr":"sum(tenstorrent_dra_devices{state=\"allocated\"})"}],"gridPos":{"h":4,"w":6,"x":0,"y":28}}
+      ],
+      "schemaVersion": 39,
+      "tags": ["tenstorrent", "dra", "kubernetes"],
+      "templating": {"list": []},
+      "time": {"from": "now-6h", "to": "now"},
+      "title": "Tenstorrent DRA Operations",
+      "uid": "tenstorrent-dra-operations",
+      "version": 1
+    }
+{{ end }}
+{{ if .Values.alerts.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "observability") | nindent 4 }}
+    {{- with .Values.alerts.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+  - name: tenstorrent-dra.availability
+    rules:
+    - alert: TenstorrentDRAControllerUnavailable
+      expr: sum(tenstorrent_dra_component_ready{component="controller"}) < 1
+      for: 5m
+      labels: {severity: critical}
+      annotations:
+        summary: No Tenstorrent DRA controller replica is ready
+        runbook_url: docs/OPERATIONS.md#controller-unavailable-or-reconciliation-failures
+    - alert: TenstorrentDRANodeAgentUnavailable
+      expr: tenstorrent_dra_component_ready{component="node"} == 0
+      for: 5m
+      labels: {severity: critical}
+      annotations:
+        summary: Tenstorrent DRA node agent is not ready on {{`{{ $labels.node }}`}}
+        runbook_url: docs/OPERATIONS.md#node-agent-unavailable-or-stale-inventory
+    - alert: TenstorrentDRANodeDaemonSetUnavailable
+      expr: kube_daemonset_status_number_unavailable{namespace={{ .Release.Namespace | quote }},daemonset={{ printf "%s-node" (include "tenstorrent-dra.fullname" .) | quote }}} > 0
+      for: 5m
+      labels: {severity: critical}
+      annotations:
+        summary: One or more Tenstorrent DRA node-agent Pods are unavailable
+        runbook_url: docs/OPERATIONS.md#node-agent-unavailable-or-stale-inventory
+    - alert: TenstorrentDRAInventoryStale
+      expr: tenstorrent_dra_inventory_age_seconds > tenstorrent_dra_inventory_grace_period_seconds
+      for: 2m
+      labels: {severity: critical}
+      annotations:
+        summary: Tenstorrent inventory is stale on {{`{{ $labels.node }}`}}
+        runbook_url: docs/OPERATIONS.md#node-agent-unavailable-or-stale-inventory
+    - alert: TenstorrentDRANoPublishedCapacity
+      expr: tenstorrent_dra_devices{state="published"} == 0
+      for: 5m
+      labels: {severity: warning}
+      annotations:
+        summary: No Tenstorrent devices are published on {{`{{ $labels.node }}`}}
+        runbook_url: docs/OPERATIONS.md#hardware-quarantine-and-node-replacement
+    - alert: TenstorrentDRADeviceQuarantined
+      expr: tenstorrent_dra_devices{state="quarantined"} > 0
+      for: 1m
+      labels: {severity: warning}
+      annotations:
+        summary: Tenstorrent devices are quarantined on {{`{{ $labels.node }}`}}
+        runbook_url: docs/OPERATIONS.md#hardware-quarantine-and-node-replacement
+  - name: tenstorrent-dra.correctness
+    rules:
+    - alert: TenstorrentDRAClaimLifecycleFailures
+      expr: increase(tenstorrent_dra_claim_operation_failures_total[10m]) > 0
+      labels: {severity: critical}
+      annotations:
+        summary: A Tenstorrent claim prepare or unprepare operation failed
+        runbook_url: docs/OPERATIONS.md#claim-prepare-or-unprepare-failure
+    - alert: TenstorrentDRASanitizationFailure
+      expr: sum by (node, phase) (increase(tenstorrent_dra_hardware_operations_total{outcome="failure"}[10m])) > 0
+      labels: {severity: critical}
+      annotations:
+        summary: A Tenstorrent reset or scrub operation failed
+        runbook_url: docs/OPERATIONS.md#sanitization-failure
+    - alert: TenstorrentDRATopologyInvalid
+      expr: tenstorrent_dra_topology_valid == 0
+      for: 2m
+      labels: {severity: critical}
+      annotations:
+        summary: Tenstorrent cluster fabric topology is invalid
+        runbook_url: docs/OPERATIONS.md#invalid-fabric-topology
+    - alert: TenstorrentDRAReconciliationFailures
+      expr: increase(tenstorrent_dra_reconciliation_failures_total[10m]) > 0
+      labels: {severity: warning}
+      annotations:
+        summary: Tenstorrent DRA reconciliation is failing
+        runbook_url: docs/OPERATIONS.md#controller-unavailable-or-reconciliation-failures
+    - alert: TenstorrentDRAPlacementLatencySLOBreach
+      expr: histogram_quantile(0.99, sum by (le) (rate(tenstorrent_dra_placement_duration_seconds_bucket[10m]))) > 0.5
+      for: 15m
+      labels: {severity: warning}
+      annotations:
+        summary: Tenstorrent placement p99 exceeds the production SLO
+        runbook_url: docs/OPERATIONS.md#capacity-and-api-server-pressure
+{{ end }}

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Tenstorrent DRA Helm values",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["image", "nodeSelector", "resetMode", "requireIOMMU", "controllerReplicas", "controller", "node", "metrics", "networkPolicy"],
+  "properties": {
+    "nameOverride": {"type": "string", "maxLength": 63},
+    "fullnameOverride": {"type": "string", "maxLength": 42, "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$|^$"},
+    "image": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repository", "tag", "digest", "pullPolicy"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string"},
+        "digest": {"type": "string", "pattern": "^$|^sha256:[a-f0-9]{64}$"},
+        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+      },
+      "allOf": [{"anyOf": [{"properties": {"tag": {"minLength": 1}}}, {"properties": {"digest": {"minLength": 71}}}]}]
+    },
+    "imagePullSecrets": {"type": "array", "items": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string", "minLength": 1}}, "additionalProperties": false}},
+    "nodeSelector": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
+    "deviceRoot": {"$ref": "#/definitions/absolutePath"},
+    "sysfsRoot": {"$ref": "#/definitions/absolutePath"},
+    "pciSysfsRoot": {"$ref": "#/definitions/absolutePath"},
+    "sysfsDevicesRoot": {"$ref": "#/definitions/absolutePath"},
+    "stateDir": {"$ref": "#/definitions/absolutePath"},
+    "cdiDir": {"$ref": "#/definitions/absolutePath"},
+    "pluginDir": {"$ref": "#/definitions/absolutePath"},
+    "registrarDir": {"$ref": "#/definitions/absolutePath"},
+    "interval": {"$ref": "#/definitions/duration"},
+    "inventoryGracePeriod": {"$ref": "#/definitions/duration"},
+    "topologyTTL": {"$ref": "#/definitions/duration"},
+    "placementTimeout": {"$ref": "#/definitions/duration"},
+    "controllerReplicas": {"type": "integer", "minimum": 2, "maximum": 10},
+    "resetMode": {"enum": ["ioctl", "noop"]},
+    "requireIOMMU": {"type": "boolean"},
+    "syntheticDisableWorkloadAppArmor": {"type": "boolean"},
+    "httpPort": {"type": "integer", "minimum": 1024, "maximum": 65535},
+    "kubeAPI": {
+      "type": "object", "additionalProperties": false, "required": ["qps", "burst"],
+      "properties": {"qps": {"type": "number", "exclusiveMinimum": 0, "maximum": 100}, "burst": {"type": "integer", "minimum": 1, "maximum": 200}}
+    },
+    "controller": {"$ref": "#/definitions/component"},
+    "node": {"$ref": "#/definitions/component"},
+    "podDisruptionBudget": {
+      "type": "object", "additionalProperties": false, "required": ["enabled", "minAvailable"],
+      "properties": {"enabled": {"type": "boolean"}, "minAvailable": {"type": "integer", "minimum": 1, "maximum": 9}}
+    },
+    "topologySpreadConstraints": {
+      "type": "object", "additionalProperties": false, "required": ["enabled", "maxSkew", "topologyKey", "whenUnsatisfiable"],
+      "properties": {"enabled": {"type": "boolean"}, "maxSkew": {"type": "integer", "minimum": 1}, "topologyKey": {"type": "string", "minLength": 1}, "whenUnsatisfiable": {"enum": ["DoNotSchedule", "ScheduleAnyway"]}}
+    },
+    "priorityClass": {
+      "type": "object", "additionalProperties": false, "required": ["create", "controller", "node"],
+      "properties": {"create": {"type": "boolean"}, "controller": {"$ref": "#/definitions/priority"}, "node": {"$ref": "#/definitions/priority"}}
+    },
+    "metrics": {
+      "type": "object", "additionalProperties": false, "required": ["service", "serviceMonitor"],
+      "properties": {
+        "service": {"type": "object", "additionalProperties": false, "required": ["enabled", "annotations"], "properties": {"enabled": {"type": "boolean"}, "annotations": {"type": "object", "additionalProperties": {"type": "string"}}}},
+        "serviceMonitor": {"type": "object", "additionalProperties": false, "required": ["enabled", "interval", "scrapeTimeout", "additionalLabels"], "properties": {"enabled": {"type": "boolean"}, "interval": {"$ref": "#/definitions/duration"}, "scrapeTimeout": {"$ref": "#/definitions/duration"}, "additionalLabels": {"type": "object", "additionalProperties": {"type": "string"}}}}
+      }
+    },
+    "networkPolicy": {
+      "type": "object", "additionalProperties": false, "required": ["enabled", "namespaceSelector", "podSelector"],
+      "properties": {"enabled": {"type": "boolean"}, "namespaceSelector": {"type": "object"}, "podSelector": {"type": "object"}}
+    },
+    "dashboard": {"type": "object", "additionalProperties": false, "required": ["enabled", "labels"], "properties": {"enabled": {"type": "boolean"}, "labels": {"type": "object", "additionalProperties": {"type": "string"}}}},
+    "alerts": {"type": "object", "additionalProperties": false, "required": ["enabled", "additionalLabels"], "properties": {"enabled": {"type": "boolean"}, "additionalLabels": {"type": "object", "additionalProperties": {"type": "string"}}}}
+  },
+  "allOf": [
+    {"if": {"properties": {"resetMode": {"const": "noop"}}}, "then": {"properties": {"requireIOMMU": {"const": false}}}},
+    {"if": {"properties": {"metrics": {"properties": {"serviceMonitor": {"properties": {"enabled": {"const": true}}}}}}}, "then": {"properties": {"metrics": {"properties": {"service": {"properties": {"enabled": {"const": true}}}}}}}}
+  ],
+  "definitions": {
+    "absolutePath": {"type": "string", "pattern": "^/.+$"},
+    "duration": {"type": "string", "maxLength": 12, "pattern": "^[1-9][0-9]*(ms|s|m|h)$"},
+    "resources": {
+      "type": "object", "additionalProperties": false, "required": ["requests", "limits"],
+      "properties": {"requests": {"type": "object", "required": ["cpu", "memory"], "properties": {"cpu": {"type": ["string", "number"]}, "memory": {"type": "string"}}, "additionalProperties": false}, "limits": {"type": "object", "required": ["cpu", "memory"], "properties": {"cpu": {"type": ["string", "number"]}, "memory": {"type": "string"}}, "additionalProperties": false}}
+    },
+    "probe": {"type": "object", "additionalProperties": false, "required": ["failureThreshold", "periodSeconds"], "properties": {"failureThreshold": {"type": "integer", "minimum": 1}, "periodSeconds": {"type": "integer", "minimum": 1}}},
+    "component": {
+      "type": "object", "additionalProperties": false,
+      "required": ["resources", "terminationGracePeriodSeconds", "minReadySeconds", "rollout", "startupProbe", "readinessProbe", "livenessProbe", "tolerations", "podAnnotations"],
+      "properties": {
+        "resources": {"$ref": "#/definitions/resources"}, "terminationGracePeriodSeconds": {"type": "integer", "minimum": 10, "maximum": 600}, "minReadySeconds": {"type": "integer", "minimum": 0, "maximum": 300}, "progressDeadlineSeconds": {"type": "integer", "minimum": 60, "maximum": 3600},
+        "rollout": {"type": "object"}, "startupProbe": {"$ref": "#/definitions/probe"}, "readinessProbe": {"$ref": "#/definitions/probe"}, "livenessProbe": {"$ref": "#/definitions/probe"}, "tolerations": {"type": "array", "items": {"type": "object"}}, "podAnnotations": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "priority": {"type": "object", "additionalProperties": false, "required": ["name", "value"], "properties": {"name": {"type": "string"}, "value": {"type": "integer", "minimum": 1000000, "maximum": 1000000000}}}
+  }
+}

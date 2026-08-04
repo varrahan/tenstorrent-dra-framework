@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-cleanup
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-delete
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "tenstorrent-dra.fullname" . }}-controller
+      automountServiceAccountToken: true
+      priorityClassName: {{ include "tenstorrent-dra.controllerPriorityClassName" . }}
+      terminationGracePeriodSeconds: 10
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: cleanup
+        image: {{ include "tenstorrent-dra.image" . }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args:
+        - cleanup
+        - -release-name={{ .Release.Name }}
+        - -release-namespace={{ .Release.Namespace }}
+        - -resource-prefix={{ include "tenstorrent-dra.fullname" . }}
+        - -kube-api-qps={{ .Values.kubeAPI.qps }}
+        - -kube-api-burst={{ .Values.kubeAPI.burst }}
+        resources:
+          requests: {cpu: 10m, memory: 32Mi}
+          limits: {cpu: 100m, memory: 64Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532

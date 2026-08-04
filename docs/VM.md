@@ -8,8 +8,9 @@ The validation harness creates heterogeneous synthetic device trees, mounts
 separate trees into two kind workers, installs the Helm chart, and asserts exact
 ResourceSlice and topology contents. It then runs a standard CDI-backed claim
 and a connected two-rank `TenstorrentWorkload`, verifies per-container device
-visibility, and checks claim state, audit, CDI, and teardown cleanup. It does not
-use `tt-smi`.
+visibility, upgrades and rolls back the controller and node agents while a
+claim remains prepared, and checks claim state, audit, Events, metrics, CDI,
+teardown, and release uninstall cleanup. It does not use `tt-smi`.
 Synthetic device nodes do not implement the `tt-kmd` reset ioctl, so the harness
 uses the explicit validation-only `resetMode=noop` and `requireIOMMU=false`
 overrides. Production defaults remain ioctl reset and dedicated IOMMU groups.

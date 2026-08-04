@@ -23,6 +23,7 @@ image-build:
 
 helm-lint:
 	$(HELM) lint deployments/helm/tenstorrent-dra
+	bash test/helm/validate.sh
 
 vm-validation:
 	$(MAKE) -C test/vm vm-validate

@@ -26,3 +26,13 @@ func TestNodeCommandRejectsUnsafeNoopResetMode(t *testing.T) {
 		t.Fatalf("command error = %v, output = %s", err, output)
 	}
 }
+
+// TestCleanupCommandRequiresReleaseIdentity verifies the destructive cleanup
+// path cannot target an implicit or broad resource scope.
+func TestCleanupCommandRequiresReleaseIdentity(t *testing.T) {
+	command := exec.Command("go", "run", "../cmd/tt-dra-driver", "cleanup")
+	output, err := command.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "release name, namespace, and resource prefix are required") {
+		t.Fatalf("command error = %v, output = %s", err, output)
+	}
+}

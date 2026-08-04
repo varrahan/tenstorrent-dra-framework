@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +16,42 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/record"
 )
+
+// TestControllerEmitsTopologyAndWorkloadEvents verifies scheduling decisions
+// are visible without parsing controller logs.
+func TestControllerEmitsTopologyAndWorkloadEvents(t *testing.T) {
+	dynamicClient := controllerDynamicClient(t, controllerNodeTopology(), controllerWorkload("events"))
+	kube := kubernetesfake.NewSimpleClientset()
+	recorder := record.NewFakeRecorder(20)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- (&controller.Controller{Kube: kube, Dynamic: dynamicClient, TopologyTTL: time.Minute, Recorder: recorder}).Run(ctx)
+	}()
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "events") == "Assigned" })
+
+	want := map[string]bool{"TopologyValidated": false, "Assigned": false}
+	deadline := time.After(2 * time.Second)
+	for !(want["TopologyValidated"] && want["Assigned"]) {
+		select {
+		case event := <-recorder.Events:
+			for reason := range want {
+				if strings.Contains(event, reason) {
+					want[reason] = true
+				}
+			}
+		case <-deadline:
+			cancel()
+			t.Fatalf("events observed = %v", want)
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
 
 // TestControllerCreatesExactChildrenAndReservesWithinPass verifies distinct claims and Pods are created for concurrent workloads.
 func TestControllerCreatesExactChildrenAndReservesWithinPass(t *testing.T) {

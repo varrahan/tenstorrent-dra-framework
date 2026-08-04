@@ -21,5 +21,6 @@ Documents:
 
 - [DRA.md](DRA.md): resource model, attributes, claims, topology, and workload APIs.
 - [PRODUCTION.md](PRODUCTION.md): compatibility, security, recovery, scale, and API guarantees.
+- [OPERATIONS.md](OPERATIONS.md): deployment policy, observability, SLOs, alerts, incident response, lifecycle runbooks, and capacity planning.
 - [VM.md](VM.md): synthetic heterogeneous hardware and kind validation.
 - [README.md](README.md): this project-wide routing document.

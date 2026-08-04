@@ -1,7 +1,9 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
-  name: {{ .Release.Name }}-workload-authorizer
+  name: {{ include "tenstorrent-dra.fullname" . }}-workload-authorizer
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -18,7 +20,9 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
-  name: {{ .Release.Name }}-workload-authorizer
+  name: {{ include "tenstorrent-dra.fullname" . }}-workload-authorizer
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
 spec:
-  policyName: {{ .Release.Name }}-workload-authorizer
+  policyName: {{ include "tenstorrent-dra.fullname" . }}-workload-authorizer
   validationActions: [Deny, Audit]

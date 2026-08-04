@@ -13,10 +13,13 @@ The driver provides three runtime paths:
 - `tt-dra-driver controller` validates the cluster fabric graph and reconciles
   connected multi-rank `TenstorrentWorkload` assignments.
 - `tt-dra-driver list` prints the complete local inventory for diagnostics.
+- `tt-dra-driver cleanup` is the guarded Helm pre-delete operation; it refuses
+  to stop the release while Tenstorrent allocations or workloads are active.
 
 Install the Helm chart from `deployments/helm/tenstorrent-dra`. It installs the
 node DaemonSet, a two-replica leader-elected controller, three DeviceClasses,
-three CRDs, and the required RBAC. Standard ResourceClaims can select card
+three CRDs, hardened rollout and disruption policy, health and metrics
+endpoints, an operations dashboard, and the required RBAC. Standard ResourceClaims can select card
 attributes directly. `TenstorrentWorkload` adds deterministic connected-ring
 placement for distributed rank Pods.
 
@@ -27,7 +30,9 @@ inside the VM. Host-side Go tests remain independent of hardware.
 
 The implementation intentionally does not partition cards or install scheduler
 plugins. Production compatibility, recovery, and security boundaries are in
-[`docs/PRODUCTION.md`](docs/PRODUCTION.md).
+[`docs/PRODUCTION.md`](docs/PRODUCTION.md). Deployment, observability, SLOs,
+alerts, incident response, and lifecycle runbooks are in
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 See [docs/README.md](docs/README.md), [docs/DRA.md](docs/DRA.md), and
 [docs/VM.md](docs/VM.md) for the model, APIs, and VM workflow.

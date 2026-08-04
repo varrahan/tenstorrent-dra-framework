@@ -1,17 +1,23 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ .Release.Name }}-node
+  name: {{ include "tenstorrent-dra.fullname" . }}-node
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ .Release.Name }}-controller
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ .Release.Name }}-node
+  name: {{ include "tenstorrent-dra.fullname" . }}-node
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
@@ -19,6 +25,9 @@ rules:
 - apiGroups: [""]
   resources: ["nodes/status"]
   verbs: ["get", "update", "patch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "update", "patch"]
 - apiGroups: ["resource.k8s.io"]
   resources: ["resourceslices"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -32,33 +41,43 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ .Release.Name }}-node
+  name: {{ include "tenstorrent-dra.fullname" . }}-node
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ .Release.Name }}-node
+  name: {{ include "tenstorrent-dra.fullname" . }}-node
 subjects:
 - kind: ServiceAccount
-  name: {{ .Release.Name }}-node
+  name: {{ include "tenstorrent-dra.fullname" . }}-node
   namespace: {{ .Release.Namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ .Release.Name }}-controller
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
 rules:
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "update", "patch"]
 - apiGroups: ["resource.k8s.io"]
   resources: ["resourceclaims"]
   verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: ["resource.k8s.io"]
+  resources: ["resourceslices"]
+  verbs: ["get", "list", "delete"]
 - apiGroups: ["topology.tenstorrent.com"]
   resources: ["tenstorrentnodetopologies"]
-  verbs: ["get", "list", "watch"]
+  verbs: ["get", "list", "watch", "delete", "deletecollection"]
 - apiGroups: ["topology.tenstorrent.com"]
   resources: ["tenstorrentfabrictopologies"]
-  verbs: ["get", "create"]
+  verbs: ["get", "create", "delete"]
 - apiGroups: ["topology.tenstorrent.com"]
   resources: ["tenstorrentfabrictopologies/status"]
   verbs: ["get", "update", "patch"]
@@ -72,35 +91,45 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ .Release.Name }}-controller
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ .Release.Name }}-controller
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller
 subjects:
 - kind: ServiceAccount
-  name: {{ .Release.Name }}-controller
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller
   namespace: {{ .Release.Namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ .Release.Name }}-controller-lease
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller-lease
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
 rules:
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
-  resourceNames: [{{ .Release.Name }}-controller]
+  resourceNames: [{{ include "tenstorrent-dra.fullname" . }}-controller]
   verbs: ["get", "update"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "daemonsets"]
+  resourceNames: [{{ include "tenstorrent-dra.fullname" . }}-controller, {{ include "tenstorrent-dra.fullname" . }}-node]
+  verbs: ["get", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ .Release.Name }}-controller-lease
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller-lease
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ .Release.Name }}-controller-lease
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller-lease
 subjects:
 - kind: ServiceAccount
-  name: {{ .Release.Name }}-controller
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller
   namespace: {{ .Release.Namespace }}

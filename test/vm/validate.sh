@@ -48,17 +48,20 @@ kind load docker-image "$image_repository:$image_tag" --name "$cluster"
 kind load docker-image "$e2e_image" --name "$cluster"
 kubectl --context "$kubectl_context" label node "${cluster}-worker" tenstorrent.com/enabled=true --overwrite
 kubectl --context "$kubectl_context" label node "${cluster}-worker2" tenstorrent.com/enabled=true --overwrite
+helm_values=(
+  --set image.repository="$image_repository"
+  --set image.tag="$image_tag"
+  --set image.pullPolicy=IfNotPresent
+  --set sysfsRoot=/tt-sys/class/tenstorrent
+  --set pciSysfsRoot=/tt-sys/bus/pci/devices
+  --set sysfsDevicesRoot=/tt-sys/devices
+  --set resetMode=noop
+  --set requireIOMMU=false
+  --set syntheticDisableWorkloadAppArmor="$disable_workload_apparmor"
+)
 helm upgrade --install tt-dra "$repo_root/deployments/helm/tenstorrent-dra" \
   --kube-context "$kubectl_context" \
-  --set image.repository="$image_repository" \
-  --set image.tag="$image_tag" \
-  --set image.pullPolicy=IfNotPresent \
-  --set sysfsRoot=/tt-sys/class/tenstorrent \
-  --set pciSysfsRoot=/tt-sys/bus/pci/devices \
-  --set sysfsDevicesRoot=/tt-sys/devices \
-  --set resetMode=noop \
-  --set requireIOMMU=false \
-  --set syntheticDisableWorkloadAppArmor="$disable_workload_apparmor" \
+  "${helm_values[@]}" \
   --wait --timeout=180s
 kubectl --context "$kubectl_context" rollout status deployment/tt-dra-controller --timeout=120s
 kubectl --context "$kubectl_context" rollout status daemonset/tt-dra-node --timeout=120s
@@ -80,10 +83,63 @@ kubectl --context "$kubectl_context" wait --for=condition=Ready pod/tt-e2e-stand
 standard_node="$(kubectl --context "$kubectl_context" get pod tt-e2e-standard -o jsonpath='{.spec.nodeName}')"
 standard_uid="$(kubectl --context "$kubectl_context" get resourceclaim tt-e2e-standard -o jsonpath='{.metadata.uid}')"
 standard_device="$(kubectl --context "$kubectl_context" get resourceclaim tt-e2e-standard -o jsonpath='{.status.allocation.devices.results[0].device}')"
+standard_pod_uid="$(kubectl --context "$kubectl_context" get pod tt-e2e-standard -o jsonpath='{.metadata.uid}')"
 test "$standard_device" = tt-uuid-tt-node-a-1
 test "$(kubectl --context "$kubectl_context" logs tt-e2e-standard)" = devices=/dev/tenstorrent/1
 docker exec "$standard_node" test -f "/var/run/cdi/claim-$standard_uid.json"
 docker exec "$standard_node" grep -q "$standard_uid" /var/lib/tenstorrent-dra/claims.json
+
+# Upgrade and rollback both controller and node Pods while the prepared claim is
+# running. The workload Pod, allocation, CDI file, and persisted ownership must
+# remain unchanged through both node-agent restarts.
+helm upgrade tt-dra "$repo_root/deployments/helm/tenstorrent-dra" \
+  --kube-context "$kubectl_context" \
+  "${helm_values[@]}" \
+  --set-string controller.podAnnotations.test-rollout=upgrade \
+  --set-string node.podAnnotations.test-rollout=upgrade \
+  --wait --timeout=180s
+kubectl --context "$kubectl_context" rollout status deployment/tt-dra-controller --timeout=120s
+kubectl --context "$kubectl_context" rollout status daemonset/tt-dra-node --timeout=120s
+test "$(kubectl --context "$kubectl_context" get pod tt-e2e-standard -o jsonpath='{.metadata.uid}')" = "$standard_pod_uid"
+test "$(kubectl --context "$kubectl_context" get resourceclaim tt-e2e-standard -o jsonpath='{.status.allocation.devices.results[0].device}')" = "$standard_device"
+docker exec "$standard_node" test -f "/var/run/cdi/claim-$standard_uid.json"
+docker exec "$standard_node" grep -q "$standard_uid" /var/lib/tenstorrent-dra/claims.json
+
+helm rollback tt-dra 1 --kube-context "$kubectl_context" --wait --timeout=180s
+kubectl --context "$kubectl_context" rollout status deployment/tt-dra-controller --timeout=120s
+kubectl --context "$kubectl_context" rollout status daemonset/tt-dra-node --timeout=120s
+test "$(kubectl --context "$kubectl_context" get pod tt-e2e-standard -o jsonpath='{.metadata.uid}')" = "$standard_pod_uid"
+test "$(kubectl --context "$kubectl_context" get resourceclaim tt-e2e-standard -o jsonpath='{.status.allocation.devices.results[0].device}')" = "$standard_device"
+test "$(kubectl --context "$kubectl_context" get --raw /api/v1/namespaces/default/services/http:tt-dra-metrics:8080/proxy/readyz)" = ok
+kubectl --context "$kubectl_context" get --raw /api/v1/namespaces/default/services/http:tt-dra-metrics:8080/proxy/metrics | grep -q '^tenstorrent_dra_component_ready'
+test -n "$(kubectl --context "$kubectl_context" get events --field-selector reason=ClaimPrepared -o name)"
+kubectl --context "$kubectl_context" logs daemonset/tt-dra-node | grep -q '"reconciliation_id"'
+
+# The uninstall cleaner must fail closed before stopping either component while
+# this claim is active.
+kubectl --context "$kubectl_context" apply -f - <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tt-cleanup-guard
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: tt-dra-controller
+      containers:
+      - name: cleanup
+        image: $image_repository:$image_tag
+        imagePullPolicy: IfNotPresent
+        args: [cleanup, -release-name=tt-dra, -release-namespace=default, -resource-prefix=tt-dra]
+EOF
+kubectl --context "$kubectl_context" wait --for=condition=Failed job/tt-cleanup-guard --timeout=60s
+kubectl --context "$kubectl_context" logs job/tt-cleanup-guard | grep -q 'refusing cleanup'
+kubectl --context "$kubectl_context" get deployment/tt-dra-controller daemonset/tt-dra-node >/dev/null
+test "$(kubectl --context "$kubectl_context" get pod tt-e2e-standard -o jsonpath='{.metadata.uid}')" = "$standard_pod_uid"
+kubectl --context "$kubectl_context" delete job tt-cleanup-guard --wait=true
+
 kubectl --context "$kubectl_context" delete pod tt-e2e-standard --wait=true
 wait_claim_cleanup "$standard_node" "$standard_uid"
 docker exec "$standard_node" sh -c "grep -F '\"claimUID\":\"$standard_uid\"' /var/lib/tenstorrent-dra/audit.jsonl | grep -q '\"action\":\"claim-release\"'"
@@ -131,4 +187,10 @@ kubectl --context "$kubectl_context" get resourceslices
 kubectl --context "$kubectl_context" get tenstorrentnodetopologies
 kubectl --context "$kubectl_context" get tenstorrentfabrictopologies
 cleanup_e2e
+helm uninstall tt-dra --kube-context "$kubectl_context" --wait --timeout=180s
+test -z "$(kubectl --context "$kubectl_context" get all,serviceaccounts,configmaps,roles,rolebindings,poddisruptionbudgets,leases,networkpolicies -l app.kubernetes.io/instance=tt-dra -o name)"
+test -z "$(kubectl --context "$kubectl_context" get clusterroles,clusterrolebindings,priorityclasses,deviceclasses,validatingadmissionpolicies,validatingadmissionpolicybindings -l app.kubernetes.io/instance=tt-dra -o name)"
+test -z "$(kubectl --context "$kubectl_context" get resourceslices -o name)"
+test -z "$(kubectl --context "$kubectl_context" get tenstorrentnodetopologies -o name)"
+test -z "$(kubectl --context "$kubectl_context" get tenstorrentfabrictopologies -o name)"
 trap - EXIT

@@ -1,47 +1,135 @@
+{{ include "tenstorrent-dra.validate" . }}
 apiVersion: coordination.k8s.io/v1
 kind: Lease
 metadata:
-  name: {{ .Release.Name }}-controller
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
 spec: {}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-controller
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
 spec:
   replicas: {{ .Values.controllerReplicas }}
+  revisionHistoryLimit: 10
+  minReadySeconds: {{ .Values.controller.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.controller.progressDeadlineSeconds }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.controller.rollout.maxUnavailable }}
+      maxSurge: {{ .Values.controller.rollout.maxSurge }}
   selector:
     matchLabels:
-      app: tenstorrent-dra-controller
+      {{- include "tenstorrent-dra.selectorLabels" (dict "root" . "component" "controller") | nindent 6 }}
   template:
     metadata:
       labels:
-        app: tenstorrent-dra-controller
+        {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 8 }}
+      {{- with .Values.controller.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
-      serviceAccountName: {{ .Release.Name }}-controller
+      serviceAccountName: {{ include "tenstorrent-dra.fullname" . }}-controller
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: {{ .Values.controller.terminationGracePeriodSeconds }}
+      priorityClassName: {{ include "tenstorrent-dra.controllerPriorityClassName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
-        seccompProfile: {type: RuntimeDefault}
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if .Values.topologySpreadConstraints.enabled }}
+      topologySpreadConstraints:
+      - maxSkew: {{ .Values.topologySpreadConstraints.maxSkew }}
+        topologyKey: {{ .Values.topologySpreadConstraints.topologyKey }}
+        whenUnsatisfiable: {{ .Values.topologySpreadConstraints.whenUnsatisfiable }}
+        labelSelector:
+          matchLabels:
+            {{- include "tenstorrent-dra.selectorLabels" (dict "root" . "component" "controller") | nindent 12 }}
+      {{- end }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  {{- include "tenstorrent-dra.selectorLabels" (dict "root" . "component" "controller") | nindent 18 }}
+      {{- with .Values.controller.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: controller
-        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        image: {{ include "tenstorrent-dra.image" . }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         args:
         - controller
         - -topology-ttl={{ .Values.topologyTTL }}
         - -placement-timeout={{ .Values.placementTimeout }}
         - -leader-elect=true
-        - -leader-election-name={{ .Release.Name }}-controller
+        - -leader-election-name={{ include "tenstorrent-dra.fullname" . }}-controller
         - -leader-election-namespace={{ .Release.Namespace }}
         - -synthetic-disable-workload-apparmor={{ .Values.syntheticDisableWorkloadAppArmor }}
+        - -http-address=:{{ .Values.httpPort }}
+        - -kube-api-qps={{ .Values.kubeAPI.qps }}
+        - -kube-api-burst={{ .Values.kubeAPI.burst }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.httpPort }}
+          protocol: TCP
         env:
         - name: POD_NAME
-          valueFrom: {fieldRef: {fieldPath: metadata.name}}
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: POD_NAMESPACE
-          valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        startupProbe:
+          httpGet: {path: /startupz, port: http}
+          failureThreshold: {{ .Values.controller.startupProbe.failureThreshold }}
+          periodSeconds: {{ .Values.controller.startupProbe.periodSeconds }}
+        readinessProbe:
+          httpGet: {path: /readyz, port: http}
+          failureThreshold: {{ .Values.controller.readinessProbe.failureThreshold }}
+          periodSeconds: {{ .Values.controller.readinessProbe.periodSeconds }}
+        livenessProbe:
+          httpGet: {path: /livez, port: http}
+          failureThreshold: {{ .Values.controller.livenessProbe.failureThreshold }}
+          periodSeconds: {{ .Values.controller.livenessProbe.periodSeconds }}
+        resources:
+          {{- toYaml .Values.controller.resources | nindent 10 }}
         securityContext:
           allowPrivilegeEscalation: false
-          capabilities: {drop: ["ALL"]}
+          capabilities:
+            drop: ["ALL"]
           readOnlyRootFilesystem: true
+          runAsNonRoot: true
           runAsUser: 65532
           runAsGroup: 65532
+---
+{{ if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-controller
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "tenstorrent-dra.selectorLabels" (dict "root" . "component" "controller") | nindent 6 }}
+{{ end }}

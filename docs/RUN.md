@@ -49,6 +49,10 @@ The combined Make target runs formatting, build, tests, and Helm linting:
 make check
 ```
 
+Production probes, Prometheus metrics, dashboards, alerts, upgrade and rollback
+procedures, and incident runbooks are defined in
+[`OPERATIONS.md`](OPERATIONS.md).
+
 ## 4. Build the container image
 
 Build the image that contains the DRA driver binary.
@@ -137,6 +141,8 @@ kubectl get resourceslices -o yaml
 kubectl get tenstorrentnodetopologies -o yaml
 kubectl get tenstorrentfabrictopologies -o yaml
 kubectl get node -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="TenstorrentAcceleratorsHealthy")].status}{"\n"}{end}'
+kubectl get --raw /api/v1/namespaces/default/services/http:tt-dra-metrics:8080/proxy/readyz
+kubectl get --raw /api/v1/namespaces/default/services/http:tt-dra-metrics:8080/proxy/metrics
 ```
 
 The synthetic run should show two devices on the first worker, one device on the

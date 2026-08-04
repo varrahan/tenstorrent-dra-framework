@@ -1,0 +1,31 @@
+{{ if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-metrics
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "observability") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "tenstorrent-dra.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        {{- if .Values.networkPolicy.namespaceSelector }}
+        matchLabels:
+          {{- toYaml .Values.networkPolicy.namespaceSelector | nindent 10 }}
+        {{- else }}
+        {}
+        {{- end }}
+      {{- with .Values.networkPolicy.podSelector }}
+      podSelector:
+        matchLabels:
+          {{- toYaml . | nindent 10 }}
+      {{- end }}
+    ports:
+    - port: {{ .Values.httpPort }}
+      protocol: TCP
+{{ end }}

@@ -24,6 +24,7 @@ func TestJanitorSanitizesBeforeAndAfterUse(t *testing.T) {
 	root := t.TempDir()
 	snapshot := janitorSnapshot(device.HealthHealthy)
 	var resets []string
+	var emitted []lifecycle.AuditEvent
 	manager, err := lifecycle.NewManager(lifecycle.Config{
 		NodeName: "node-a", Driver: "dra.tenstorrent.com",
 		StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"), RequireIOMMU: true,
@@ -32,6 +33,9 @@ func TestJanitorSanitizesBeforeAndAfterUse(t *testing.T) {
 			resets = append(resets, path)
 			return nil
 		}),
+		EventSink: func(event lifecycle.AuditEvent, _ *lifecycle.PreparedClaim) {
+			emitted = append(emitted, event)
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,6 +64,9 @@ func TestJanitorSanitizesBeforeAndAfterUse(t *testing.T) {
 		if events[index].Action != action {
 			t.Fatalf("audit action %d = %q, want %q", index, events[index].Action, action)
 		}
+	}
+	if len(emitted) != len(wantActions) {
+		t.Fatalf("emitted lifecycle events = %d, want %d", len(emitted), len(wantActions))
 	}
 	info, err := os.Stat(filepath.Join(root, "state", "audit.jsonl"))
 	if err != nil {

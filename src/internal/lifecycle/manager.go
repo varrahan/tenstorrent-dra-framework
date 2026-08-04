@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
+	"github.com/varrahan/tenstorrent-dra-framework/src/internal/observability"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
@@ -27,6 +29,9 @@ type Config struct {
 	Inventory       func(context.Context) (device.InventorySnapshot, error)
 	Allocations     func(context.Context) ([]*resourceapi.ResourceClaim, error)
 	Resetter        Resetter
+	Metrics         *observability.Metrics
+	Logger          *slog.Logger
+	EventSink       func(AuditEvent, *PreparedClaim)
 }
 
 type Manager struct {
@@ -84,6 +89,9 @@ func NewManager(config Config) (*Manager, error) {
 	if config.MaxInventoryAge == 0 {
 		config.MaxInventoryAge = 2 * time.Minute
 	}
+	if config.Logger == nil {
+		config.Logger = slog.Default().With("component", "node", "node", config.NodeName)
+	}
 	m := &Manager{config: config, state: persistedState{
 		Version: stateVersion, Claims: map[string]PreparedClaim{},
 		Quarantined: map[string]QuarantineRecord{}, Known: map[string]KnownDevice{},
@@ -110,14 +118,18 @@ func NewManager(config Config) (*Manager, error) {
 func (m *Manager) PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	refreshStarted := time.Now()
 	snapshot, err := m.config.Inventory(ctx)
 	if err != nil {
+		m.observeClaim("prepare", refreshStarted, err)
 		return nil, fmt.Errorf("refresh inventory: %w", err)
 	}
 	if err := m.inventoryFresh(snapshot); err != nil {
+		m.observeClaim("prepare", refreshStarted, err)
 		return nil, err
 	}
 	if _, _, err := m.observeLocked(ctx, snapshot, false); err != nil {
+		m.observeClaim("prepare", refreshStarted, err)
 		return nil, fmt.Errorf("monitor inventory: %w", err)
 	}
 	byName := make(map[string]device.InventoryDevice, len(snapshot.Devices))
@@ -127,11 +139,13 @@ func (m *Manager) PrepareResourceClaims(ctx context.Context, claims []*resourcea
 	owners := m.deviceOwners()
 	result := make(map[types.UID]kubeletplugin.PrepareResult, len(claims))
 	for _, claim := range claims {
+		started := time.Now()
 		uid := types.UID("")
 		if claim != nil {
 			uid = claim.UID
 		}
 		prepared, prepareErr := m.prepareOne(ctx, claim, byName, owners)
+		m.observeClaim("prepare", started, prepareErr)
 		if prepareErr != nil {
 			result[uid] = kubeletplugin.PrepareResult{Err: prepareErr}
 			continue
@@ -139,6 +153,7 @@ func (m *Manager) PrepareResourceClaims(ctx context.Context, claims []*resourcea
 		result[uid] = kubeletplugin.PrepareResult{Devices: prepared}
 	}
 	if err := m.persist(); err != nil {
+		m.observeClaim("prepare", time.Now(), err)
 		return nil, err
 	}
 	return result, nil
@@ -148,14 +163,18 @@ func (m *Manager) PrepareResourceClaims(ctx context.Context, claims []*resourcea
 func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	refreshStarted := time.Now()
 	snapshot, err := m.config.Inventory(ctx)
 	if err != nil {
+		m.observeClaim("unprepare", refreshStarted, err)
 		return nil, fmt.Errorf("refresh inventory: %w", err)
 	}
 	if err := m.inventoryFresh(snapshot); err != nil {
+		m.observeClaim("unprepare", refreshStarted, err)
 		return nil, err
 	}
 	if _, _, err := m.observeLocked(ctx, snapshot, false); err != nil {
+		m.observeClaim("unprepare", refreshStarted, err)
 		return nil, fmt.Errorf("monitor inventory: %w", err)
 	}
 	byName := make(map[string]device.InventoryDevice, len(snapshot.Devices))
@@ -164,9 +183,11 @@ func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletp
 	}
 	result := make(map[types.UID]error, len(claims))
 	for _, claim := range claims {
+		started := time.Now()
 		prepared, ok := m.state.Claims[string(claim.UID)]
 		if !ok {
 			result[claim.UID] = nil
+			m.observeClaim("unprepare", started, nil)
 			continue
 		}
 		if prepared.Phase != ClaimReleasing {
@@ -174,10 +195,12 @@ func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletp
 			m.state.Claims[string(claim.UID)] = prepared
 			if err := m.persist(); err != nil {
 				result[claim.UID] = fmt.Errorf("persist release intent: %w", err)
+				m.observeClaim("unprepare", started, result[claim.UID])
 				continue
 			}
 			if err := m.auditLocked(AuditEvent{Action: "claim-release-intent", Outcome: "recorded"}, &prepared); err != nil {
 				result[claim.UID] = err
+				m.observeClaim("unprepare", started, err)
 				continue
 			}
 		}
@@ -195,6 +218,7 @@ func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletp
 		if sanitizeErr != nil {
 			_ = m.persist()
 			result[claim.UID] = sanitizeErr
+			m.observeClaim("unprepare", started, sanitizeErr)
 			continue
 		}
 		if err := m.auditLocked(AuditEvent{Action: "claim-release", Outcome: "approved"}, &prepared); err != nil {
@@ -202,24 +226,54 @@ func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletp
 				m.state.Quarantined[claimedDevice.Device] = QuarantineRecord{Reason: "claim release audit failed: " + err.Error(), Since: time.Now().UTC()}
 			}
 			result[claim.UID] = err
+			m.observeClaim("unprepare", started, err)
 			continue
 		}
 		if err := os.Remove(filepath.Join(m.config.CDIDir, cdiFilename(prepared.UID))); err != nil && !os.IsNotExist(err) {
 			result[claim.UID] = err
+			m.observeClaim("unprepare", started, err)
 			continue
 		}
 		delete(m.state.Claims, string(claim.UID))
 		if err := m.persist(); err != nil {
 			m.state.Claims[string(claim.UID)] = prepared
 			result[claim.UID] = fmt.Errorf("commit released claim: %w", err)
+			m.observeClaim("unprepare", started, result[claim.UID])
 			continue
 		}
 		result[claim.UID] = nil
+		m.observeClaim("unprepare", started, nil)
 	}
 	if err := m.persist(); err != nil {
+		m.observeClaim("unprepare", time.Now(), err)
 		return nil, err
 	}
 	return result, nil
+}
+
+// Stats is a point-in-time lifecycle summary used for bounded-cardinality
+// device gauges.
+type Stats struct {
+	Allocated   int
+	Quarantined int
+}
+
+// SnapshotStats returns current allocated and quarantined device counts.
+func (m *Manager) SnapshotStats() Stats {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	stats := Stats{Quarantined: len(m.state.Quarantined)}
+	for _, claim := range m.state.Claims {
+		stats.Allocated += len(claim.Devices)
+	}
+	return stats
+}
+
+// observeClaim records one claim operation when metrics are configured.
+func (m *Manager) observeClaim(operation string, started time.Time, err error) {
+	if m.config.Metrics != nil {
+		m.config.Metrics.ObserveClaim(m.config.NodeName, operation, time.Since(started), err)
+	}
 }
 
 // HandleError leaves recoverable kubelet helper errors to the caller without mutating state.

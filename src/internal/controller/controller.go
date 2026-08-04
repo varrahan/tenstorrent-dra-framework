@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"reflect"
+	"strings"
 	"time"
 
 	ttapi "github.com/varrahan/tenstorrent-dra-framework/src/internal/api"
+	"github.com/varrahan/tenstorrent-dra-framework/src/internal/observability"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/placement"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/topology"
 	corev1 "k8s.io/api/core/v1"
@@ -25,6 +27,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 )
@@ -39,6 +42,10 @@ type Controller struct {
 	TopologyTTL             time.Duration
 	PlacementTimeout        time.Duration
 	DisableWorkloadAppArmor bool
+	Metrics                 *observability.Metrics
+	Logger                  *slog.Logger
+	Recorder                record.EventRecorder
+	SetReady                func(bool)
 
 	queue            workqueue.TypedRateLimitingInterface[string]
 	nodeInformer     cache.SharedIndexInformer
@@ -57,6 +64,9 @@ func (c *Controller) Run(ctx context.Context) error {
 	if c.PlacementTimeout <= 0 {
 		c.PlacementTimeout = 2 * time.Second
 	}
+	if c.Logger == nil {
+		c.Logger = slog.Default().With("component", "controller")
+	}
 	c.queue = workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	c.pending = map[string][]ttapi.RankAssignment{}
 	dynamicFactory := dynamicinformer.NewDynamicSharedInformerFactory(c.Dynamic, 0)
@@ -72,6 +82,10 @@ func (c *Controller) Run(ctx context.Context) error {
 	kubeFactory.Start(ctx.Done())
 	if !cache.WaitForCacheSync(ctx.Done(), c.nodeInformer.HasSynced, c.workloadInformer.HasSynced, c.claimInformer.HasSynced, c.podInformer.HasSynced) {
 		return fmt.Errorf("controller informer cache did not sync")
+	}
+	if c.SetReady != nil {
+		c.SetReady(true)
+		defer c.SetReady(false)
 	}
 	c.queue.Add(fabricQueueKey)
 	c.enqueueAllWorkloads()
@@ -154,6 +168,12 @@ func (c *Controller) processNext(ctx context.Context) bool {
 		return false
 	}
 	defer c.queue.Done(key)
+	started := time.Now()
+	kind := "workload"
+	if key == fabricQueueKey {
+		kind = "fabric"
+	}
+	reconciliationID := fmt.Sprintf("%s-%d", strings.TrimPrefix(key, "!"), started.UnixNano())
 	var err error
 	if key == fabricQueueKey {
 		c.fabric, err = c.reconcileFabric(ctx)
@@ -166,11 +186,28 @@ func (c *Controller) processNext(ctx context.Context) bool {
 	} else {
 		err = c.reconcileWorkloadKey(ctx, key)
 	}
+	duration := time.Since(started)
+	if c.Metrics != nil {
+		c.Metrics.ObserveReconcile("controller", kind, duration, err)
+	}
+	log := c.logger().With(
+		"reconciliation_id", reconciliationID,
+		"reconciliation_kind", kind,
+		"key", key,
+		"duration_seconds", duration.Seconds(),
+	)
+	if key != fabricQueueKey {
+		parts := strings.SplitN(key, "/", 2)
+		if len(parts) == 2 {
+			log = log.With("workload_namespace", parts[0], "workload", parts[1])
+		}
+	}
 	if err != nil {
-		log.Printf("reconcile %s: %v", key, err)
+		log.Error("reconciliation failed", "error", err)
 		c.queue.AddRateLimited(key)
 		return true
 	}
+	log.Info("reconciliation completed")
 	c.queue.Forget(key)
 	return true
 }
@@ -187,6 +224,9 @@ func (c *Controller) reconcileFabric(ctx context.Context) (ttapi.FabricTopologyS
 		nodes = append(nodes, node)
 	}
 	status := topology.BuildFabric(nodes, c.TopologyTTL, time.Now().UTC())
+	if c.Metrics != nil {
+		c.Metrics.ObserveTopology(status.Valid, len(status.Errors))
+	}
 	resource := c.Dynamic.Resource(ttapi.FabricTopologyGVR)
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current, err := resource.Get(ctx, "cluster", metav1.GetOptions{})
@@ -212,6 +252,19 @@ func (c *Controller) reconcileFabric(ctx context.Context) (ttapi.FabricTopologyS
 		_, err = resource.UpdateStatus(ctx, current, metav1.UpdateOptions{})
 		return err
 	})
+	if err == nil && (c.fabric.Generation != status.Generation || c.fabric.Valid != status.Valid || !reflect.DeepEqual(c.fabric.Errors, status.Errors)) {
+		eventType, reason, message := corev1.EventTypeNormal, "TopologyValidated", "cluster fabric topology is valid"
+		if !status.Valid {
+			eventType, reason = corev1.EventTypeWarning, "TopologyInvalid"
+			message = strings.Join(status.Errors, "; ")
+		}
+		c.emitFabricEvent(eventType, reason, message)
+		c.logger().Info("topology decision",
+			"topology_valid", status.Valid,
+			"topology_generation", status.Generation,
+			"topology_errors", len(status.Errors),
+		)
+	}
 	return status, err
 }
 
@@ -351,7 +404,17 @@ func (c *Controller) reconcileWorkload(ctx context.Context, workload *ttapi.Work
 	}
 	placementCtx, cancel := context.WithTimeout(ctx, c.PlacementTimeout)
 	defer cancel()
+	placementStarted := time.Now()
 	assignments, ok, err := placement.SolveContext(placementCtx, workload, fabric.Endpoints, used, placement.DefaultLimits)
+	placementOutcome := "success"
+	if err != nil {
+		placementOutcome = "error"
+	} else if !ok {
+		placementOutcome = "unsatisfied"
+	}
+	if c.Metrics != nil {
+		c.Metrics.ObservePlacement(time.Since(placementStarted), placementOutcome)
+	}
 	if err != nil {
 		setWorkloadStatus(workload, "Pending", false, "PlacementError", err.Error())
 		return c.updateWorkloadStatus(ctx, workload)
@@ -409,7 +472,8 @@ func (c *Controller) observedPhase(workload *ttapi.Workload) (string, string, st
 func (c *Controller) updateWorkloadStatus(ctx context.Context, workload *ttapi.Workload) error {
 	workload.Status.ObservedGeneration = workload.Generation
 	resource := c.Dynamic.Resource(ttapi.WorkloadGVR).Namespace(workload.Namespace)
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	changed := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current, err := resource.Get(ctx, workload.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
@@ -430,8 +494,65 @@ func (c *Controller) updateWorkloadStatus(ctx context.Context, workload *ttapi.W
 		}
 		current.Object["status"] = encoded
 		_, err = resource.UpdateStatus(ctx, current, metav1.UpdateOptions{})
+		changed = err == nil
 		return err
 	})
+	if err == nil && changed {
+		reason, message := "StatusChanged", "workload status changed"
+		if len(workload.Status.Conditions) > 0 {
+			reason, message = workload.Status.Conditions[0].Reason, workload.Status.Conditions[0].Message
+		}
+		eventType := corev1.EventTypeNormal
+		if workload.Status.Phase == "Degraded" || workload.Status.Phase == "Failed" || reason == "Unsatisfied" || reason == "FabricInvalid" || reason == "PlacementError" {
+			eventType = corev1.EventTypeWarning
+		}
+		c.emitWorkloadEvent(workload, eventType, reason, message)
+		c.logger().Info("workload decision",
+			"workload_namespace", workload.Namespace,
+			"workload", workload.Name,
+			"workload_uid", workload.UID,
+			"phase", workload.Status.Phase,
+			"reason", reason,
+			"assignment_count", len(workload.Status.Assignments),
+		)
+	}
+	return err
+}
+
+// logger returns the configured structured logger, including for unit tests
+// that invoke an individual reconciliation method without Run initialization.
+func (c *Controller) logger() *slog.Logger {
+	if c.Logger != nil {
+		return c.Logger
+	}
+	return slog.Default().With("component", "controller")
+}
+
+// emitWorkloadEvent records a decision against the custom workload object.
+func (c *Controller) emitWorkloadEvent(workload *ttapi.Workload, eventType, reason, message string) {
+	if c.Recorder == nil {
+		return
+	}
+	object := &unstructured.Unstructured{}
+	object.SetAPIVersion(ttapi.SchedulingAPIVersion)
+	object.SetKind(ttapi.WorkloadKind)
+	object.SetNamespace(workload.Namespace)
+	object.SetName(workload.Name)
+	object.SetUID(workload.UID)
+	c.Recorder.Event(object, eventType, reason, message)
+}
+
+// emitFabricEvent records topology validation transitions without producing an
+// Event on every periodic refresh.
+func (c *Controller) emitFabricEvent(eventType, reason, message string) {
+	if c.Recorder == nil {
+		return
+	}
+	object := &unstructured.Unstructured{}
+	object.SetAPIVersion(ttapi.TopologyAPIVersion)
+	object.SetKind(ttapi.FabricTopologyKind)
+	object.SetName("cluster")
+	c.Recorder.Event(object, eventType, reason, message)
 }
 
 // terminalPhase reports whether a workload has reached an irreversible final state.
