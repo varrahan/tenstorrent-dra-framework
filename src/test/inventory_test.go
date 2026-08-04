@@ -12,8 +12,8 @@ import (
 
 func TestBuildSnapshotNormalizesAndSortsStableDevices(t *testing.T) {
 	provider := device.StaticProvider{Devices: []device.RawDevice{
-		inventoryRaw("0000:00:02.0", "wormhole", "n300d", "Healthy", true),
-		inventoryRaw("0000:00:01.0", "bh", "p150b", "ok", true),
+		inventoryRaw("0000:00:02.0", "wormhole", "Healthy", true),
+		inventoryRaw("0000:00:01.0", "bh", "ok", true),
 	}}
 
 	snapshot, err := device.BuildSnapshot(context.Background(), provider)
@@ -26,8 +26,8 @@ func TestBuildSnapshotNormalizesAndSortsStableDevices(t *testing.T) {
 	if got := snapshot.Devices[0].StableID; got != "pci-0000:00:01.0" {
 		t.Fatalf("first stable ID = %q, want PCI-derived ID", got)
 	}
-	if got := snapshot.Devices[0].CardSeries; got != "p150" {
-		t.Fatalf("normalized card series = %q, want p150", got)
+	if got := snapshot.Devices[0].ChipSeries; got != "blackhole" {
+		t.Fatalf("normalized chip series = %q, want blackhole", got)
 	}
 	if !snapshot.Devices[0].Eligible || !snapshot.Devices[1].Eligible {
 		t.Fatalf("healthy known devices should be eligible: %#v", snapshot.Devices)
@@ -35,7 +35,7 @@ func TestBuildSnapshotNormalizesAndSortsStableDevices(t *testing.T) {
 	if snapshot.Devices[0].Provenance["pci"].Path == "" {
 		t.Fatal("PCI provenance path is empty")
 	}
-	for _, field := range []string{"stableID", "characterDevice", "pci", "chipSeries", "cardSeries", "memory", "compute", "health", "fabric", "node", "observedAt"} {
+	for _, field := range []string{"stableID", "characterDevice", "pci", "chipSeries", "memory", "compute", "health", "fabric", "node", "observedAt"} {
 		provenance, ok := snapshot.Devices[0].Provenance[field]
 		if !ok || provenance.Source == "" || provenance.ObservedAt.IsZero() {
 			t.Fatalf("missing provenance for canonical field %q: %#v", field, snapshot.Devices[0].Provenance)
@@ -56,7 +56,7 @@ func TestFilesystemProviderRequiresAbsoluteRoots(t *testing.T) {
 }
 
 func TestPCIIdentityUsesObservedLinkState(t *testing.T) {
-	raw := inventoryRaw("0000:00:01.0", "wormhole", "n150", "Healthy", true)
+	raw := inventoryRaw("0000:00:01.0", "wormhole", "Healthy", true)
 	raw.Values["pci.current_link_state"] = "L0"
 	raw.Values["pci.uevent.DRIVER"] = "tenstorrent"
 	snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{raw}})
@@ -69,9 +69,10 @@ func TestPCIIdentityUsesObservedLinkState(t *testing.T) {
 }
 
 func TestBuildSnapshotFailsClosedPerDevice(t *testing.T) {
-	badHealth := inventoryRaw("0000:00:01.0", "wormhole", "n150", "failed", true)
-	missingChar := inventoryRaw("0000:00:02.0", "wormhole", "n150", "Healthy", false)
-	missingIdentity := inventoryRaw("0000:00:03.0", "", "", "Healthy", true)
+	badHealth := inventoryRaw("0000:00:01.0", "wormhole", "failed", true)
+	missingChar := inventoryRaw("0000:00:02.0", "wormhole", "Healthy", false)
+	missingIdentity := inventoryRaw("0000:00:03.0", "", "Healthy", true)
+	missingIdentity.Values["pci.device"] = "0xffff"
 
 	snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{badHealth, missingChar, missingIdentity}})
 	if err != nil {
@@ -91,8 +92,8 @@ func TestBuildSnapshotFailsClosedPerDevice(t *testing.T) {
 }
 
 func TestBuildSnapshotRejectsDuplicateStableIdentity(t *testing.T) {
-	first := inventoryRaw("0000:00:01.0", "wormhole", "n150", "Healthy", true)
-	second := inventoryRaw("0000:00:01.0", "wormhole", "n150", "Healthy", true)
+	first := inventoryRaw("0000:00:01.0", "wormhole", "Healthy", true)
+	second := inventoryRaw("0000:00:01.0", "wormhole", "Healthy", true)
 	snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{first, second}})
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +106,7 @@ func TestBuildSnapshotRejectsDuplicateStableIdentity(t *testing.T) {
 }
 
 func TestBuildSnapshotDoesNotInventMissingCapacity(t *testing.T) {
-	raw := inventoryRaw("0000:00:04.0", "wormhole", "n150", "Healthy", true)
+	raw := inventoryRaw("0000:00:04.0", "wormhole", "Healthy", true)
 	delete(raw.Values, "memory_capacity_bytes")
 	snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{raw}})
 	if err != nil {
@@ -137,7 +138,6 @@ func TestFilesystemAndStaticProvidersHaveEquivalentCanonicalSemantics(t *testing
 	writeInventoryValue(t, filepath.Join(dataPath, "uevent"), "DEVNAME=/dev/tenstorrent/0\n")
 	writeInventoryValue(t, filepath.Join(dataPath, "dev"), "226:0\n")
 	writeInventoryValue(t, filepath.Join(dataPath, "architecture"), "wormhole\n")
-	writeInventoryValue(t, filepath.Join(dataPath, "board_type"), "n300d\n")
 	writeInventoryValue(t, filepath.Join(dataPath, "health"), "Healthy\n")
 	writeInventoryValue(t, filepath.Join(dataPath, "memory_capacity_bytes"), "1234\n")
 	writeInventoryValue(t, filepath.Join(dataPath, "tensix_cores_total"), "72\n")
@@ -162,7 +162,7 @@ func TestFilesystemAndStaticProvidersHaveEquivalentCanonicalSemantics(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	staticSnapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{inventoryRaw("0000:00:01.0", "wormhole", "n300d", "Healthy", false)}})
+	staticSnapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{inventoryRaw("0000:00:01.0", "wormhole", "Healthy", false)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestFilesystemAndStaticProvidersHaveEquivalentCanonicalSemantics(t *testing
 }
 
 func TestInventorySnapshotJSONRoundTrip(t *testing.T) {
-	snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{inventoryRaw("0000:00:01.0", "wormhole", "n150", "Healthy", true)}})
+	snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{inventoryRaw("0000:00:01.0", "wormhole", "Healthy", true)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,35 +191,59 @@ func TestInventorySnapshotJSONRoundTrip(t *testing.T) {
 
 func TestInventoryNormalizationTable(t *testing.T) {
 	tests := []struct {
-		name, chip, card, health string
-		eligible                 bool
-		wantChip, wantCard       string
+		name, chip, health string
+		eligible           bool
+		wantChip           string
 	}{
-		{name: "wormhole variant", chip: "WH", card: "n150d", health: "ready", eligible: true, wantChip: "wormhole", wantCard: "n150"},
-		{name: "blackhole variant", chip: "bh", card: "p150a", health: "ok", eligible: true, wantChip: "blackhole", wantCard: "p150"},
-		{name: "unknown chip", chip: " Mystery ", card: "n150", health: "healthy", eligible: true, wantChip: "mystery", wantCard: "n150"},
-		{name: "unknown card", chip: "quasar", card: "q950x", health: "healthy", eligible: true, wantChip: "quasar", wantCard: "q950x"},
-		{name: "missing identity", chip: "", card: "", health: "healthy", eligible: false},
-		{name: "unknown health", chip: "wormhole", card: "n150", health: "", eligible: true, wantChip: "wormhole", wantCard: "n150"},
+		{name: "wormhole variant", chip: "WH", health: "ready", eligible: true, wantChip: "wormhole"},
+		{name: "blackhole variant", chip: "bh", health: "ok", eligible: true, wantChip: "blackhole"},
+		{name: "unknown chip", chip: " Mystery ", health: "healthy", wantChip: "mystery"},
+		{name: "missing sysfs identity", chip: "", health: "healthy", eligible: true, wantChip: "wormhole"},
+		{name: "unknown health", chip: "wormhole", health: "", eligible: true, wantChip: "wormhole"},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{inventoryRaw("0000:00:01.0", testCase.chip, testCase.card, testCase.health, true)}})
+			snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{inventoryRaw("0000:00:01.0", testCase.chip, testCase.health, true)}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			observed := snapshot.Devices[0]
-			if observed.Eligible != testCase.eligible || observed.ChipSeries != testCase.wantChip || observed.CardSeries != testCase.wantCard {
-				t.Fatalf("got eligible=%v chip=%q card=%q reason=%q", observed.Eligible, observed.ChipSeries, observed.CardSeries, observed.RejectionReason)
+			if observed.Eligible != testCase.eligible || observed.ChipSeries != testCase.wantChip {
+				t.Fatalf("got eligible=%v chip=%q reason=%q", observed.Eligible, observed.ChipSeries, observed.RejectionReason)
+			}
+		})
+	}
+}
+
+func TestInventoryDerivesMissingIdentityFromKnownPCI(t *testing.T) {
+	tests := []struct {
+		name, pciDevice, wantChip string
+		eligible                  bool
+	}{
+		{name: "wormhole", pciDevice: "0x401e", wantChip: "wormhole", eligible: true},
+		{name: "blackhole", pciDevice: "0xb140", wantChip: "blackhole", eligible: true},
+		{name: "unknown device", pciDevice: "0xffff", eligible: false},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			raw := inventoryRaw("0000:00:01.0", "", "", true)
+			raw.Values["pci.device"] = testCase.pciDevice
+			snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{raw}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			observed := snapshot.Devices[0]
+			if observed.Eligible != testCase.eligible || observed.ChipSeries != testCase.wantChip {
+				t.Fatalf("got eligible=%v chip=%q reason=%q", observed.Eligible, observed.ChipSeries, observed.RejectionReason)
 			}
 		})
 	}
 }
 
 func FuzzBuildSnapshotNeverPanics(f *testing.F) {
-	f.Add("0000:00:01.0", "wormhole", "n150", "Healthy", "0x1e52")
-	f.Add("", "", "", "", "")
-	f.Fuzz(func(t *testing.T, bdf, chip, card, health, vendor string) {
+	f.Add("0000:00:01.0", "wormhole", "Healthy", "0x1e52")
+	f.Add("", "", "", "")
+	f.Fuzz(func(t *testing.T, bdf, chip, health, vendor string) {
 		_, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{{
 			ID:                     bdf,
 			CharacterDevicePresent: true,
@@ -228,7 +252,6 @@ func FuzzBuildSnapshotNeverPanics(f *testing.F) {
 				"pci.PCI_SLOT_NAME": bdf,
 				"pci.vendor":        vendor,
 				"architecture":      chip,
-				"board_type":        card,
 				"health":            health,
 			},
 		}}})
@@ -260,8 +283,6 @@ func TestFilesystemProviderReadsSyntheticSysfs(t *testing.T) {
 	}
 	writeInventoryValue(t, filepath.Join(devicePath, "uevent"), "DEVNAME=/dev/tenstorrent/0\n")
 	writeInventoryValue(t, filepath.Join(devicePath, "dev"), "226:0\n")
-	writeInventoryValue(t, filepath.Join(devicePath, "architecture"), "wormhole\n")
-	writeInventoryValue(t, filepath.Join(devicePath, "board_type"), "n300\n")
 	writeInventoryValue(t, filepath.Join(devicePath, "health"), "Healthy\n")
 	writeInventoryValue(t, filepath.Join(pciPath, "PCI_SLOT_NAME"), "0000:00:01.0\n")
 	writeInventoryValue(t, filepath.Join(pciPath, "vendor"), "0x1e52\n")
@@ -290,6 +311,9 @@ func TestFilesystemProviderReadsSyntheticSysfs(t *testing.T) {
 	observed := snapshot.Devices[0]
 	if observed.StableID != "pci-0000:00:01.0" {
 		t.Fatalf("stable ID = %q", observed.StableID)
+	}
+	if observed.ChipSeries != "wormhole" {
+		t.Fatalf("identity = %s, want wormhole", observed.ChipSeries)
 	}
 	if observed.CharacterDevicePresent {
 		t.Fatal("synthetic tree without a character node should not be allocatable")
@@ -334,7 +358,7 @@ func TestFilesystemProviderRejectsPCIPathEscape(t *testing.T) {
 	}
 }
 
-func inventoryRaw(bdf, chip, card, health string, characterDevice bool) device.RawDevice {
+func inventoryRaw(bdf, chip, health string, characterDevice bool) device.RawDevice {
 	return device.RawDevice{
 		ID:                     bdf,
 		CharacterDevicePresent: characterDevice,
@@ -347,7 +371,6 @@ func inventoryRaw(bdf, chip, card, health string, characterDevice bool) device.R
 			"pci.device":            "0x401e",
 			"pci.numa_node":         "0",
 			"architecture":          chip,
-			"board_type":            card,
 			"health":                health,
 			"memory_capacity_bytes": "1234",
 			"tensix_cores_total":    "72",
@@ -367,7 +390,6 @@ func canonicalSemantics(observed device.InventoryDevice) string {
 		StableID        string
 		PCI             device.PCIIdentity
 		ChipSeries      string
-		CardSeries      string
 		FirmwareVersion string
 		KMDVersion      string
 		Memory          device.MemoryInfo
@@ -381,7 +403,6 @@ func canonicalSemantics(observed device.InventoryDevice) string {
 		StableID:        observed.StableID,
 		PCI:             observed.PCI,
 		ChipSeries:      observed.ChipSeries,
-		CardSeries:      observed.CardSeries,
 		FirmwareVersion: observed.FirmwareVersion,
 		KMDVersion:      observed.KMDVersion,
 		Memory:          observed.Memory,

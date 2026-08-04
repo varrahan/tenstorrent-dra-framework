@@ -18,7 +18,7 @@ import (
 func TestLifecycleManagerPrepareIsIdempotentAndIsolated(t *testing.T) {
 	root := t.TempDir()
 	snapshot := device.InventorySnapshot{Devices: []device.InventoryDevice{{
-		Node:                   device.Node{ID: "0", Path: "/dev/tenstorrent/0", ChipSeries: "wormhole", CardSeries: "n150", Major: 241, Minor: 0},
+		Node:                   device.Node{ID: "0", Path: "/dev/tenstorrent/0", ChipSeries: "wormhole", Major: 241, Minor: 0},
 		CharacterDevicePresent: true, Health: device.HealthHealthy, Eligible: true,
 	}}}
 	m, err := lifecycle.NewManager(lifecycle.Config{NodeName: "node-a", Driver: "dra.tenstorrent.com", StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"), Inventory: func(context.Context) (device.InventorySnapshot, error) { return snapshot, nil }})
@@ -26,7 +26,7 @@ func TestLifecycleManagerPrepareIsIdempotentAndIsolated(t *testing.T) {
 		t.Fatal(err)
 	}
 	uid := types.UID("claim-uid")
-	claim := &resourceapi.ResourceClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "claim", UID: uid}, Status: resourceapi.ResourceClaimStatus{Allocation: &resourceapi.AllocationResult{Devices: resourceapi.DeviceAllocationResult{Results: []resourceapi.DeviceRequestAllocationResult{{Request: "accelerator", Driver: "dra.tenstorrent.com", Pool: "node-a", Device: "tt-wormhole-n150-0"}}}}}}
+	claim := &resourceapi.ResourceClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "claim", UID: uid}, Status: resourceapi.ResourceClaimStatus{Allocation: &resourceapi.AllocationResult{Devices: resourceapi.DeviceAllocationResult{Results: []resourceapi.DeviceRequestAllocationResult{{Request: "accelerator", Driver: "dra.tenstorrent.com", Pool: "node-a", Device: "tt-wormhole-0"}}}}}}
 	result, err := m.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{claim})
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestPrepareRejectsNilAndDuplicateAllocations(t *testing.T) {
 	root := t.TempDir()
 	snapshot := device.InventorySnapshot{Devices: []device.InventoryDevice{{
 		Node: device.Node{
-			ID: "0", Path: "/dev/tenstorrent/0", ChipSeries: "wormhole", CardSeries: "n150", Major: 241,
+			ID: "0", Path: "/dev/tenstorrent/0", ChipSeries: "wormhole", Major: 241,
 		},
 		CharacterDevicePresent: true,
 		Health:                 device.HealthHealthy,
@@ -113,7 +113,7 @@ func TestPrepareRejectsNilAndDuplicateAllocations(t *testing.T) {
 	}
 
 	allocation := resourceapi.DeviceRequestAllocationResult{
-		Request: "accelerator", Driver: "dra.tenstorrent.com", Pool: "node-a", Device: "tt-wormhole-n150-0",
+		Request: "accelerator", Driver: "dra.tenstorrent.com", Pool: "node-a", Device: "tt-wormhole-0",
 	}
 	claim := &resourceapi.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "duplicate", UID: "duplicate-uid"},

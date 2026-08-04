@@ -16,7 +16,6 @@ type Node struct {
 	Minor      uint64 `json:"minor"`
 	Mode       string `json:"mode"`
 	ChipSeries string `json:"chipSeries,omitempty"`
-	CardSeries string `json:"cardSeries,omitempty"`
 }
 
 func classifyCharacterDevice(path string, info fs.FileInfo) (Node, bool, error) {

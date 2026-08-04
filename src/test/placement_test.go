@@ -43,15 +43,15 @@ func TestSolveHonorsReservationsClassesAndTopology(t *testing.T) {
 	for i := range endpoints {
 		endpoints[i].Links = []ttapi.TopologyLink{{State: "up", RemoteEndpointID: endpoints[(i+1)%len(endpoints)].EndpointID}}
 	}
-	endpoints[2].CardSeries = "n300"
+	endpoints[2].ChipSeries = "blackhole"
 	reserved := placement.Reservations{}
 	reserved.Add("worker-a", "a")
-	workload := workloadWithRanks(ttapi.WorkloadRank{Name: "rank-0", DeviceClassName: "tenstorrent-wormhole-n150"})
+	workload := workloadWithRanks(ttapi.WorkloadRank{Name: "rank-0", DeviceClassName: dra.WormholeDeviceClassName})
 	workload.Spec.Topology = ttapi.WorkloadTopology{FabricID: "fabric-a", RingID: "ring-a"}
 
 	assignments, ok := placement.Solve(workload, endpoints, reserved)
 	if !ok || assignments[0].Devices[0].Name != "b" {
-		t.Fatalf("assignment = %#v, ok=%v; want unreserved n150 device b", assignments, ok)
+		t.Fatalf("assignment = %#v, ok=%v; want unreserved Wormhole device b", assignments, ok)
 	}
 	reserved.Add("worker-a", "b")
 	if _, ok := placement.Solve(workload, endpoints, reserved); ok {
@@ -74,7 +74,6 @@ func endpoint(node, name, id string) ttapi.FabricEndpoint {
 		DeviceName: name,
 		StableID:   "pci-" + name,
 		ChipSeries: "wormhole",
-		CardSeries: "n150",
 		FabricID:   "fabric-a",
 		RingID:     "ring-a",
 		EndpointID: id,

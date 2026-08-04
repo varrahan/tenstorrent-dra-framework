@@ -100,10 +100,7 @@ func matches(rank ttapi.WorkloadRank, item ttapi.FabricEndpoint) bool {
 	if rank.ChipSeries != "" && item.ChipSeries != rank.ChipSeries {
 		return false
 	}
-	if rank.CardSeries != "" && item.CardSeries != rank.CardSeries {
-		return false
-	}
-	return dra.MatchesDeviceClass(rank.DeviceClassName, item.ChipSeries, item.CardSeries)
+	return dra.MatchesDeviceClass(rank.DeviceClassName, item.ChipSeries)
 }
 
 func matchesTopology(topology ttapi.WorkloadTopology, item ttapi.FabricEndpoint) bool {

@@ -62,8 +62,8 @@ nodes cannot access the local Docker daemon.
 ## 5. Prepare the validation hardware (optional)
 
 For the disposable synthetic validation environment, create two heterogeneous
-node fixtures. Worker A receives one Wormhole N300 and one Blackhole P150;
-worker B receives one Wormhole N150.
+node fixtures. Worker A receives one Wormhole and one Blackhole device; worker
+B receives one Wormhole device.
 
 ```bash
 make -C test/vm fake-hardware
@@ -110,7 +110,7 @@ helm upgrade --install tt-dra deployments/helm/tenstorrent-dra \
 ## 7. Confirm deployment and discovered hardware
 
 Use these commands to confirm that the controller and node agents are running,
-and that each physical card was published as a DRA device.
+and that each host-visible accelerator ASIC was published as a DRA device.
 
 ```bash
 kubectl get nodes -o wide
@@ -121,15 +121,15 @@ kubectl get tenstorrentnodetopologies -o yaml
 kubectl get tenstorrentfabrictopologies -o yaml
 ```
 
-The synthetic run should show two cards on the first worker, one card on the
+The synthetic run should show two devices on the first worker, one device on the
 second worker, and a valid fabric topology when all expected links are present.
 
 ## 8. Inspect claims and workload placement
 
-The driver allocates whole cards through standard Kubernetes DRA
-`ResourceClaim` objects. Apply a claim and Pod manifest prepared for the
-desired `DeviceClass` (for example, `tenstorrent-wormhole-n300`), then inspect
-allocation and scheduling:
+The driver allocates complete host-visible accelerator devices through standard
+Kubernetes DRA `ResourceClaim` objects. Apply a claim and Pod manifest prepared
+for the desired `DeviceClass` (for example, `tenstorrent-wormhole`), then
+inspect allocation and scheduling:
 
 ```bash
 kubectl apply -f path/to/resourceclaim-and-pod.yaml
@@ -181,4 +181,3 @@ make -C test/vm kind-clean
 If the QEMU guest itself must be stopped, use the VM launcher's normal graceful
 shutdown procedure from the host; do not terminate the guest while a validation
 run is still active.
-

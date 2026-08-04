@@ -9,8 +9,8 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 )
 
-func TestDriverResourcesProjectsKnownCard(t *testing.T) {
-	item := eligibleDevice("0000:01:00.0", "wormhole", "n150")
+func TestDriverResourcesProjectsObservedDeviceData(t *testing.T) {
+	item := eligibleDevice("0000:01:00.0", "wormhole")
 	item.Compute.TensixCores = 70
 	item.Memory.TotalBytes = 1234
 	item.Fabric = device.FabricInfo{FabricID: "fabric-a", RingID: "ring-a", EndpointID: "endpoint-a"}
@@ -27,21 +27,20 @@ func TestDriverResourcesProjectsKnownCard(t *testing.T) {
 	}
 }
 
-func TestDriverResourcesPublishesUnknownCardWithoutProfileData(t *testing.T) {
-	item := eligibleDevice("0000:01:00.0", "quasar", "q950x")
+func TestDriverResourcesDoesNotSynthesizeUnobservedCapabilities(t *testing.T) {
+	item := eligibleDevice("0000:01:00.0", "wormhole")
 	resources := dra.DriverResources("worker-a", device.InventorySnapshot{Devices: []device.InventoryDevice{item}})
 	got := resources.Pools["worker-a"].Slices[0].Devices[0]
-	assertStringAttribute(t, got, dra.AttributeChipSeries, "quasar")
-	assertStringAttribute(t, got, dra.AttributeCardSeries, "q950x")
+	assertStringAttribute(t, got, dra.AttributeChipSeries, "wormhole")
 	if _, ok := got.Attributes[resourceapi.QualifiedName(dra.AttributeTensixCoreCount)]; ok {
-		t.Fatal("unknown card received a synthesized profile")
+		t.Fatal("device received a synthesized core count")
 	}
 }
 
 func TestDriverResourcesFiltersAndChunksDevices(t *testing.T) {
 	devices := make([]device.InventoryDevice, 129)
 	for i := range devices {
-		devices[i] = eligibleDevice(fmt.Sprintf("0000:01:%02x.0", i), "wormhole", "n150")
+		devices[i] = eligibleDevice(fmt.Sprintf("0000:01:%02x.0", i), "wormhole")
 	}
 	resources := dra.DriverResources("worker-a", device.InventorySnapshot{Devices: devices})
 	slices := resources.Pools["worker-a"].Slices
@@ -58,31 +57,33 @@ func TestDriverResourcesFiltersAndChunksDevices(t *testing.T) {
 
 func TestMatchesDeviceClass(t *testing.T) {
 	tests := []struct {
-		name, class, chip, card string
-		want                    bool
+		name, class, chip string
+		want              bool
 	}{
-		{name: "generic unknown", class: dra.GenericDeviceClassName, chip: "quasar", card: "q950x", want: true},
-		{name: "known exact", class: "tenstorrent-wormhole-n150", chip: "wormhole", card: "n150", want: true},
-		{name: "known mismatch", class: "tenstorrent-wormhole-n150", chip: "wormhole", card: "n300"},
-		{name: "invented specialized class", class: "tenstorrent-quasar-q950x", chip: "quasar", card: "q950x"},
+		{name: "generic wormhole", class: dra.GenericDeviceClassName, chip: "wormhole", want: true},
+		{name: "generic blackhole", class: dra.GenericDeviceClassName, chip: "blackhole", want: true},
+		{name: "generic unknown", class: dra.GenericDeviceClassName, chip: "quasar"},
+		{name: "wormhole", class: dra.WormholeDeviceClassName, chip: "wormhole", want: true},
+		{name: "wormhole mismatch", class: dra.WormholeDeviceClassName, chip: "blackhole"},
+		{name: "blackhole", class: dra.BlackholeDeviceClassName, chip: "blackhole", want: true},
+		{name: "invented class", class: "tenstorrent-quasar", chip: "quasar"},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			if got := dra.MatchesDeviceClass(testCase.class, testCase.chip, testCase.card); got != testCase.want {
+			if got := dra.MatchesDeviceClass(testCase.class, testCase.chip); got != testCase.want {
 				t.Fatalf("MatchesDeviceClass() = %v, want %v", got, testCase.want)
 			}
 		})
 	}
 }
 
-func eligibleDevice(bdf, chip, card string) device.InventoryDevice {
+func eligibleDevice(bdf, chip string) device.InventoryDevice {
 	return device.InventoryDevice{
 		StableID:               "pci-" + bdf,
 		Node:                   device.Node{Path: "/dev/tenstorrent/0"},
 		CharacterDevicePresent: true,
 		PCI:                    device.PCIIdentity{BDF: bdf, NUMANode: 0},
 		ChipSeries:             chip,
-		CardSeries:             card,
 		Health:                 device.HealthHealthy,
 		Eligible:               true,
 	}

@@ -33,7 +33,6 @@ type TopologyDevice struct {
 	Name       string         `json:"name"`
 	StableID   string         `json:"stableID"`
 	ChipSeries string         `json:"chipSeries"`
-	CardSeries string         `json:"cardSeries"`
 	FabricID   string         `json:"fabricID,omitempty"`
 	RingID     string         `json:"ringID,omitempty"`
 	EndpointID string         `json:"endpointID,omitempty"`
@@ -56,7 +55,6 @@ type FabricEndpoint struct {
 	DeviceName string         `json:"deviceName"`
 	StableID   string         `json:"stableID"`
 	ChipSeries string         `json:"chipSeries"`
-	CardSeries string         `json:"cardSeries"`
 	FabricID   string         `json:"fabricID"`
 	RingID     string         `json:"ringID"`
 	EndpointID string         `json:"endpointID"`
@@ -81,7 +79,6 @@ type WorkloadRank struct {
 	DeviceClassName string `json:"deviceClassName"`
 	Count           int64  `json:"count,omitempty"`
 	ChipSeries      string `json:"chipSeries,omitempty"`
-	CardSeries      string `json:"cardSeries,omitempty"`
 }
 type WorkloadTopology struct {
 	FabricID string `json:"fabricID,omitempty"`

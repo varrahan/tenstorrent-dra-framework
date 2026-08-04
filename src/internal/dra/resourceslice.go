@@ -33,7 +33,6 @@ func resourceDevice(nodeName string, item device.InventoryDevice) resourceapi.De
 		AttributeDeviceID:   stringAttribute(item.StableID),
 		AttributeNodeName:   stringAttribute(nodeName),
 		AttributeChipSeries: stringAttribute(item.ChipSeries),
-		AttributeCardSeries: stringAttribute(item.CardSeries),
 		AttributeHealth:     stringAttribute(string(item.Health)),
 	}
 	setString(attrs, AttributePCIBDF, item.PCI.BDF)
@@ -44,30 +43,8 @@ func resourceDevice(nodeName string, item device.InventoryDevice) resourceapi.De
 		attrs[AttributeNUMANode] = intAttribute(int64(item.PCI.NUMANode))
 	}
 	capacities := map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{}
-	if profile, ok := cardSpecForSeries(item.ChipSeries, item.CardSeries); ok {
-		cores := profile.TensixCores
-		if item.Compute.TensixCores > 0 {
-			cores = int64(item.Compute.TensixCores)
-		}
-		attrs[AttributeTensixCoreCount] = intAttribute(cores)
-		attrs[AttributeGDDRControllerCount] = intAttribute(profile.GDDRControllerCount())
-		attrs[AttributeGDDRControllersPerASIC] = intAttribute(profile.GDDRControllersPerASIC)
-		attrs[AttributeAIClockMHz] = intAttribute(profile.AIClockMHz)
-		attrs[AttributeMemoryType] = stringAttribute(profile.MemoryType)
-		attrs[AttributeConnectivity] = boolAttribute(profile.Connectivity)
-		attrs[AttributeSystemInterfaceType] = stringAttribute(profile.SystemInterfaceType)
-		if profile.BigRISCV > 0 {
-			attrs[AttributeBigRISCVCoreCount] = intAttribute(profile.BigRISCV)
-		}
-		if profile.WarpInterfaceCount > 0 {
-			attrs[AttributeWarpInterfaceCount] = intAttribute(profile.WarpInterfaceCount)
-		}
-		if profile.QSFPInterfaceCount > 0 {
-			attrs[AttributeQSFPInterfaceCount] = intAttribute(profile.QSFPInterfaceCount)
-		}
-		for name, value := range profile.Capacity() {
-			capacities[name] = value
-		}
+	if item.Compute.TensixCores > 0 {
+		attrs[AttributeTensixCoreCount] = intAttribute(int64(item.Compute.TensixCores))
 	}
 	if item.Memory.TotalBytes > 0 {
 		capacities[DeviceCapacityMemoryBytes] = quantityCapacity(resource.NewQuantity(int64(item.Memory.TotalBytes), resource.BinarySI))
@@ -81,9 +58,6 @@ func stringAttribute(value string) resourceapi.DeviceAttribute {
 func intAttribute(value int64) resourceapi.DeviceAttribute {
 	return resourceapi.DeviceAttribute{IntValue: &value}
 }
-func boolAttribute(value bool) resourceapi.DeviceAttribute {
-	return resourceapi.DeviceAttribute{BoolValue: &value}
-}
 func setString(values map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, name, value string) {
 	if value != "" {
 		values[resourceapi.QualifiedName(name)] = stringAttribute(value)
@@ -91,12 +65,4 @@ func setString(values map[resourceapi.QualifiedName]resourceapi.DeviceAttribute,
 }
 func quantityCapacity(value *resource.Quantity) resourceapi.DeviceCapacity {
 	return resourceapi.DeviceCapacity{Value: *value}
-}
-
-func capacityValue(value int64) resourceapi.DeviceCapacity {
-	return capacityValueWithSuffix(value, "")
-}
-
-func capacityValueWithSuffix(value int64, suffix string) resourceapi.DeviceCapacity {
-	return resourceapi.DeviceCapacity{Value: resource.MustParse(resource.NewQuantity(value, resource.DecimalSI).String() + suffix)}
 }
