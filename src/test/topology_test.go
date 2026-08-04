@@ -71,7 +71,7 @@ func TestBuildFabricRejectsInvalidGraphs(t *testing.T) {
 func TestPublishNodeCreatesAndUpdatesTopology(t *testing.T) {
 	client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
 	snapshot := device.InventorySnapshot{ObservedAt: time.Now().UTC(), Devices: []device.InventoryDevice{{
-		StableID: "pci-a", Eligible: true, ChipSeries: "quasar", CardSeries: "q950x",
+		StableID: "pci-a", Eligible: true, ChipSeries: "blackhole",
 		Fabric: device.FabricInfo{FabricID: "fabric-a", RingID: "ring-a", EndpointID: "endpoint-a"},
 	}}}
 	if err := tttopology.PublishNode(context.Background(), client, "worker-a", types.UID("node-uid"), snapshot); err != nil {
@@ -85,7 +85,7 @@ func TestPublishNodeCreatesAndUpdatesTopology(t *testing.T) {
 	if err := ttapi.FromUnstructured(object, &topology); err != nil {
 		t.Fatal(err)
 	}
-	if len(topology.Spec.Devices) != 1 || topology.Spec.Devices[0].ChipSeries != "quasar" {
+	if len(topology.Spec.Devices) != 1 || topology.Spec.Devices[0].ChipSeries != "blackhole" {
 		t.Fatalf("published topology = %#v", topology.Spec)
 	}
 
@@ -122,7 +122,7 @@ func nodeTopology(name string, observedAt time.Time, devices ...ttapi.TopologyDe
 
 func topologyDevice(name, endpointID, remoteID string) ttapi.TopologyDevice {
 	item := ttapi.TopologyDevice{
-		Pool: name, Name: name, StableID: "pci-" + name, ChipSeries: "wormhole", CardSeries: "n150",
+		Pool: name, Name: name, StableID: "pci-" + name, ChipSeries: "wormhole",
 		FabricID: "fabric-a", RingID: "ring-a", EndpointID: endpointID,
 	}
 	if remoteID != "" {

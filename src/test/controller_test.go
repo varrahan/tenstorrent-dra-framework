@@ -154,7 +154,7 @@ func controllerNodeTopology() *ttapi.NodeTopology {
 		Spec: ttapi.NodeTopologySpec{
 			NodeName: "worker-a", ObservedAt: metav1.Now(),
 			Devices: []ttapi.TopologyDevice{{
-				Pool: "worker-a", Name: "device-a", StableID: "pci-a", ChipSeries: "quasar", CardSeries: "q950x",
+				Pool: "worker-a", Name: "device-a", StableID: "pci-a", ChipSeries: "wormhole",
 				FabricID: "fabric-a", RingID: "ring-a", EndpointID: "endpoint-a",
 			}},
 		},

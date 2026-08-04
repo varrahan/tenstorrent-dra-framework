@@ -28,13 +28,12 @@ spec:
                 type: array
                 items:
                   type: object
-                  required: [pool, name, stableID, chipSeries, cardSeries]
+                  required: [pool, name, stableID, chipSeries]
                   properties:
                     pool: {type: string}
                     name: {type: string}
                     stableID: {type: string}
-                    chipSeries: {type: string}
-                    cardSeries: {type: string}
+                    chipSeries: {type: string, enum: [wormhole, blackhole]}
                     fabricID: {type: string}
                     ringID: {type: string}
                     endpointID: {type: string}
@@ -79,14 +78,13 @@ spec:
                 type: array
                 items:
                   type: object
-                  required: [nodeName, pool, deviceName, stableID, chipSeries, cardSeries, endpointID]
+                  required: [nodeName, pool, deviceName, stableID, chipSeries, endpointID]
                   properties:
                     nodeName: {type: string}
                     pool: {type: string}
                     deviceName: {type: string}
                     stableID: {type: string}
-                    chipSeries: {type: string}
-                    cardSeries: {type: string}
+                    chipSeries: {type: string, enum: [wormhole, blackhole]}
                     fabricID: {type: string}
                     ringID: {type: string}
                     endpointID: {type: string}
@@ -145,8 +143,7 @@ spec:
                     name: {type: string}
                     deviceClassName: {type: string}
                     count: {type: integer, minimum: 1}
-                    chipSeries: {type: string}
-                    cardSeries: {type: string}
+                    chipSeries: {type: string, enum: [wormhole, blackhole]}
           status:
             type: object
             properties:

@@ -10,7 +10,11 @@ import (
 	"time"
 )
 
-const tenstorrentPCIVendor = "0x1e52"
+const (
+	tenstorrentPCIVendor = "0x1e52"
+	wormholePCIDevice    = "0x401e"
+	blackholePCIDevice   = "0xb140"
+)
 
 func BuildSnapshot(ctx context.Context, provider Provider) (InventorySnapshot, error) {
 	if provider == nil {
@@ -44,13 +48,17 @@ func markDuplicateIdentities(devices []InventoryDevice) {
 }
 
 func normalize(raw RawDevice, observedAt time.Time) InventoryDevice {
+	pci := pciIdentity(raw)
+	chipSeries := normalizeChip(raw.Values["architecture"])
+	if chipSeries == "" {
+		chipSeries = chipSeriesFromPCI(pci)
+	}
 	device := InventoryDevice{
 		StableID:               raw.ID,
 		Node:                   raw.Node,
 		CharacterDevicePresent: raw.CharacterDevicePresent,
-		PCI:                    pciIdentity(raw),
-		ChipSeries:             normalizeChip(raw.Values["architecture"]),
-		CardSeries:             normalizeCard(raw.Values["board_type"]),
+		PCI:                    pci,
+		ChipSeries:             chipSeries,
 		FirmwareVersion:        firstValue(raw.Values, "tt_fw_bundle_ver", "firmware_version"),
 		KMDVersion:             firstValue(raw.Values, "kmd_version", "driver_version"),
 		Memory: MemoryInfo{
@@ -80,7 +88,6 @@ func normalize(raw RawDevice, observedAt time.Time) InventoryDevice {
 	}
 	device.Eligible, device.RejectionReason = eligibility(device, raw.DiscoveryError)
 	device.Node.ChipSeries = device.ChipSeries
-	device.Node.CardSeries = device.CardSeries
 	populateProvenance(&device, raw, observedAt)
 	return device
 }
@@ -92,8 +99,11 @@ func populateProvenance(device *InventoryDevice, raw RawDevice, observedAt time.
 	add("stableID", "pci-sysfs", raw.PCIPath)
 	add("characterDevice", "device-sysfs", raw.SysfsPath)
 	add("pci", "pci-sysfs", raw.PCIPath)
-	for _, field := range []string{"chipSeries", "cardSeries", "firmwareVersion", "kmdVersion", "memory", "compute", "health", "fault", "fabric"} {
+	for _, field := range []string{"chipSeries", "firmwareVersion", "kmdVersion", "memory", "compute", "health", "fault", "fabric"} {
 		add(field, "tenstorrent-sysfs", raw.SysfsPath)
+	}
+	if strings.TrimSpace(raw.Values["architecture"]) == "" && device.ChipSeries != "" {
+		add("chipSeries", "pci-sysfs", raw.PCIPath)
 	}
 	add("node", "device-sysfs", raw.SysfsPath)
 	add("observedAt", "observer", raw.SysfsPath)
@@ -109,8 +119,8 @@ func eligibility(device InventoryDevice, discoveryErr error) (bool, string) {
 		return false, "PCI vendor is not Tenstorrent"
 	case device.PCI.BDF == "" || device.PCI.Vendor == "":
 		return false, "PCI identity is incomplete"
-	case device.ChipSeries == "" || device.CardSeries == "":
-		return false, "chip/card identity is incomplete"
+	case device.ChipSeries != "wormhole" && device.ChipSeries != "blackhole":
+		return false, "chip identity is not Wormhole or Blackhole"
 	case device.Health == HealthUnhealthy:
 		return false, "device health is " + string(device.Health)
 	default:
@@ -154,15 +164,18 @@ func normalizeChip(value string) string {
 	}
 }
 
-func normalizeCard(value string) string {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	for _, suffix := range []string{"a", "b", "d", "s"} {
-		candidate := strings.TrimSuffix(normalized, suffix)
-		if candidate == "n150" || candidate == "n300" || candidate == "p100" || candidate == "p150" {
-			return candidate
-		}
+func chipSeriesFromPCI(identity PCIIdentity) string {
+	if identity.Vendor != tenstorrentPCIVendor {
+		return ""
 	}
-	return normalized
+	switch identity.Device {
+	case wormholePCIDevice:
+		return "wormhole"
+	case blackholePCIDevice:
+		return "blackhole"
+	default:
+		return ""
+	}
 }
 
 func normalizeHealth(value string) HealthState {
@@ -222,8 +235,8 @@ func parseDeviceNumbers(value string) (uint64, uint64) {
 
 // DRAName returns the stable DNS-label name used in ResourceSlices and claims.
 func DRAName(item InventoryDevice) string {
-	if item.StableID == "" && item.Node.ChipSeries != "" && item.Node.CardSeries != "" {
-		return "tt-" + item.Node.ChipSeries + "-" + item.Node.CardSeries + "-" + item.Node.ID
+	if item.StableID == "" && item.Node.ChipSeries != "" {
+		return "tt-" + item.Node.ChipSeries + "-" + item.Node.ID
 	}
 	value := strings.ToLower(item.StableID)
 	if value == "" {

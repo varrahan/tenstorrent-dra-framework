@@ -107,7 +107,6 @@ type InventoryDevice struct {
 	CharacterDevicePresent bool                  `json:"characterDevicePresent"`
 	PCI                    PCIIdentity           `json:"pci"`
 	ChipSeries             string                `json:"chipSeries,omitempty"`
-	CardSeries             string                `json:"cardSeries,omitempty"`
 	FirmwareVersion        string                `json:"firmwareVersion,omitempty"`
 	KMDVersion             string                `json:"kmdVersion,omitempty"`
 	Memory                 MemoryInfo            `json:"memory"`

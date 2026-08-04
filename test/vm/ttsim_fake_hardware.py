@@ -15,7 +15,11 @@ def write(path: Path, value: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
-    parser.add_argument("--cards", required=True, help="comma-separated chip:card entries")
+    parser.add_argument(
+        "--devices",
+        required=True,
+        help="comma-separated chip families (wormhole or blackhole)",
+    )
     parser.add_argument("--create-device-nodes", action="store_true")
     args = parser.parse_args()
     if args.root.exists():
@@ -27,8 +31,12 @@ def main() -> None:
     class_root = args.root / "sys" / "class" / "tenstorrent"
     pci_root = args.root / "sys" / "bus" / "pci" / "devices"
     device_root = args.root / "dev" / "tenstorrent"
-    for index, card in enumerate(args.cards.split(",")):
-        chip, series = card.split(":", 1)
+    chips = args.devices.split(",")
+    pci_device_ids = {"wormhole": "0x401e", "blackhole": "0xb140"}
+    unsupported = sorted(set(chips) - pci_device_ids.keys())
+    if unsupported:
+        parser.error(f"unsupported chip families: {', '.join(unsupported)}")
+    for index, chip in enumerate(chips):
         name = str(index)
         bdf = f"0000:00:{index + 1:02x}.0"
         data = args.root / "sys" / "devices" / "tt" / name
@@ -42,7 +50,6 @@ def main() -> None:
         write(data / "uevent", f"DEVNAME=/dev/tenstorrent/{name}")
         write(data / "dev", f"226:{index}")
         write(data / "architecture", chip)
-        write(data / "board_type", series)
         write(data / "health", "Healthy")
         write(data / "memory_capacity_bytes", "12884901888")
         write(data / "tensix_cores_total", "72")
@@ -50,10 +57,10 @@ def main() -> None:
         write(data / "ring_id", "ring-0")
         write(data / "fabric_endpoint", f"{args.root.name}-{name}")
         write(data / "fabric_links" / "link0" / "state", "up")
-        write(data / "fabric_links" / "link0" / "remote_endpoint_id", f"{args.root.name}-{(index + 1) % len(args.cards.split(','))}")
+        write(data / "fabric_links" / "link0" / "remote_endpoint_id", f"{args.root.name}-{(index + 1) % len(chips)}")
         write(pci / "PCI_SLOT_NAME", bdf)
         write(pci / "vendor", "0x1e52")
-        write(pci / "device", "0x401e")
+        write(pci / "device", pci_device_ids[chip])
         write(pci / "numa_node", "0")
         if args.create_device_nodes:
             device_root.mkdir(parents=True, exist_ok=True)

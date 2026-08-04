@@ -112,7 +112,7 @@ func (p FilesystemProvider) String() string { return "filesystem" }
 // health metadata, not every exported sysfs file.
 func readDeviceValues(root string) (map[string]string, error) {
 	return readSelectedValues(root, []string{
-		"uevent", "dev", "architecture", "board_type", "health", "fault_code",
+		"uevent", "dev", "architecture", "health", "fault_code",
 		"firmware_version", "tt_fw_bundle_ver", "kmd_version", "driver_version",
 		"memory_capacity_bytes", "memory_available_bytes", "tensix_cores_total",
 		"fabric_id", "fabric_domain", "ring_id", "fabric_ring", "fabric_endpoint",

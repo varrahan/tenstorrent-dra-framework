@@ -34,8 +34,8 @@ func PublishNode(ctx context.Context, client dynamic.Interface, nodeName string,
 		}
 		entry := ttapi.TopologyDevice{
 			Pool: nodeName, Name: device.DRAName(item), StableID: item.StableID,
-			ChipSeries: item.ChipSeries, CardSeries: item.CardSeries,
-			FabricID: item.Fabric.FabricID, RingID: item.Fabric.RingID, EndpointID: item.Fabric.EndpointID,
+			ChipSeries: item.ChipSeries,
+			FabricID:   item.Fabric.FabricID, RingID: item.Fabric.RingID, EndpointID: item.Fabric.EndpointID,
 		}
 		for _, link := range item.Fabric.Links {
 			entry.Links = append(entry.Links, ttapi.TopologyLink{
@@ -81,8 +81,8 @@ func BuildFabric(nodes []ttapi.NodeTopology, ttl time.Duration, now time.Time) t
 			seen[item.EndpointID] = struct{}{}
 			status.Endpoints = append(status.Endpoints, ttapi.FabricEndpoint{
 				NodeName: node.Spec.NodeName, Pool: item.Pool, DeviceName: item.Name, StableID: item.StableID,
-				ChipSeries: item.ChipSeries, CardSeries: item.CardSeries,
-				FabricID: item.FabricID, RingID: item.RingID, EndpointID: item.EndpointID, Links: item.Links,
+				ChipSeries: item.ChipSeries,
+				FabricID:   item.FabricID, RingID: item.RingID, EndpointID: item.EndpointID, Links: item.Links,
 			})
 		}
 	}
