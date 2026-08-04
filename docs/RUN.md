@@ -3,9 +3,10 @@
 This runbook starts the implemented DRA driver, node agents, topology
 controller, and Kubernetes resources in the supported QEMU `ttsim` environment.
 Run the hardware- and Kubernetes-dependent commands inside the Ubuntu guest.
-The guest must provide Docker, kind, kubectl, Helm, Kubernetes v1.34 or newer,
-and `tt-kmd`. The driver uses `/dev/tenstorrent`, `/sys/class/tenstorrent`, and
-PCI sysfs directly; it does not use `tt-smi`.
+The guest must provide Docker, kind, kubectl, Helm v4.2.3, Kubernetes v1.34 or
+newer, `tt-kmd`, and the Go 1.25.12 toolchain for repository checks. The driver
+uses `/dev/tenstorrent`, `/sys/class/tenstorrent`, and PCI sysfs directly; it
+does not use `tt-smi`.
 
 ## 1. Check the guest prerequisites
 
@@ -17,6 +18,7 @@ docker version
 kind version
 kubectl version --client
 helm version
+go version
 test -e /dev/tenstorrent
 test -d /sys/class/tenstorrent
 test -d /sys/bus/pci/devices
@@ -43,7 +45,7 @@ make fmt-check
 go vet ./...
 ```
 
-The combined Make target runs formatting, build, tests, and Helm linting:
+The combined Make target runs formatting, vet, build, tests, and Helm linting:
 
 ```bash
 make check
@@ -62,7 +64,10 @@ make image-build
 ```
 
 This creates `tenstorrent-dra:dev`. Use a registry image instead if the cluster
-nodes cannot access the local Docker daemon.
+nodes cannot access the local Docker daemon. The local repository/tag, kind
+cluster/config, and synthetic AppArmor policy are fixed validation constants;
+they are not environment overrides. Runtime variables used by installed Pods
+are documented in [`ENV.md`](ENV.md).
 
 ## 5. Prepare the validation hardware (optional)
 
@@ -89,19 +94,12 @@ sanitization, audit, teardown, and device reuse.
 make -C test/vm vm-validate
 ```
 
-On a nested development kernel without AppArmor, the topology workload can use
-the explicit synthetic-only override. Production and the normal VM path retain
-`RuntimeDefault` AppArmor:
-
-```bash
-SYNTHETIC_DISABLE_WORKLOAD_APPARMOR=true make -C test/vm vm-validate
-```
-
 The validation script mounts the synthetic trees as `/tt-sys` in the kind
 workers and passes these paths to the driver. Synthetic character devices do
 not implement the `tt-kmd` reset ioctl, so this disposable path explicitly uses
 `resetMode=noop` and disables the IOMMU requirement. Never use those overrides
-for production hardware.
+for production hardware. The workload AppArmor profile remains enabled in the
+fixed validation configuration.
 
 ```text
 sysfsRoot=/tt-sys/class/tenstorrent

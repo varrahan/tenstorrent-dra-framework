@@ -30,6 +30,13 @@ and a signed provenance attestation over release-file checksums. Cosign adds a
 separate keyless image signature bound to the release workflow identity. No
 long-lived signing key is stored in repository secrets.
 
+Release binaries are CGO-disabled Linux executables built with the pinned Go
+1.25.12 toolchain. The release workflow verifies byte-for-byte AMD64 and ARM64
+binary reproducibility, independently rebuilds both platform images, and
+confirms that the ARM64 image contains an AArch64 executable. These fixed build
+policies are constants; version, commit, source timestamp, architecture,
+registry identity, and digest remain release-specific inputs.
+
 ## Preparing a release
 
 1. Choose a SemVer version and update all three version declarations:
@@ -88,10 +95,11 @@ helm show chart "tenstorrent-dra-$version.tgz"
 
 ## Upgrade and rollback
 
-Apply CRD upgrades and backups as described in `PRODUCTION.md`, then install a
-verified digest with `--atomic --wait`. Record the previous chart version and
-image digest before changing either. To roll back application resources, use
-Helm history and explicitly restore the prior verified digest:
+Apply CRD upgrades and backups as described in
+[`PRODUCTION.md`](PRODUCTION.md), then install a verified digest with
+`--atomic --wait`. Record the previous chart version and image digest before
+changing either. To roll back application resources, use Helm history and
+explicitly restore the prior verified digest:
 
 ```bash
 helm history tt-dra -n tenstorrent-system
@@ -105,8 +113,8 @@ helm upgrade tt-dra oci://ghcr.io/varrahan/charts/tenstorrent-dra \
 Helm does not roll back CRDs. Do not remove a served or stored API version when
 rolling back. The guarded pre-delete hook also refuses uninstall while a claim
 or workload is active. Operational upgrade, rollback, state recovery, and node
-replacement procedures remain in `OPERATIONS.md`.
+replacement procedures remain in [`OPERATIONS.md`](OPERATIONS.md).
 
-For a vulnerable release, follow `SECURITY.md`: publish a new patch version,
-mark the affected release/package, and direct users to a new verified digest.
-Never rebuild an existing version in place.
+For a vulnerable release, follow [`SECURITY.md`](../SECURITY.md): publish a new
+patch version, mark the affected release/package, and direct users to a new
+verified digest. Never rebuild an existing version in place.

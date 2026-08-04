@@ -19,9 +19,12 @@ make -C test/vm vm-validate
 
 Documents:
 
+- [DESIGN.md](DESIGN.md): component responsibilities, execution stages, isolation, and scope boundaries.
 - [DRA.md](DRA.md): resource model, attributes, claims, topology, and workload APIs.
+- [ENV.md](ENV.md): complete driver and managed-workload runtime environment-variable contract.
 - [PRODUCTION.md](PRODUCTION.md): compatibility, security, recovery, scale, and API guarantees.
 - [OPERATIONS.md](OPERATIONS.md): deployment policy, observability, SLOs, alerts, incident response, lifecycle runbooks, and capacity planning.
 - [RELEASE.md](RELEASE.md): CI gates, immutable packaging, SBOMs, attestations, signatures, release verification, and rollback.
+- [RUN.md](RUN.md): prerequisite, build, deployment, inspection, troubleshooting, and cleanup commands.
 - [VM.md](VM.md): synthetic heterogeneous hardware and kind validation.
 - [README.md](README.md): this project-wide routing document.

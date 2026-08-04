@@ -7,7 +7,9 @@ DOCKER ?= docker
 
 BINARY := tt-dra-driver
 COMMAND := ./src/cmd/tt-dra-driver
-IMAGE_REPOSITORY ?= tenstorrent-dra
+override IMAGE_REPOSITORY := tenstorrent-dra
+override CGO_MODE := 0
+override RELEASE_GOOS := linux
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || echo 0)
@@ -18,7 +20,7 @@ GOVULNCHECK_VERSION := v1.6.0
 LICHEN_VERSION := v0.3.0
 GITLEAKS_VERSION := v8.30.1
 ACTIONLINT_VERSION := v1.7.11
-GO_TOOLCHAIN_VERSION := go1.25.12
+override GO_TOOLCHAIN := go1.25.12
 SHELLCHECK_IMAGE := docker.io/koalaman/shellcheck-alpine@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
 
 GO_FILES := $(shell find src -type f -name '*.go' -print)
@@ -61,8 +63,8 @@ govulncheck:
 license-check:
 	@temporary_binary="$$(mktemp)"; \
 		trap 'rm -f -- "$$temporary_binary"' EXIT; \
-		CGO_ENABLED=0 $(GO) build $(BUILD_FLAGS) -o "$$temporary_binary" $(COMMAND); \
-		GOTOOLCHAIN=$(GO_TOOLCHAIN_VERSION) $(GO) run github.com/selesy/lichen@$(LICHEN_VERSION) --config=.lichen.yaml "$$temporary_binary"
+		CGO_ENABLED=$(CGO_MODE) $(GO) build $(BUILD_FLAGS) -o "$$temporary_binary" $(COMMAND); \
+		GOTOOLCHAIN=$(GO_TOOLCHAIN) $(GO) run github.com/selesy/lichen@$(LICHEN_VERSION) --config=.lichen.yaml "$$temporary_binary"
 
 secret-scan:
 	$(GO) run github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION) git --redact --no-banner .
@@ -100,15 +102,15 @@ helm-package:
 
 release-binaries:
 	mkdir -p dist
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(BUILD_FLAGS) -o dist/$(BINARY)-linux-amd64 $(COMMAND)
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build $(BUILD_FLAGS) -o dist/$(BINARY)-linux-arm64 $(COMMAND)
+	CGO_ENABLED=$(CGO_MODE) GOOS=$(RELEASE_GOOS) GOARCH=amd64 $(GO) build $(BUILD_FLAGS) -o dist/$(BINARY)-linux-amd64 $(COMMAND)
+	CGO_ENABLED=$(CGO_MODE) GOOS=$(RELEASE_GOOS) GOARCH=arm64 $(GO) build $(BUILD_FLAGS) -o dist/$(BINARY)-linux-arm64 $(COMMAND)
 
 release-reproducibility:
 	@temporary_directory="$$(mktemp -d)"; \
 		trap 'rm -rf -- "$$temporary_directory"' EXIT; \
 		for architecture in amd64 arm64; do \
 			for attempt in first second; do \
-				CGO_ENABLED=0 GOOS=linux GOARCH="$$architecture" $(GO) build $(BUILD_FLAGS) \
+				CGO_ENABLED=$(CGO_MODE) GOOS=$(RELEASE_GOOS) GOARCH="$$architecture" $(GO) build $(BUILD_FLAGS) \
 					-o "$$temporary_directory/$$architecture-$$attempt" $(COMMAND); \
 			done; \
 		cmp "$$temporary_directory/$$architecture-first" "$$temporary_directory/$$architecture-second"; \

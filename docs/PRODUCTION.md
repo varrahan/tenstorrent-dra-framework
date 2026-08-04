@@ -102,6 +102,11 @@ RuntimeDefault seccomp and AppArmor, non-root execution, no privilege
 escalation, a read-only root filesystem, and all capabilities dropped. Workload
 images must write through mounted writable volumes when needed.
 
+The runtime environment surface is deliberately narrow: node, Pod, namespace,
+and Kubernetes API Service identity are injected by Kubernetes, while rank
+identity is controller-generated for managed workloads. The authoritative list
+and override rules are in [`ENV.md`](ENV.md).
+
 Every image process uses UID and GID 65532. Controller and cleanup containers
 run without privilege escalation or Linux capabilities. The privileged,
 non-root node DaemonSet is the sole Pod Security exception; privileged mode

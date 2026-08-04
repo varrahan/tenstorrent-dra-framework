@@ -11,7 +11,7 @@ devices as its hardware source of truth.
 | `tt-kmd` hardware surface | QEMU `ttsim` guest | Exposes Tenstorrent character devices, identity, health, capabilities, PCI data, and fabric-link data. |
 | `tt-dra-driver node`: inventory and publishers | Every enabled Kubernetes node | Discovers local hardware and publishes whole-card `ResourceSlice` objects plus that node's `TenstorrentNodeTopology`. |
 | `tt-dra-driver controller`: topology reconciler | Kubernetes control plane | The elected replica validates informer-cached node topology observations and writes cluster-wide `TenstorrentFabricTopology` status. |
-| `tt-dra-driver controller`: workload reconciler | Kubernetes control plane | Handles only `TenstorrentWorkload` requests. It selects a connected device set and creates exact claims and hostname-constrained rank Pods. |
+| `tt-dra-driver controller`: workload reconciler | Kubernetes control plane | Handles only `TenstorrentWorkload` requests. It selects a connected device set, creates exact claims and hostname-constrained rank Pods, and injects controller-owned rank environment. |
 | Kubernetes scheduler | Kubernetes control plane | Allocates DRA devices and places Pods using `DeviceClass`, `ResourceSlice`, claim, and Pod constraints. |
 | `tt-dra-driver node`: kubelet DRA plugin | Selected Kubernetes node | Revalidates allocated devices, enforces exclusive claim ownership, persists claim state, and creates per-claim CDI specs. |
 | Kubelet and container runtime | Selected Kubernetes node | Ask the plugin to prepare or unprepare a claim and inject the returned CDI devices into the workload container. |
@@ -120,4 +120,4 @@ does not depend on the fabric graph or the Tenstorrent workload controller.
 - The validation harness exercises synthetic QEMU/kind discovery, publication,
   native and topology-aware DRA allocation, CDI device isolation, lifecycle
   audit, cleanup, and reuse. Physical hardware certification remains explicit
-  release-gate work in `TODO.md`.
+  release-gate work in [`TODO.md`](../TODO.md).

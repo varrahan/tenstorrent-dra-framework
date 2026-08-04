@@ -45,6 +45,12 @@ Verify the release signature and attestations before installation, and record
 the resolved digest with the change ticket. The exact commands and immutable
 artifact policy are in [`RELEASE.md`](RELEASE.md).
 
+Runtime environment is limited to Kubernetes-injected node, Pod, namespace,
+and API Service identity. The controller also injects rank identity into
+managed workloads. [`ENV.md`](ENV.md) defines the complete contract; fixed
+policy belongs in source, chart, or build constants rather than environment
+overrides.
+
 ## NetworkPolicy decision
 
 NetworkPolicies are not required for the driver isolation boundary. The
@@ -242,7 +248,7 @@ persisted owner disagree after the kubelet has reconciled.
 ### Upgrade, rollback, and uninstall
 
 Back up all three custom-resource kinds, apply CRDs first, and wait for
-establishment as described in `PRODUCTION.md`. Then:
+establishment as described in [`PRODUCTION.md`](PRODUCTION.md). Then:
 
 ```bash
 helm upgrade tt-dra deployments/helm/tenstorrent-dra \

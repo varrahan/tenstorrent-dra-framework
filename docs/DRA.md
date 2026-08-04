@@ -55,6 +55,10 @@ fabric/ring and form a connected graph, then creates exact ResourceClaims and
 node-bound Pods. Ranks may share a node when enough devices exist. Device
 assignments may differ by rank.
 
+The selected workload container receives controller-owned `TT_RANK` and
+`TT_WORLD_SIZE` values. Pod templates cannot set those names. The complete
+runtime environment contract is in [`ENV.md`](ENV.md).
+
 Rank names and child resources are UID-scoped and validated. The controller is
 informer-driven and leader elected; its phase, retry, security, and scale
 contracts are defined in [`PRODUCTION.md`](PRODUCTION.md).

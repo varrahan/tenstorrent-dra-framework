@@ -37,7 +37,8 @@ through GitHub before sending exploit details.
    CVSS severity and affected version range.
 2. For a suspected isolation or sanitization failure, stop new accelerator
    allocation, cordon affected nodes, preserve claim/CDI/audit state, and
-   follow `docs/OPERATIONS.md`. Never clear quarantine to restore capacity.
+   follow [`docs/OPERATIONS.md`](docs/OPERATIONS.md). Never clear quarantine to
+   restore capacity.
 3. Revoke exposed credentials or signing authority immediately. GitHub OIDC
    release signing uses no stored private key; restrict or disable the release
    environment if its workflow authority is suspect.

@@ -5,10 +5,10 @@ cluster="${1:?cluster name required}"
 config="${2:?kind config required}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../.." && pwd)"
-image_repository="${IMAGE_REPOSITORY:-tenstorrent-dra}"
-image_tag="${IMAGE_TAG:-dev}"
-e2e_image="tenstorrent-dra-e2e:dev"
-disable_workload_apparmor="${SYNTHETIC_DISABLE_WORKLOAD_APPARMOR:-false}"
+readonly IMAGE_REPOSITORY="tenstorrent-dra"
+readonly IMAGE_TAG="dev"
+readonly E2E_IMAGE="tenstorrent-dra-e2e:dev"
+readonly DISABLE_WORKLOAD_APPARMOR="false"
 kubectl_context="kind-$cluster"
 cluster_ready=false
 
@@ -39,25 +39,25 @@ wait_claim_cleanup() {
   return 1
 }
 
-docker build --provenance=false --tag "$image_repository:$image_tag" "$repo_root"
-docker build --platform linux/amd64 --provenance=false --file "$script_dir/e2e.Dockerfile" --tag "$e2e_image" "$script_dir"
+docker build --provenance=false --tag "$IMAGE_REPOSITORY:$IMAGE_TAG" "$repo_root"
+docker build --platform linux/amd64 --provenance=false --file "$script_dir/e2e.Dockerfile" --tag "$E2E_IMAGE" "$script_dir"
 kind create cluster --name "$cluster" --config "$script_dir/$config"
 cluster_ready=true
 trap cleanup_e2e EXIT
-kind load docker-image "$image_repository:$image_tag" --name "$cluster"
-kind load docker-image "$e2e_image" --name "$cluster"
+kind load docker-image "$IMAGE_REPOSITORY:$IMAGE_TAG" --name "$cluster"
+kind load docker-image "$E2E_IMAGE" --name "$cluster"
 kubectl --context "$kubectl_context" label node "${cluster}-worker" tenstorrent.com/enabled=true --overwrite
 kubectl --context "$kubectl_context" label node "${cluster}-worker2" tenstorrent.com/enabled=true --overwrite
 helm_values=(
-  --set image.repository="$image_repository"
-  --set image.tag="$image_tag"
+  --set image.repository="$IMAGE_REPOSITORY"
+  --set image.tag="$IMAGE_TAG"
   --set image.pullPolicy=IfNotPresent
   --set sysfsRoot=/tt-sys/class/tenstorrent
   --set pciSysfsRoot=/tt-sys/bus/pci/devices
   --set sysfsDevicesRoot=/tt-sys/devices
   --set resetMode=noop
   --set requireIOMMU=false
-  --set syntheticDisableWorkloadAppArmor="$disable_workload_apparmor"
+  --set syntheticDisableWorkloadAppArmor="$DISABLE_WORKLOAD_APPARMOR"
 )
 helm upgrade --install tt-dra "$repo_root/deployments/helm/tenstorrent-dra" \
   --kube-context "$kubectl_context" \
@@ -130,7 +130,7 @@ spec:
       serviceAccountName: tt-dra-controller
       containers:
       - name: cleanup
-        image: $image_repository:$image_tag
+        image: $IMAGE_REPOSITORY:$IMAGE_TAG
         imagePullPolicy: IfNotPresent
         args: [cleanup, -release-name=tt-dra, -release-namespace=default, -resource-prefix=tt-dra]
 EOF
