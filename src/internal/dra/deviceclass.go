@@ -33,3 +33,8 @@ func MatchesDeviceClass(name, chipSeries string) bool {
 		return false
 	}
 }
+
+// SupportedDeviceClass reports whether the controller may accept a DeviceClass name.
+func SupportedDeviceClass(name string) bool {
+	return name == GenericDeviceClassName || name == WormholeDeviceClassName || name == BlackholeDeviceClassName
+}

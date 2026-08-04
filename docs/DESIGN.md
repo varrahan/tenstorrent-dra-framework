@@ -10,7 +10,7 @@ devices as its hardware source of truth.
 | --- | --- | --- |
 | `tt-kmd` hardware surface | QEMU `ttsim` guest | Exposes Tenstorrent character devices, identity, health, capabilities, PCI data, and fabric-link data. |
 | `tt-dra-driver node`: inventory and publishers | Every enabled Kubernetes node | Discovers local hardware and publishes whole-card `ResourceSlice` objects plus that node's `TenstorrentNodeTopology`. |
-| `tt-dra-driver controller`: topology reconciler | Kubernetes control plane | Validates fresh node topology observations and writes the cluster-wide `TenstorrentFabricTopology` status. |
+| `tt-dra-driver controller`: topology reconciler | Kubernetes control plane | The elected replica validates informer-cached node topology observations and writes cluster-wide `TenstorrentFabricTopology` status. |
 | `tt-dra-driver controller`: workload reconciler | Kubernetes control plane | Handles only `TenstorrentWorkload` requests. It selects a connected device set and creates exact claims and hostname-constrained rank Pods. |
 | Kubernetes scheduler | Kubernetes control plane | Allocates DRA devices and places Pods using `DeviceClass`, `ResourceSlice`, claim, and Pod constraints. |
 | `tt-dra-driver node`: kubelet DRA plugin | Selected Kubernetes node | Revalidates allocated devices, enforces exclusive claim ownership, persists claim state, and creates per-claim CDI specs. |
@@ -115,6 +115,8 @@ does not depend on the fabric graph or the Tenstorrent workload controller.
 - Periodic inventory updates, active health fencing, pre-start and post-use ASIC
   reset/scrubbing, quarantine, node safety state, and audit logging are
   implemented.
-- The validation harness proves synthetic QEMU/kind discovery, publication, and
-  CDI-backed allocation. Physical hardware certification is outside the
-  repository's current validation scope.
+- Controller reconciliation is informer-driven, per-object rate limited, and
+  leader elected across two replicas.
+- The current validation harness exercises synthetic QEMU/kind discovery and
+  publication. CDI-backed allocation and physical hardware certification remain
+  explicit release-gate work in `TODO.md`.

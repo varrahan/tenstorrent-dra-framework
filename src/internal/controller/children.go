@@ -9,8 +9,11 @@ import (
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
 	corev1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	kubescheme "k8s.io/client-go/kubernetes/scheme"
 )
 
 // ensureChildren creates the ResourceClaim and Pod required for every assigned rank.
@@ -31,11 +34,20 @@ func (c *Controller) ensureChildren(ctx context.Context, workload *ttapi.Workloa
 
 // ensureClaim idempotently creates the exact-device ResourceClaim for one rank.
 func (c *Controller) ensureClaim(ctx context.Context, workload *ttapi.Workload, rank ttapi.WorkloadRank, assignment ttapi.RankAssignment) error {
-	_, err := c.Kube.ResourceV1().ResourceClaims(workload.Namespace).Create(ctx, buildClaim(workload, rank, assignment), metav1.CreateOptions{})
-	if apierrors.IsAlreadyExists(err) {
-		return nil
+	desired := buildClaim(workload, rank, assignment)
+	claims := c.Kube.ResourceV1().ResourceClaims(workload.Namespace)
+	_, err := claims.Create(ctx, desired, metav1.CreateOptions{})
+	if !apierrors.IsAlreadyExists(err) {
+		return err
 	}
-	return err
+	existing, err := claims.Get(ctx, desired.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if !ownedBy(existing.OwnerReferences, workload.UID) || !apiequality.Semantic.DeepEqual(existing.Spec, desired.Spec) {
+		return fmt.Errorf("ResourceClaim %q collides with a different owner or spec", desired.Name)
+	}
+	return nil
 }
 
 // buildClaim selects the assignment's exact stable device IDs on its chosen node.
@@ -50,9 +62,12 @@ func buildClaim(workload *ttapi.Workload, rank ttapi.WorkloadRank, assignment tt
 	)
 	return &resourceapi.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            assignment.ClaimName,
-			Namespace:       workload.Namespace,
-			Labels:          map[string]string{"tenstorrent.com/workload-uid": string(workload.UID)},
+			Name:      assignment.ClaimName,
+			Namespace: workload.Namespace,
+			Labels: map[string]string{
+				"tenstorrent.com/workload-uid":  string(workload.UID),
+				"tenstorrent.com/workload-name": workload.Name,
+			},
 			OwnerReferences: owner(workload),
 		},
 		Spec: resourceapi.ResourceClaimSpec{Devices: resourceapi.DeviceClaim{Requests: []resourceapi.DeviceRequest{{
@@ -73,24 +88,38 @@ func (c *Controller) ensurePod(ctx context.Context, workload *ttapi.Workload, ra
 	if err != nil {
 		return err
 	}
-	_, err = c.Kube.CoreV1().Pods(workload.Namespace).Create(ctx, pod, metav1.CreateOptions{})
-	if apierrors.IsAlreadyExists(err) {
-		return nil
+	kubescheme.Scheme.Default(pod)
+	pods := c.Kube.CoreV1().Pods(workload.Namespace)
+	_, err = pods.Create(ctx, pod, metav1.CreateOptions{})
+	if !apierrors.IsAlreadyExists(err) {
+		return err
 	}
-	return err
+	existing, err := pods.Get(ctx, pod.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if existing.Spec.NodeName != "" && existing.Spec.NodeName != assignment.NodeName {
+		return fmt.Errorf("Pod %q is scheduled on unexpected node %q", pod.Name, existing.Spec.NodeName)
+	}
+	actual := existing.Spec.DeepCopy()
+	actual.NodeName = pod.Spec.NodeName
+	if !ownedBy(existing.OwnerReferences, workload.UID) || !apiequality.Semantic.DeepEqual(*actual, pod.Spec) {
+		return fmt.Errorf("Pod %q collides with a different owner or spec", pod.Name)
+	}
+	return nil
 }
 
 // buildPod injects node placement, the DRA claim, and distributed rank environment variables.
 func buildPod(workload *ttapi.Workload, rankIndex int, assignment ttapi.RankAssignment) (*corev1.Pod, error) {
-	pod := &corev1.Pod{
-		ObjectMeta: *workload.Spec.PodTemplate.ObjectMeta.DeepCopy(),
-		Spec:       *workload.Spec.PodTemplate.Spec.DeepCopy(),
-	}
+	templateMeta := workload.Spec.PodTemplate.ObjectMeta.DeepCopy()
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Labels: templateMeta.Labels, Annotations: templateMeta.Annotations}, Spec: *workload.Spec.PodTemplate.Spec.DeepCopy()}
 	pod.Name, pod.Namespace, pod.OwnerReferences = assignment.PodName, workload.Namespace, owner(workload)
 	if pod.Labels == nil {
 		pod.Labels = map[string]string{}
 	}
 	pod.Labels["tenstorrent.com/workload"] = workload.Name
+	pod.Labels["tenstorrent.com/workload-name"] = workload.Name
+	pod.Labels["tenstorrent.com/workload-uid"] = string(workload.UID)
 	if pod.Spec.NodeSelector == nil {
 		pod.Spec.NodeSelector = map[string]string{}
 	}
@@ -108,9 +137,36 @@ func buildPod(workload *ttapi.Workload, rankIndex int, assignment ttapi.RankAssi
 			corev1.EnvVar{Name: "TT_RANK", Value: fmt.Sprint(rankIndex)},
 			corev1.EnvVar{Name: "TT_WORLD_SIZE", Value: fmt.Sprint(len(workload.Spec.Ranks))},
 		)
+		hardenPod(pod)
 		return pod, nil
 	}
 	return nil, fmt.Errorf("container %q not found in Pod template", workload.Spec.ContainerName)
+}
+
+// hardenPod applies the production baseline to every controller-created container.
+func hardenPod(pod *corev1.Pod) {
+	trueValue, falseValue := true, false
+	pod.Spec.AutomountServiceAccountToken = &falseValue
+	if pod.Spec.SecurityContext == nil {
+		pod.Spec.SecurityContext = &corev1.PodSecurityContext{}
+	}
+	pod.Spec.SecurityContext.RunAsNonRoot = &trueValue
+	pod.Spec.SecurityContext.SeccompProfile = &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}
+	pod.Spec.SecurityContext.AppArmorProfile = &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeRuntimeDefault}
+	containers := []*[]corev1.Container{&pod.Spec.InitContainers, &pod.Spec.Containers}
+	for _, group := range containers {
+		for index := range *group {
+			container := &(*group)[index]
+			if container.SecurityContext == nil {
+				container.SecurityContext = &corev1.SecurityContext{}
+			}
+			container.SecurityContext.Privileged = &falseValue
+			container.SecurityContext.AllowPrivilegeEscalation = &falseValue
+			container.SecurityContext.ReadOnlyRootFilesystem = &trueValue
+			container.SecurityContext.RunAsNonRoot = &trueValue
+			container.SecurityContext.Capabilities = &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}
+		}
+	}
 }
 
 // deleteChildren removes unstarted Pods and claims before an assignment is recomputed.
@@ -136,4 +192,14 @@ func owner(workload *ttapi.Workload) []metav1.OwnerReference {
 		UID:        workload.UID,
 		Controller: &controller,
 	}}
+}
+
+// ownedBy reports whether an object has the expected controlling workload UID.
+func ownedBy(references []metav1.OwnerReference, uid types.UID) bool {
+	for _, reference := range references {
+		if reference.Controller != nil && *reference.Controller && reference.UID == uid {
+			return true
+		}
+	}
+	return false
 }

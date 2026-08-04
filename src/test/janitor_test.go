@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/lifecycle"
@@ -51,8 +52,14 @@ func TestJanitorSanitizesBeforeAndAfterUse(t *testing.T) {
 		t.Fatalf("total reset count = %d, want 2", len(resets))
 	}
 	events := readAuditEvents(t, filepath.Join(root, "state", "audit.jsonl"))
-	if len(events) != 4 || events[0].Action != "preflight-sanitize" || events[1].Action != "claim-prepare" || events[2].Action != "postflight-sanitize" || events[3].Action != "claim-release" {
+	wantActions := []string{"claim-prepare-intent", "preflight-sanitize", "claim-prepare", "claim-release-intent", "postflight-sanitize", "claim-release"}
+	if len(events) != len(wantActions) {
 		t.Fatalf("unexpected audit events: %#v", events)
+	}
+	for index, action := range wantActions {
+		if events[index].Action != action {
+			t.Fatalf("audit action %d = %q, want %q", index, events[index].Action, action)
+		}
 	}
 	info, err := os.Stat(filepath.Join(root, "state", "audit.jsonl"))
 	if err != nil {
@@ -186,6 +193,7 @@ func TestInventoryFailureFencesKnownCapacity(t *testing.T) {
 	manager, err := lifecycle.NewManager(lifecycle.Config{
 		NodeName: "node-a", Driver: "dra.tenstorrent.com",
 		StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"),
+		MaxInventoryAge: 10 * time.Millisecond,
 		Inventory: func(context.Context) (device.InventorySnapshot, error) {
 			return janitorSnapshot(device.HealthHealthy), nil
 		},
@@ -197,6 +205,7 @@ func TestInventoryFailureFencesKnownCapacity(t *testing.T) {
 	if _, safety, err := manager.Monitor(context.Background(), janitorSnapshot(device.HealthHealthy)); err != nil || safety.Unsafe {
 		t.Fatalf("healthy monitor safety=%#v err=%v", safety, err)
 	}
+	time.Sleep(20 * time.Millisecond)
 	filtered, safety, err := manager.InventoryFailed(errors.New("sysfs unavailable"))
 	if err != nil || len(filtered.Devices) != 0 || !safety.Unsafe {
 		t.Fatalf("inventory failure = devices=%d safety=%#v err=%v", len(filtered.Devices), safety, err)
@@ -245,11 +254,12 @@ func janitorSnapshot(health device.HealthState) device.InventorySnapshot {
 
 // janitorClaim constructs a local exact-device allocation for the supplied claim UID.
 func janitorClaim(uid types.UID) *resourceapi.ResourceClaim {
+	deviceName := device.DRAName(janitorSnapshot(device.HealthHealthy).Devices[0])
 	return &resourceapi.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "claim", UID: uid},
 		Status: resourceapi.ResourceClaimStatus{Allocation: &resourceapi.AllocationResult{
 			Devices: resourceapi.DeviceAllocationResult{Results: []resourceapi.DeviceRequestAllocationResult{{
-				Request: "accelerator", Driver: "dra.tenstorrent.com", Pool: "node-a", Device: "tt-pci-0000-00-01-0",
+				Request: "accelerator", Driver: "dra.tenstorrent.com", Pool: "node-a", Device: deviceName,
 			}}},
 		}},
 	}

@@ -15,19 +15,19 @@ The driver provides three runtime paths:
 - `tt-dra-driver list` prints the complete local inventory for diagnostics.
 
 Install the Helm chart from `deployments/helm/tenstorrent-dra`. It installs the
-node DaemonSet, the single-replica controller, five DeviceClasses, three CRDs,
-and the required RBAC. Standard ResourceClaims can select card attributes
-directly. `TenstorrentWorkload` adds deterministic connected-ring placement for
-distributed rank Pods.
+node DaemonSet, a two-replica leader-elected controller, three DeviceClasses,
+three CRDs, and the required RBAC. Standard ResourceClaims can select card
+attributes directly. `TenstorrentWorkload` adds deterministic connected-ring
+placement for distributed rank Pods.
 
 Inventory is collected from `tt-kmd` sysfs and PCI sysfs. The QEMU `ttsim` VM is
 the validation target; do not use `tt-smi` for discovery or simulator checks.
 Commands that require Docker, kind, Kubernetes, or `/dev/tenstorrent*` run
 inside the VM. Host-side Go tests remain independent of hardware.
 
-The implementation intentionally does not partition cards, install scheduler
-plugins, or provide a release/security pipeline. Those concerns are outside
-this minimal DRA component.
+The implementation intentionally does not partition cards or install scheduler
+plugins. Production compatibility, recovery, and security boundaries are in
+[`docs/PRODUCTION.md`](docs/PRODUCTION.md).
 
 See [docs/README.md](docs/README.md), [docs/DRA.md](docs/DRA.md), and
 [docs/VM.md](docs/VM.md) for the model, APIs, and VM workflow.

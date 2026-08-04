@@ -20,5 +20,6 @@ make -C test/vm vm-validate
 Documents:
 
 - [DRA.md](DRA.md): resource model, attributes, claims, topology, and workload APIs.
+- [PRODUCTION.md](PRODUCTION.md): compatibility, security, recovery, scale, and API guarantees.
 - [VM.md](VM.md): synthetic heterogeneous hardware and kind validation.
 - [README.md](README.md): this project-wide routing document.

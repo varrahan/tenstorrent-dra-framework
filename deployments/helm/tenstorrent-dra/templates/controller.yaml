@@ -1,9 +1,15 @@
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: {{ .Release.Name }}-controller
+spec: {}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .Release.Name }}-controller
 spec:
-  replicas: 1
+  replicas: {{ .Values.controllerReplicas }}
   selector:
     matchLabels:
       app: tenstorrent-dra-controller
@@ -12,12 +18,29 @@ spec:
       labels:
         app: tenstorrent-dra-controller
     spec:
-      serviceAccountName: {{ .Release.Name }}
+      serviceAccountName: {{ .Release.Name }}-controller
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
       containers:
       - name: controller
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         args:
         - controller
-        - -interval={{ .Values.interval }}
         - -topology-ttl={{ .Values.topologyTTL }}
+        - -placement-timeout={{ .Values.placementTimeout }}
+        - -leader-elect=true
+        - -leader-election-name={{ .Release.Name }}-controller
+        - -leader-election-namespace={{ .Release.Namespace }}
+        env:
+        - name: POD_NAME
+          valueFrom: {fieldRef: {fieldPath: metadata.name}}
+        - name: POD_NAMESPACE
+          valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {drop: ["ALL"]}
+          readOnlyRootFilesystem: true
+          runAsUser: 65532
+          runAsGroup: 65532

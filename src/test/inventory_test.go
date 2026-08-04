@@ -24,8 +24,8 @@ func TestBuildSnapshotNormalizesAndSortsStableDevices(t *testing.T) {
 	if len(snapshot.Devices) != 2 {
 		t.Fatalf("device count = %d, want 2", len(snapshot.Devices))
 	}
-	if got := snapshot.Devices[0].StableID; got != "pci-0000:00:01.0" {
-		t.Fatalf("first stable ID = %q, want PCI-derived ID", got)
+	if got := snapshot.Devices[0].StableID; got != "uuid-asic-0000:00:01.0" {
+		t.Fatalf("first stable ID = %q, want hardware UUID-derived ID", got)
 	}
 	if got := snapshot.Devices[0].ChipSeries; got != "blackhole" {
 		t.Fatalf("normalized chip series = %q, want blackhole", got)
@@ -146,6 +146,10 @@ func TestFilesystemAndStaticProvidersHaveEquivalentCanonicalSemantics(t *testing
 	writeInventoryValue(t, filepath.Join(dataPath, "dev"), "226:0\n")
 	writeInventoryValue(t, filepath.Join(dataPath, "architecture"), "wormhole\n")
 	writeInventoryValue(t, filepath.Join(dataPath, "health"), "Healthy\n")
+	writeInventoryValue(t, filepath.Join(dataPath, "device_uuid"), "asic-0000:00:01.0\n")
+	writeInventoryValue(t, filepath.Join(dataPath, "kmd_version"), "2.10.0\n")
+	writeInventoryValue(t, filepath.Join(dataPath, "firmware_version"), "19.2.0\n")
+	writeInventoryValue(t, filepath.Join(dataPath, "driver_abi_version"), "2\n")
 	writeInventoryValue(t, filepath.Join(dataPath, "memory_capacity_bytes"), "1234\n")
 	writeInventoryValue(t, filepath.Join(dataPath, "tensix_cores_total"), "72\n")
 	if err := os.Symlink(pciPath, filepath.Join(dataPath, "device")); err != nil {
@@ -208,7 +212,7 @@ func TestInventoryNormalizationTable(t *testing.T) {
 		{name: "blackhole variant", chip: "bh", health: "ok", eligible: true, wantChip: "blackhole"},
 		{name: "unknown chip", chip: " Mystery ", health: "healthy", wantChip: "mystery"},
 		{name: "missing sysfs identity", chip: "", health: "healthy", eligible: true, wantChip: "wormhole"},
-		{name: "unknown health", chip: "wormhole", health: "", eligible: true, wantChip: "wormhole"},
+		{name: "unknown health", chip: "wormhole", health: "", eligible: false, wantChip: "wormhole"},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -236,7 +240,7 @@ func TestInventoryDerivesMissingIdentityFromKnownPCI(t *testing.T) {
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			raw := inventoryRaw("0000:00:01.0", "", "", true)
+			raw := inventoryRaw("0000:00:01.0", "", "Healthy", true)
 			raw.Values["pci.device"] = testCase.pciDevice
 			snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{raw}})
 			if err != nil {
@@ -245,6 +249,53 @@ func TestInventoryDerivesMissingIdentityFromKnownPCI(t *testing.T) {
 			observed := snapshot.Devices[0]
 			if observed.Eligible != testCase.eligible || observed.ChipSeries != testCase.wantChip {
 				t.Fatalf("got eligible=%v chip=%q reason=%q", observed.Eligible, observed.ChipSeries, observed.RejectionReason)
+			}
+		})
+	}
+}
+
+// TestStableHardwareIdentitySurvivesPCIRenumbering verifies BDF changes do not rename an ASIC.
+func TestStableHardwareIdentitySurvivesPCIRenumbering(t *testing.T) {
+	first := inventoryRaw("0000:01:00.0", "wormhole", "Healthy", true)
+	second := inventoryRaw("0000:42:00.0", "wormhole", "Healthy", true)
+	first.Values["device_uuid"], second.Values["device_uuid"] = "asic-stable", "asic-stable"
+	left, _ := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{first}})
+	right, _ := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{second}})
+	if left.Devices[0].StableID != right.Devices[0].StableID || left.Devices[0].PCI.BDF == right.Devices[0].PCI.BDF {
+		t.Fatalf("identity changed across PCI renumbering: %#v %#v", left.Devices[0], right.Devices[0])
+	}
+}
+
+// TestDRANameDisambiguatesSanitizedIdentities verifies readable names cannot collide after normalization.
+func TestDRANameDisambiguatesSanitizedIdentities(t *testing.T) {
+	colon := device.DRAName(device.InventoryDevice{StableID: "uuid-card:slot"})
+	dot := device.DRAName(device.InventoryDevice{StableID: "uuid-card.slot"})
+	if colon == dot || len(colon) > 63 || len(dot) > 63 {
+		t.Fatalf("DRA names are not collision safe: %q %q", colon, dot)
+	}
+}
+
+// TestInventoryRejectsUnsupportedAndMalformedCriticalValues verifies compatibility policy fails closed.
+func TestInventoryRejectsUnsupportedAndMalformedCriticalValues(t *testing.T) {
+	tests := map[string]func(map[string]string){
+		"hardware UUID": func(values map[string]string) { values["device_uuid"] = "invalid uuid" },
+		"tt-kmd":        func(values map[string]string) { values["kmd_version"] = "3.0.0" },
+		"pre-release":   func(values map[string]string) { values["kmd_version"] = "2.10.0-rc1" },
+		"firmware":      func(values map[string]string) { values["firmware_version"] = "19.3.0" },
+		"device ABI":    func(values map[string]string) { values["driver_abi_version"] = "3" },
+		"kernel":        func(values map[string]string) { values["kernel_version"] = "6.19.0" },
+		"numeric sysfs": func(values map[string]string) { values["memory_capacity_bytes"] = "not-a-number" },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			raw := inventoryRaw("0000:00:01.0", "wormhole", "Healthy", true)
+			mutate(raw.Values)
+			snapshot, err := device.BuildSnapshot(context.Background(), device.StaticProvider{Devices: []device.RawDevice{raw}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if snapshot.Devices[0].Eligible || snapshot.Devices[0].RejectionReason == "" {
+				t.Fatalf("unsupported observation was accepted: %#v", snapshot.Devices[0])
 			}
 		})
 	}
@@ -296,6 +347,10 @@ func TestFilesystemProviderReadsSyntheticSysfs(t *testing.T) {
 	writeInventoryValue(t, filepath.Join(devicePath, "uevent"), "DEVNAME=/dev/tenstorrent/0\n")
 	writeInventoryValue(t, filepath.Join(devicePath, "dev"), "226:0\n")
 	writeInventoryValue(t, filepath.Join(devicePath, "health"), "Healthy\n")
+	writeInventoryValue(t, filepath.Join(devicePath, "device_uuid"), "asic-0000:00:01.0\n")
+	writeInventoryValue(t, filepath.Join(devicePath, "kmd_version"), "2.7.0\n")
+	writeInventoryValue(t, filepath.Join(devicePath, "firmware_version"), "19.2.0\n")
+	writeInventoryValue(t, filepath.Join(devicePath, "driver_abi_version"), "2\n")
 	writeInventoryValue(t, filepath.Join(pciPath, "PCI_SLOT_NAME"), "0000:00:01.0\n")
 	writeInventoryValue(t, filepath.Join(pciPath, "vendor"), "0x1e52\n")
 	writeInventoryValue(t, filepath.Join(pciPath, "device"), "0x401e\n")
@@ -331,7 +386,7 @@ func TestFilesystemProviderReadsSyntheticSysfs(t *testing.T) {
 		t.Fatalf("device count = %d, want 1", len(snapshot.Devices))
 	}
 	observed := snapshot.Devices[0]
-	if observed.StableID != "pci-0000:00:01.0" {
+	if observed.StableID != "uuid-asic-0000:00:01.0" {
 		t.Fatalf("stable ID = %q", observed.StableID)
 	}
 	if observed.ChipSeries != "wormhole" {
@@ -399,6 +454,11 @@ func inventoryRaw(bdf, chip, health string, characterDevice bool) device.RawDevi
 			"pci.numa_node":         "0",
 			"architecture":          chip,
 			"health":                health,
+			"device_uuid":           "asic-" + bdf,
+			"kmd_version":           "2.10.0",
+			"firmware_version":      "19.2.0",
+			"driver_abi_version":    "2",
+			"kernel_version":        "6.18.0",
 			"memory_capacity_bytes": "1234",
 			"tensix_cores_total":    "72",
 		},

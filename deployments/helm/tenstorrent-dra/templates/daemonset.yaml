@@ -11,7 +11,7 @@ spec:
       labels:
         app: tenstorrent-dra-node
     spec:
-      serviceAccountName: {{ .Release.Name }}
+      serviceAccountName: {{ .Release.Name }}-node
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
       tolerations:
@@ -32,10 +32,12 @@ spec:
         - -plugin-dir={{ .Values.pluginDir }}
         - -registrar-dir={{ .Values.registrarDir }}
         - -interval={{ .Values.interval }}
+        - -inventory-grace-period={{ .Values.inventoryGracePeriod }}
         - -reset-mode={{ .Values.resetMode }}
         - -require-iommu={{ .Values.requireIOMMU }}
         securityContext:
           privileged: true
+          readOnlyRootFilesystem: true
         env:
         - name: NODE_NAME
           valueFrom:
@@ -43,14 +45,16 @@ spec:
               fieldPath: spec.nodeName
         volumeMounts:
         - {name: device, mountPath: {{ .Values.deviceRoot }}}
-        - {name: sysfs, mountPath: {{ .Values.sysfsMountRoot }}, readOnly: true}
+        - {name: tt-sysfs, mountPath: {{ .Values.sysfsRoot }}, readOnly: true}
+        - {name: pci-sysfs, mountPath: {{ .Values.pciSysfsRoot }}, readOnly: true}
         - {name: state, mountPath: {{ .Values.stateDir }}}
         - {name: cdi, mountPath: {{ .Values.cdiDir }}}
         - {name: plugin, mountPath: {{ .Values.pluginDir }}}
         - {name: registrar, mountPath: {{ .Values.registrarDir }}}
       volumes:
       - {name: device, hostPath: {path: {{ .Values.deviceRoot }}, type: Directory}}
-      - {name: sysfs, hostPath: {path: {{ .Values.sysfsMountRoot }}, type: Directory}}
+      - {name: tt-sysfs, hostPath: {path: {{ .Values.sysfsRoot }}, type: Directory}}
+      - {name: pci-sysfs, hostPath: {path: {{ .Values.pciSysfsRoot }}, type: Directory}}
       - {name: state, hostPath: {path: {{ .Values.stateDir }}, type: DirectoryOrCreate}}
       - {name: cdi, hostPath: {path: {{ .Values.cdiDir }}, type: DirectoryOrCreate}}
       - {name: plugin, hostPath: {path: {{ .Values.pluginDir }}, type: DirectoryOrCreate}}

@@ -1,7 +1,11 @@
 package placement
 
 import (
+	"context"
+	"crypto/sha256"
+	"fmt"
 	"sort"
+	"strings"
 
 	ttapi "github.com/varrahan/tenstorrent-dra-framework/src/internal/api"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
@@ -13,6 +17,14 @@ type DeviceID struct {
 }
 
 type Reservations map[DeviceID]struct{}
+
+type Limits struct {
+	MaxRanks     int
+	MaxEndpoints int
+	MaxDevices   int64
+}
+
+var DefaultLimits = Limits{MaxRanks: 64, MaxEndpoints: 2048, MaxDevices: 128}
 
 // Add marks one pool-local device as unavailable for new placement.
 func (r Reservations) Add(pool, name string) {
@@ -35,6 +47,22 @@ func (r Reservations) AddAssignment(assignment ttapi.RankAssignment) {
 
 // Solve finds a deterministic, connected device assignment satisfying every workload rank.
 func Solve(workload *ttapi.Workload, endpoints []ttapi.FabricEndpoint, reserved Reservations) ([]ttapi.RankAssignment, bool) {
+	assignments, ok, _ := SolveContext(context.Background(), workload, endpoints, reserved, DefaultLimits)
+	return assignments, ok
+}
+
+// SolveContext finds a connected assignment with cancellation and bounded input size.
+func SolveContext(ctx context.Context, workload *ttapi.Workload, endpoints []ttapi.FabricEndpoint, reserved Reservations, limits Limits) ([]ttapi.RankAssignment, bool, error) {
+	if workload == nil {
+		return nil, false, fmt.Errorf("workload is nil")
+	}
+	total := int64(0)
+	for _, rank := range workload.Spec.Ranks {
+		total += rank.Count
+	}
+	if len(workload.Spec.Ranks) > limits.MaxRanks || len(endpoints) > limits.MaxEndpoints || total > limits.MaxDevices {
+		return nil, false, fmt.Errorf("placement request exceeds configured limits")
+	}
 	candidates := append([]ttapi.FabricEndpoint(nil), endpoints...)
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].NodeName == candidates[j].NodeName {
@@ -47,6 +75,9 @@ func Solve(workload *ttapi.Workload, endpoints []ttapi.FabricEndpoint, reserved 
 	assignments := make([]ttapi.RankAssignment, len(workload.Spec.Ranks))
 	var chooseRank func(int) bool
 	chooseRank = func(index int) bool {
+		if ctx.Err() != nil {
+			return false
+		}
 		if index == len(workload.Spec.Ranks) {
 			return connected(assignments, candidates)
 		}
@@ -62,8 +93,8 @@ func Solve(workload *ttapi.Workload, endpoints []ttapi.FabricEndpoint, reserved 
 			if int64(len(choices)) < count {
 				continue
 			}
-			if chooseCombinations(choices, int(count), func(picked []ttapi.FabricEndpoint) bool {
-				assignment := makeAssignment(workload.Name, rank.Name, nodeName, picked)
+			if chooseCombinations(ctx, choices, int(count), func(picked []ttapi.FabricEndpoint) bool {
+				assignment := makeAssignment(workload, rank.Name, nodeName, picked)
 				assignments[index] = assignment
 				selected.AddAssignment(assignment)
 				if chooseRank(index + 1) {
@@ -79,7 +110,8 @@ func Solve(workload *ttapi.Workload, endpoints []ttapi.FabricEndpoint, reserved 
 		}
 		return false
 	}
-	return assignments, chooseRank(0)
+	ok := chooseRank(0)
+	return assignments, ok, ctx.Err()
 }
 
 // candidatesByNode groups unreserved endpoints that match a rank and workload topology.
@@ -128,10 +160,13 @@ func sortedNodeNames(devices map[string][]ttapi.FabricEndpoint) []string {
 }
 
 // chooseCombinations visits fixed-size endpoint combinations until one succeeds.
-func chooseCombinations(items []ttapi.FabricEndpoint, count int, visit func([]ttapi.FabricEndpoint) bool) bool {
+func chooseCombinations(ctx context.Context, items []ttapi.FabricEndpoint, count int, visit func([]ttapi.FabricEndpoint) bool) bool {
 	picked := make([]ttapi.FabricEndpoint, 0, count)
 	var choose func(int) bool
 	choose = func(start int) bool {
+		if ctx.Err() != nil {
+			return false
+		}
 		if len(picked) == count {
 			return visit(picked)
 		}
@@ -149,8 +184,8 @@ func chooseCombinations(items []ttapi.FabricEndpoint, count int, visit func([]tt
 }
 
 // makeAssignment converts selected endpoints into the persisted rank assignment model.
-func makeAssignment(workloadName, rankName, nodeName string, devices []ttapi.FabricEndpoint) ttapi.RankAssignment {
-	name := workloadName + "-" + rankName
+func makeAssignment(workload *ttapi.Workload, rankName, nodeName string, devices []ttapi.FabricEndpoint) ttapi.RankAssignment {
+	name := ChildName(workload.Name, string(workload.UID), rankName)
 	assignment := ttapi.RankAssignment{Rank: rankName, NodeName: nodeName, ClaimName: name, PodName: name}
 	for _, item := range devices {
 		assignment.Devices = append(assignment.Devices, ttapi.AssignedDevice{
@@ -161,6 +196,28 @@ func makeAssignment(workloadName, rankName, nodeName string, devices []ttapi.Fab
 		})
 	}
 	return assignment
+}
+
+// ChildName returns a DNS-safe, UID-scoped name within Kubernetes's 63-character limit.
+func ChildName(workloadName, workloadUID, rankName string) string {
+	base := strings.ToLower(workloadName + "-" + rankName)
+	var clean strings.Builder
+	for _, char := range base {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' {
+			clean.WriteRune(char)
+		} else {
+			clean.WriteByte('-')
+		}
+	}
+	prefix := strings.Trim(clean.String(), "-")
+	if prefix == "" {
+		prefix = "tt"
+	}
+	if len(prefix) > 50 {
+		prefix = strings.TrimRight(prefix[:50], "-")
+	}
+	sum := sha256.Sum256([]byte(workloadUID + "\x00" + rankName))
+	return fmt.Sprintf("%s-%x", prefix, sum[:6])
 }
 
 // connected verifies that selected endpoints share a fabric and form one reachable graph.

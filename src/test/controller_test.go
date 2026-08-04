@@ -25,7 +25,9 @@ func TestControllerCreatesExactChildrenAndReservesWithinPass(t *testing.T) {
 	defer cancel()
 
 	waitFor(t, func() bool {
-		return workloadPhase(t, dynamicClient, "first") != "" && workloadPhase(t, dynamicClient, "second") != ""
+		first := workloadPhase(t, dynamicClient, "first")
+		second := workloadPhase(t, dynamicClient, "second")
+		return (first == "Assigned" && second == "Pending") || (first == "Pending" && second == "Assigned")
 	})
 	cancel()
 	if err := <-done; err != nil {
@@ -95,6 +97,64 @@ func TestControllerFreezesStartedAssignmentAfterFabricChange(t *testing.T) {
 	}
 }
 
+// TestControllerTracksRunningAndSucceededCleanup verifies terminal Pods release child resources.
+func TestControllerTracksRunningAndSucceededCleanup(t *testing.T) {
+	dynamicClient := controllerDynamicClient(t, controllerNodeTopology(), controllerWorkload("lifecycle"))
+	kube := kubernetesfake.NewSimpleClientset()
+	cancel, done := runController(kube, dynamicClient)
+	defer cancel()
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "lifecycle") == "Assigned" })
+	pods, err := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+	if err != nil || len(pods.Items) != 1 {
+		t.Fatalf("rank Pod was not created: %#v %v", pods, err)
+	}
+	pod := pods.Items[0].DeepCopy()
+	now := metav1.Now()
+	pod.Status.Phase, pod.Status.StartTime = corev1.PodRunning, &now
+	if _, err := kube.CoreV1().Pods("default").UpdateStatus(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "lifecycle") == "Running" })
+	pod, err = kube.CoreV1().Pods("default").Get(context.Background(), pod.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod.Status.Phase = corev1.PodSucceeded
+	if _, err := kube.CoreV1().Pods("default").UpdateStatus(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "lifecycle") == "Succeeded" })
+	waitFor(t, func() bool {
+		pods, _ := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+		claims, _ := kube.ResourceV1().ResourceClaims("default").List(context.Background(), metav1.ListOptions{})
+		return len(pods.Items) == 0 && len(claims.Items) == 0
+	})
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestControllerRejectsInvalidWorkloadWithoutChildren verifies unsafe templates fail closed.
+func TestControllerRejectsInvalidWorkloadWithoutChildren(t *testing.T) {
+	workload := controllerWorkload("invalid")
+	workload.Spec.ContainerName = "missing"
+	dynamicClient := controllerDynamicClient(t, controllerNodeTopology(), workload)
+	kube := kubernetesfake.NewSimpleClientset()
+	cancel, done := runController(kube, dynamicClient)
+	defer cancel()
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "invalid") == "Failed" })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	pods, _ := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+	claims, _ := kube.ResourceV1().ResourceClaims("default").List(context.Background(), metav1.ListOptions{})
+	if len(pods.Items) != 0 || len(claims.Items) != 0 {
+		t.Fatalf("invalid workload created children: pods=%d claims=%d", len(pods.Items), len(claims.Items))
+	}
+}
+
 // controllerDynamicClient builds a fake dynamic client with the project's custom resource list kinds.
 func controllerDynamicClient(t *testing.T, objects ...any) *dynamicfake.FakeDynamicClient {
 	t.Helper()
@@ -121,7 +181,7 @@ func runController(kube *kubernetesfake.Clientset, dynamicClient *dynamicfake.Fa
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- (&controller.Controller{Kube: kube, Dynamic: dynamicClient, Interval: time.Hour, TopologyTTL: time.Minute}).Run(ctx)
+		done <- (&controller.Controller{Kube: kube, Dynamic: dynamicClient, TopologyTTL: time.Minute}).Run(ctx)
 	}()
 	return cancel, done
 }

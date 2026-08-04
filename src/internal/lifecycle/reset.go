@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -31,18 +32,28 @@ func (KMDResetter) Reset(ctx context.Context, path string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	fd, err := unix.Open(path, unix.O_RDWR|unix.O_CLOEXEC, 0)
+	fd, err := unix.Open(path, unix.O_RDWR|unix.O_CLOEXEC|unix.O_EXCL|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
-	defer unix.Close(fd)
 	if err := resetIoctl(fd, ttResetASIC); err != nil {
+		unix.Close(fd)
 		return fmt.Errorf("ASIC reset %s: %w", path, err)
 	}
-	if err := resetIoctl(fd, ttResetPost); err != nil {
-		return fmt.Errorf("post-reset %s: %w", path, err)
+	postErr := resetIoctl(fd, ttResetPost)
+	closeErr := unix.Close(fd)
+	if errors.Is(postErr, unix.ENODEV) {
+		fd, err = unix.Open(path, unix.O_RDWR|unix.O_CLOEXEC|unix.O_EXCL|unix.O_NONBLOCK, 0)
+		if err != nil {
+			return fmt.Errorf("reopen %s after ASIC reset: %w", path, err)
+		}
+		postErr = resetIoctl(fd, ttResetPost)
+		closeErr = errors.Join(closeErr, unix.Close(fd))
 	}
-	return nil
+	if postErr != nil {
+		return errors.Join(fmt.Errorf("post-reset %s: %w", path, postErr), closeErr)
+	}
+	return closeErr
 }
 
 type NoopResetter struct{}

@@ -1,6 +1,8 @@
 package dra
 
 import (
+	"time"
+
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -9,12 +11,21 @@ import (
 
 const maxDevicesPerSlice = 128
 
+const defaultMaxInventoryAge = 2 * time.Minute
+
 // DriverResources projects healthy eligible inventory into bounded DRA ResourceSlices.
 func DriverResources(nodeName string, snapshot device.InventorySnapshot) resourceslice.DriverResources {
+	return DriverResourcesAt(nodeName, snapshot, defaultMaxInventoryAge, time.Now())
+}
+
+// DriverResourcesAt projects inventory only when its observation remains within maxAge.
+func DriverResourcesAt(nodeName string, snapshot device.InventorySnapshot, maxAge time.Duration, now time.Time) resourceslice.DriverResources {
 	devices := make([]resourceapi.Device, 0, len(snapshot.Devices))
-	for _, item := range snapshot.Devices {
-		if item.Eligible && item.CharacterDevicePresent && item.Health == device.HealthHealthy {
-			devices = append(devices, resourceDevice(nodeName, item))
+	if !snapshot.ObservedAt.IsZero() && !snapshot.ObservedAt.After(now.Add(5*time.Second)) && now.Sub(snapshot.ObservedAt) <= maxAge {
+		for _, item := range snapshot.Devices {
+			if item.Eligible && item.CharacterDevicePresent && item.Health == device.HealthHealthy {
+				devices = append(devices, resourceDevice(nodeName, item))
+			}
 		}
 	}
 	slices := make([]resourceslice.Slice, 0, (len(devices)+maxDevicesPerSlice-1)/maxDevicesPerSlice)

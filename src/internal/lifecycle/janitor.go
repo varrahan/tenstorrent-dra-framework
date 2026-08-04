@@ -39,7 +39,11 @@ type AuditEvent struct {
 func (m *Manager) Monitor(ctx context.Context, snapshot device.InventorySnapshot) (device.InventorySnapshot, Safety, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.inventoryFresh(snapshot); err != nil {
+		return m.inventoryFailedLocked(err)
+	}
 	filtered, safety, monitorErr := m.observeLocked(ctx, snapshot, true)
+	m.lastSnapshot = snapshot
 	if err := m.persist(); err != nil {
 		return filtered, safety, errors.Join(monitorErr, err)
 	}
@@ -50,9 +54,21 @@ func (m *Manager) Monitor(ctx context.Context, snapshot device.InventorySnapshot
 func (m *Manager) InventoryFailed(err error) (device.InventorySnapshot, Safety, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.inventoryFailedLocked(err)
+}
+
+// inventoryFailedLocked reuses only a still-fresh observation, then fences all known capacity.
+func (m *Manager) inventoryFailedLocked(err error) (device.InventorySnapshot, Safety, error) {
 	reason := "inventory unavailable"
 	if err != nil {
 		reason += ": " + err.Error()
+	}
+	if m.inventoryFresh(m.lastSnapshot) == nil {
+		filtered := m.filterLocked(m.lastSnapshot)
+		safety := safetyFor(filtered, m.state.Known, m.state.Quarantined)
+		safety.Reason = "InventoryDegraded"
+		safety.Message = reason + "; using last fresh observation"
+		return filtered, safety, m.auditLocked(AuditEvent{Action: "inventory", Outcome: "degraded", Reason: reason}, nil)
 	}
 	var auditErr error
 	for name, known := range m.state.Known {
@@ -66,6 +82,21 @@ func (m *Manager) InventoryFailed(err error) (device.InventorySnapshot, Safety, 
 	return snapshot, safety, auditErr
 }
 
+// inventoryFresh accepts only non-future observations within the configured grace period.
+func (m *Manager) inventoryFresh(snapshot device.InventorySnapshot) error {
+	if snapshot.ObservedAt.IsZero() {
+		return errors.New("inventory observation time is missing")
+	}
+	age := time.Since(snapshot.ObservedAt)
+	if age < -5*time.Second {
+		return errors.New("inventory observation time is in the future")
+	}
+	if age > m.config.MaxInventoryAge {
+		return fmt.Errorf("inventory observation is stale by %s", age.Round(time.Second))
+	}
+	return nil
+}
+
 // observeLocked reconciles observations with known devices and quarantine state while holding the manager lock.
 func (m *Manager) observeLocked(ctx context.Context, snapshot device.InventorySnapshot, recoverIdle bool) (device.InventorySnapshot, Safety, error) {
 	observed := make(map[string]device.InventoryDevice, len(snapshot.Devices))
@@ -74,6 +105,15 @@ func (m *Manager) observeLocked(ctx context.Context, snapshot device.InventorySn
 	for _, item := range snapshot.Devices {
 		name := device.DRAName(item)
 		observed[name] = item
+		_, known := m.state.Known[name]
+		if !known && recoverIdle {
+			resultErr = errors.Join(resultErr, m.quarantineLocked(name, item.Node.Path, "new device requires sanitization", nil, "hotplug"))
+		}
+		for priorName, prior := range m.state.Known {
+			if priorName != name && prior.Path == item.Node.Path {
+				resultErr = errors.Join(resultErr, m.quarantineLocked(name, item.Node.Path, "hardware identity changed on device path", nil, "hotplug"))
+			}
+		}
 		m.state.Known[name] = KnownDevice{Path: item.Node.Path, LastSeen: snapshot.ObservedAt}
 		if reason := m.deviceUnsafeReason(item); reason != "" {
 			resultErr = errors.Join(resultErr, m.quarantineLocked(name, item.Node.Path, reason, m.claimForOwner(owners[name]), healthAction(owners[name])))
@@ -131,6 +171,10 @@ func (m *Manager) deviceUnsafeReason(item device.InventoryDevice) string {
 	switch {
 	case !item.CharacterDevicePresent:
 		return "character device is unavailable"
+	case !item.Eligible && item.RejectionReason != "":
+		return item.RejectionReason
+	case !item.Eligible:
+		return "device is ineligible"
 	case item.Health != device.HealthHealthy:
 		return "device health is " + string(item.Health)
 	case item.Fault.Code != "" && item.Fault.Code != "0":

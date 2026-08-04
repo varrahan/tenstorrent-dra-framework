@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +68,80 @@ func TestBuildFabricRejectsInvalidGraphs(t *testing.T) {
 				t.Fatalf("status = %#v, want error containing %q", status, testCase.wantError)
 			}
 		})
+	}
+}
+
+// TestBuildFabricEnforcesSupportedScale verifies boundary inputs succeed and overflow fails closed.
+func TestBuildFabricEnforcesSupportedScale(t *testing.T) {
+	now := time.Now().UTC()
+	nodes := make([]ttapi.NodeTopology, tttopology.MaxNodes)
+	for nodeIndex := range nodes {
+		nodes[nodeIndex] = nodeTopology(fmt.Sprintf("node-%03d", nodeIndex), now)
+		for deviceIndex := 0; deviceIndex < tttopology.MaxEndpoints/tttopology.MaxNodes; deviceIndex++ {
+			id := fmt.Sprintf("endpoint-%04d", nodeIndex*8+deviceIndex)
+			nodes[nodeIndex].Spec.Devices = append(nodes[nodeIndex].Spec.Devices, ttapi.TopologyDevice{
+				Pool: nodes[nodeIndex].Spec.NodeName, Name: "device-" + id, StableID: "uuid-" + id,
+				ChipSeries: "wormhole", FabricID: "fabric", RingID: "ring", EndpointID: id,
+			})
+		}
+	}
+	status := tttopology.BuildFabric(nodes, time.Minute, now)
+	if !status.Valid || len(status.Endpoints) != tttopology.MaxEndpoints {
+		t.Fatalf("supported boundary failed: valid=%v endpoints=%d errors=%v", status.Valid, len(status.Endpoints), status.Errors)
+	}
+	overflow := append(nodes, nodeTopology("overflow", now))
+	if status := tttopology.BuildFabric(overflow, time.Minute, now); status.Valid {
+		t.Fatal("node overflow was accepted")
+	}
+	fabricNode := nodeTopology("fabrics", now)
+	for index := 0; index < tttopology.MaxFabrics; index++ {
+		id := fmt.Sprintf("fabric-endpoint-%03d", index)
+		fabricNode.Spec.Devices = append(fabricNode.Spec.Devices, ttapi.TopologyDevice{
+			Pool: "fabrics", Name: "device-" + id, StableID: "uuid-" + id, ChipSeries: "wormhole",
+			FabricID: fmt.Sprintf("fabric-%03d", index), RingID: "ring", EndpointID: id,
+		})
+	}
+	if status := tttopology.BuildFabric([]ttapi.NodeTopology{fabricNode}, time.Minute, now); !status.Valid {
+		t.Fatalf("supported fabric boundary failed: %v", status.Errors)
+	}
+	fabricNode.Spec.Devices = append(fabricNode.Spec.Devices, ttapi.TopologyDevice{
+		Pool: "fabrics", Name: "overflow-device", StableID: "overflow", ChipSeries: "wormhole",
+		FabricID: "overflow-fabric", RingID: "ring", EndpointID: "overflow-endpoint",
+	})
+	if status := tttopology.BuildFabric([]ttapi.NodeTopology{fabricNode}, time.Minute, now); status.Valid {
+		t.Fatal("fabric overflow was accepted")
+	}
+}
+
+// TestWorkloadGenerationIgnoresUnrelatedFabrics verifies unrelated topology cannot disturb an assignment.
+func TestWorkloadGenerationIgnoresUnrelatedFabrics(t *testing.T) {
+	status := ttapi.FabricTopologyStatus{Endpoints: []ttapi.FabricEndpoint{
+		{FabricID: "selected", RingID: "ring", EndpointID: "selected-a"},
+		{FabricID: "other", RingID: "ring", EndpointID: "other-a"},
+	}}
+	assignment := []ttapi.RankAssignment{{Devices: []ttapi.AssignedDevice{{EndpointID: "selected-a"}}}}
+	before := tttopology.WorkloadGeneration(status, ttapi.WorkloadTopology{}, assignment)
+	status.Endpoints[1].Links = []ttapi.TopologyLink{{Name: "changed", State: "down"}}
+	if after := tttopology.WorkloadGeneration(status, ttapi.WorkloadTopology{}, assignment); after != before {
+		t.Fatalf("unrelated fabric changed generation: %s -> %s", before, after)
+	}
+	status.Endpoints[0].Links = []ttapi.TopologyLink{{Name: "changed", State: "down"}}
+	if after := tttopology.WorkloadGeneration(status, ttapi.WorkloadTopology{}, assignment); after == before {
+		t.Fatal("relevant fabric change did not update generation")
+	}
+}
+
+// TestFabricStatusSerializesRequiredFields verifies empty arrays remain present for the CRD schema.
+func TestFabricStatusSerializesRequiredFields(t *testing.T) {
+	status := tttopology.BuildFabric(nil, time.Minute, time.Now().UTC())
+	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"generation", "observedAt", "valid", "endpoints", "errors", "conditions"} {
+		if _, found := object[field]; !found {
+			t.Fatalf("required status field %q was omitted: %#v", field, object)
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
@@ -16,7 +17,7 @@ func TestDriverResourcesProjectsObservedDeviceData(t *testing.T) {
 	item.Memory.TotalBytes = 1234
 	item.Fabric = device.FabricInfo{FabricID: "fabric-a", RingID: "ring-a", EndpointID: "endpoint-a"}
 
-	resources := dra.DriverResources("worker-a", device.InventorySnapshot{Devices: []device.InventoryDevice{item}})
+	resources := dra.DriverResources("worker-a", freshSnapshot(item))
 	got := resources.Pools["worker-a"].Slices[0].Devices[0]
 	assertStringAttribute(t, got, dra.AttributeDeviceID, "pci-0000:01:00.0")
 	assertStringAttribute(t, got, dra.AttributeNodeName, "worker-a")
@@ -31,7 +32,7 @@ func TestDriverResourcesProjectsObservedDeviceData(t *testing.T) {
 // TestDriverResourcesDoesNotSynthesizeUnobservedCapabilities verifies missing hardware data stays unpublished.
 func TestDriverResourcesDoesNotSynthesizeUnobservedCapabilities(t *testing.T) {
 	item := eligibleDevice("0000:01:00.0", "wormhole")
-	resources := dra.DriverResources("worker-a", device.InventorySnapshot{Devices: []device.InventoryDevice{item}})
+	resources := dra.DriverResources("worker-a", freshSnapshot(item))
 	got := resources.Pools["worker-a"].Slices[0].Devices[0]
 	assertStringAttribute(t, got, dra.AttributeChipSeries, "wormhole")
 	if _, ok := got.Attributes[resourceapi.QualifiedName(dra.AttributeTensixCoreCount)]; ok {
@@ -45,22 +46,32 @@ func TestDriverResourcesFiltersAndChunksDevices(t *testing.T) {
 	for i := range devices {
 		devices[i] = eligibleDevice(fmt.Sprintf("0000:01:%02x.0", i), "wormhole")
 	}
-	resources := dra.DriverResources("worker-a", device.InventorySnapshot{Devices: devices})
+	resources := dra.DriverResources("worker-a", freshSnapshot(devices...))
 	slices := resources.Pools["worker-a"].Slices
 	if len(slices) != 2 || len(slices[0].Devices) != 128 || len(slices[1].Devices) != 1 {
 		t.Fatalf("slice sizes = %d/%d/%d, want 2/128/1", len(slices), len(slices[0].Devices), len(slices[1].Devices))
 	}
 
 	devices[0].Eligible = false
-	resources = dra.DriverResources("worker-a", device.InventorySnapshot{Devices: devices[:1]})
+	resources = dra.DriverResources("worker-a", freshSnapshot(devices[:1]...))
 	if got := len(resources.Pools["worker-a"].Slices[0].Devices); got != 0 {
 		t.Fatalf("ineligible device count = %d, want 0", got)
 	}
 	devices[0].Eligible = true
 	devices[0].Health = device.HealthUnknown
-	resources = dra.DriverResources("worker-a", device.InventorySnapshot{Devices: devices[:1]})
+	resources = dra.DriverResources("worker-a", freshSnapshot(devices[:1]...))
 	if got := len(resources.Pools["worker-a"].Slices[0].Devices); got != 0 {
 		t.Fatalf("unknown-health device count = %d, want 0", got)
+	}
+}
+
+// TestDriverResourcesWithdrawsStaleInventory verifies old observations publish an empty pool.
+func TestDriverResourcesWithdrawsStaleInventory(t *testing.T) {
+	snapshot := freshSnapshot(eligibleDevice("0000:01:00.0", "wormhole"))
+	snapshot.ObservedAt = time.Now().Add(-time.Hour)
+	resources := dra.DriverResources("worker-a", snapshot)
+	if got := len(resources.Pools["worker-a"].Slices[0].Devices); got != 0 {
+		t.Fatalf("stale inventory published %d devices", got)
 	}
 }
 
@@ -98,6 +109,11 @@ func eligibleDevice(bdf, chip string) device.InventoryDevice {
 		Health:                 device.HealthHealthy,
 		Eligible:               true,
 	}
+}
+
+// freshSnapshot wraps test devices in a current inventory observation.
+func freshSnapshot(devices ...device.InventoryDevice) device.InventorySnapshot {
+	return device.InventorySnapshot{ObservedAt: time.Now().UTC(), Devices: devices}
 }
 
 // assertStringAttribute checks that a DRA device exposes the expected string attribute.

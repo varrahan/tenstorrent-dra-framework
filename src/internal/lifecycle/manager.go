@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -17,35 +18,50 @@ import (
 )
 
 type Config struct {
-	NodeName     string
-	Driver       string
-	StateDir     string
-	CDIDir       string
-	RequireIOMMU bool
-	Inventory    func(context.Context) (device.InventorySnapshot, error)
-	Resetter     Resetter
+	NodeName        string
+	Driver          string
+	StateDir        string
+	CDIDir          string
+	RequireIOMMU    bool
+	MaxInventoryAge time.Duration
+	Inventory       func(context.Context) (device.InventorySnapshot, error)
+	Allocations     func(context.Context) ([]*resourceapi.ResourceClaim, error)
+	Resetter        Resetter
 }
 
 type Manager struct {
-	config Config
-	mu     sync.Mutex
-	state  persistedState
+	config       Config
+	mu           sync.Mutex
+	state        persistedState
+	lastSnapshot device.InventorySnapshot
+	lockFile     *os.File
 }
+
+type ClaimPhase string
+
+const (
+	ClaimPreparing ClaimPhase = "Preparing"
+	ClaimPrepared  ClaimPhase = "Prepared"
+	ClaimReleasing ClaimPhase = "Releasing"
+	ClaimRecovered ClaimPhase = "Recovered"
+)
 
 type PreparedClaim struct {
 	UID       types.UID     `json:"uid"`
 	Namespace string        `json:"namespace"`
 	Name      string        `json:"name"`
+	Phase     ClaimPhase    `json:"phase"`
 	Devices   []ClaimDevice `json:"devices"`
 }
 
 type ClaimDevice struct {
-	Pool   string `json:"pool"`
-	Device string `json:"device"`
-	Path   string `json:"path"`
-	Major  uint64 `json:"major"`
-	Minor  uint64 `json:"minor"`
-	CDIID  string `json:"cdiID"`
+	Pool     string `json:"pool"`
+	Device   string `json:"device"`
+	StableID string `json:"stableID"`
+	Path     string `json:"path"`
+	Major    uint64 `json:"major"`
+	Minor    uint64 `json:"minor"`
+	CDIID    string `json:"cdiID"`
 }
 
 // NewManager validates lifecycle dependencies and restores persisted allocation state.
@@ -62,12 +78,30 @@ func NewManager(config Config) (*Manager, error) {
 	if !filepath.IsAbs(config.StateDir) || !filepath.IsAbs(config.CDIDir) {
 		return nil, errors.New("state and CDI directories must be absolute")
 	}
+	if config.MaxInventoryAge < 0 {
+		return nil, errors.New("maximum inventory age must not be negative")
+	}
+	if config.MaxInventoryAge == 0 {
+		config.MaxInventoryAge = 2 * time.Minute
+	}
 	m := &Manager{config: config, state: persistedState{
 		Version: stateVersion, Claims: map[string]PreparedClaim{},
 		Quarantined: map[string]QuarantineRecord{}, Known: map[string]KnownDevice{},
 	}}
-	if err := m.load(); err != nil {
+	if err := m.acquireLock(); err != nil {
 		return nil, err
+	}
+	if err := m.load(); err != nil {
+		if recoverErr := m.recoverCorruptState(err); recoverErr != nil {
+			m.Close()
+			return nil, recoverErr
+		}
+	}
+	if config.Allocations != nil || len(m.state.Claims) > 0 {
+		if err := m.reconcileStartup(context.Background()); err != nil {
+			m.Close()
+			return nil, err
+		}
 	}
 	return m, nil
 }
@@ -79,6 +113,9 @@ func (m *Manager) PrepareResourceClaims(ctx context.Context, claims []*resourcea
 	snapshot, err := m.config.Inventory(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("refresh inventory: %w", err)
+	}
+	if err := m.inventoryFresh(snapshot); err != nil {
+		return nil, err
 	}
 	if _, _, err := m.observeLocked(ctx, snapshot, false); err != nil {
 		return nil, fmt.Errorf("monitor inventory: %w", err)
@@ -115,6 +152,9 @@ func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletp
 	if err != nil {
 		return nil, fmt.Errorf("refresh inventory: %w", err)
 	}
+	if err := m.inventoryFresh(snapshot); err != nil {
+		return nil, err
+	}
 	if _, _, err := m.observeLocked(ctx, snapshot, false); err != nil {
 		return nil, fmt.Errorf("monitor inventory: %w", err)
 	}
@@ -129,6 +169,18 @@ func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletp
 			result[claim.UID] = nil
 			continue
 		}
+		if prepared.Phase != ClaimReleasing {
+			prepared.Phase = ClaimReleasing
+			m.state.Claims[string(claim.UID)] = prepared
+			if err := m.persist(); err != nil {
+				result[claim.UID] = fmt.Errorf("persist release intent: %w", err)
+				continue
+			}
+			if err := m.auditLocked(AuditEvent{Action: "claim-release-intent", Outcome: "recorded"}, &prepared); err != nil {
+				result[claim.UID] = err
+				continue
+			}
+		}
 		var sanitizeErr error
 		for _, claimedDevice := range prepared.Devices {
 			item, found := byName[claimedDevice.Device]
@@ -141,6 +193,7 @@ func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletp
 			sanitizeErr = errors.Join(sanitizeErr, m.sanitizeLocked(ctx, "postflight-sanitize", claimedDevice.Device, item.Node.Path, &prepared))
 		}
 		if sanitizeErr != nil {
+			_ = m.persist()
 			result[claim.UID] = sanitizeErr
 			continue
 		}
@@ -156,6 +209,11 @@ func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletp
 			continue
 		}
 		delete(m.state.Claims, string(claim.UID))
+		if err := m.persist(); err != nil {
+			m.state.Claims[string(claim.UID)] = prepared
+			result[claim.UID] = fmt.Errorf("commit released claim: %w", err)
+			continue
+		}
 		result[claim.UID] = nil
 	}
 	if err := m.persist(); err != nil {
@@ -176,50 +234,42 @@ func (m *Manager) prepareOne(ctx context.Context, claim *resourceapi.ResourceCla
 	if claim == nil || claim.Status.Allocation == nil {
 		return nil, errors.New("claim has no allocation")
 	}
-	if existing, ok := m.state.Claims[string(claim.UID)]; ok {
-		for _, claimedDevice := range existing.Devices {
-			item, found := byName[claimedDevice.Device]
-			if !found || m.deviceUnsafeReason(item) != "" {
-				return nil, fmt.Errorf("prepared device %q is no longer healthy", claimedDevice.Device)
+	prepared, err := m.claimFromAllocation(claim, byName, owners)
+	if err != nil {
+		return nil, err
+	}
+	existing, found := m.state.Claims[string(claim.UID)]
+	if found {
+		if !sameClaim(existing, prepared) {
+			return nil, errors.New("repeated prepare does not match persisted allocation")
+		}
+		if existing.Phase == ClaimReleasing || existing.Phase == ClaimRecovered {
+			return nil, fmt.Errorf("claim is in %s recovery", existing.Phase)
+		}
+		if existing.Phase == ClaimPrepared {
+			for _, claimed := range existing.Devices {
+				if record, quarantined := m.state.Quarantined[claimed.Device]; quarantined {
+					return nil, fmt.Errorf("prepared device %q is quarantined: %s", claimed.Device, record.Reason)
+				}
 			}
-			if record, quarantined := m.state.Quarantined[claimedDevice.Device]; quarantined {
-				return nil, fmt.Errorf("prepared device %q is quarantined: %s", claimedDevice.Device, record.Reason)
+			if err := m.writeCDI(existing); err != nil {
+				return nil, fmt.Errorf("repair CDI: %w", err)
 			}
+			return cdiResults(existing), nil
 		}
-		return cdiResults(existing), nil
+		prepared = existing
+	} else {
+		prepared.Phase = ClaimPreparing
+		m.state.Claims[string(claim.UID)] = prepared
+		if err := m.persist(); err != nil {
+			delete(m.state.Claims, string(claim.UID))
+			return nil, fmt.Errorf("persist prepare intent: %w", err)
+		}
+		if err := m.auditLocked(AuditEvent{Action: "claim-prepare-intent", Outcome: "recorded"}, &prepared); err != nil {
+			return nil, err
+		}
 	}
-	if len(claim.Status.Allocation.Devices.Results) == 0 {
-		return nil, errors.New("claim allocation has no devices")
-	}
-	prepared := PreparedClaim{UID: claim.UID, Namespace: claim.Namespace, Name: claim.Name}
-	seen := map[string]struct{}{}
-	for _, allocation := range claim.Status.Allocation.Devices.Results {
-		if allocation.Driver != m.config.Driver {
-			return nil, fmt.Errorf("allocation driver %q does not match %q", allocation.Driver, m.config.Driver)
-		}
-		if allocation.Pool != m.config.NodeName {
-			return nil, fmt.Errorf("allocation pool %q is not local node %q", allocation.Pool, m.config.NodeName)
-		}
-		item, ok := byName[allocation.Device]
-		if !ok || !item.CharacterDevicePresent {
-			return nil, fmt.Errorf("allocated device %q is not available locally", allocation.Device)
-		}
-		if m.config.RequireIOMMU && (item.PCI.IOMMUGroup < 0 || item.PCI.IOMMUGroupSize != 1) {
-			return nil, fmt.Errorf("allocated device %q has no dedicated IOMMU group", allocation.Device)
-		}
-		if _, duplicate := seen[allocation.Device]; duplicate {
-			return nil, fmt.Errorf("device %q is allocated more than once", allocation.Device)
-		}
-		seen[allocation.Device] = struct{}{}
-		if ownerUID, owned := owners[allocation.Device]; owned && ownerUID != string(claim.UID) {
-			return nil, fmt.Errorf("device %q is already prepared for claim %s", allocation.Device, ownerUID)
-		}
-		id := cdiID(claim.UID, allocation.Device)
-		prepared.Devices = append(prepared.Devices, ClaimDevice{
-			Pool: allocation.Pool, Device: allocation.Device, Path: item.Node.Path,
-			Major: item.Node.Major, Minor: item.Node.Minor, CDIID: id,
-		})
-	}
+
 	for _, claimedDevice := range prepared.Devices {
 		if err := m.sanitizeLocked(ctx, "preflight-sanitize", claimedDevice.Device, claimedDevice.Path, &prepared); err != nil {
 			return nil, fmt.Errorf("sanitize device %q: %w", claimedDevice.Device, err)
@@ -227,6 +277,9 @@ func (m *Manager) prepareOne(ctx context.Context, claim *resourceapi.ResourceCla
 	}
 	refreshed, err := m.config.Inventory(ctx)
 	if err != nil {
+		return nil, fmt.Errorf("verify sanitized inventory: %w", err)
+	}
+	if err := m.inventoryFresh(refreshed); err != nil {
 		return nil, fmt.Errorf("verify sanitized inventory: %w", err)
 	}
 	filtered, _, err := m.observeLocked(ctx, refreshed, false)
@@ -239,8 +292,10 @@ func (m *Manager) prepareOne(ctx context.Context, claim *resourceapi.ResourceCla
 	}
 	for _, claimedDevice := range prepared.Devices {
 		item, found := verified[claimedDevice.Device]
-		if !found || !item.Eligible || item.Health != device.HealthHealthy {
-			return nil, fmt.Errorf("sanitized device %q did not return healthy", claimedDevice.Device)
+		if !found || !item.Eligible || item.Health != device.HealthHealthy || item.StableID != claimedDevice.StableID {
+			reason := "device did not return with the same healthy identity"
+			_ = m.quarantineLocked(claimedDevice.Device, claimedDevice.Path, reason, &prepared, "preflight-verify")
+			return nil, fmt.Errorf("sanitized device %q %s", claimedDevice.Device, reason)
 		}
 	}
 	if err := m.writeCDI(prepared); err != nil {
@@ -253,11 +308,60 @@ func (m *Manager) prepareOne(ctx context.Context, claim *resourceapi.ResourceCla
 		}
 		return nil, err
 	}
+	prepared.Phase = ClaimPrepared
 	m.state.Claims[string(claim.UID)] = prepared
+	if err := m.persist(); err != nil {
+		prepared.Phase = ClaimPreparing
+		m.state.Claims[string(claim.UID)] = prepared
+		_ = os.Remove(filepath.Join(m.config.CDIDir, cdiFilename(prepared.UID)))
+		return nil, fmt.Errorf("commit prepared claim: %w", err)
+	}
 	for _, item := range prepared.Devices {
 		owners[item.Device] = string(claim.UID)
 	}
 	return cdiResults(prepared), nil
+}
+
+// claimFromAllocation validates a local allocation and captures its exact current identity.
+func (m *Manager) claimFromAllocation(claim *resourceapi.ResourceClaim, byName map[string]device.InventoryDevice, owners map[string]string) (PreparedClaim, error) {
+	if len(claim.Status.Allocation.Devices.Results) == 0 {
+		return PreparedClaim{}, errors.New("claim allocation has no devices")
+	}
+	prepared := PreparedClaim{UID: claim.UID, Namespace: claim.Namespace, Name: claim.Name, Phase: ClaimPreparing}
+	seen := map[string]struct{}{}
+	for _, allocation := range claim.Status.Allocation.Devices.Results {
+		if allocation.Driver != m.config.Driver {
+			return PreparedClaim{}, fmt.Errorf("allocation driver %q does not match %q", allocation.Driver, m.config.Driver)
+		}
+		if allocation.Pool != m.config.NodeName {
+			return PreparedClaim{}, fmt.Errorf("allocation pool %q is not local node %q", allocation.Pool, m.config.NodeName)
+		}
+		item, ok := byName[allocation.Device]
+		if !ok || !item.Eligible || m.deviceUnsafeReason(item) != "" {
+			return PreparedClaim{}, fmt.Errorf("allocated device %q is not healthy locally", allocation.Device)
+		}
+		if m.config.RequireIOMMU && (item.PCI.IOMMUGroup < 0 || item.PCI.IOMMUGroupSize != 1) {
+			return PreparedClaim{}, fmt.Errorf("allocated device %q has no dedicated IOMMU group", allocation.Device)
+		}
+		if _, duplicate := seen[allocation.Device]; duplicate {
+			return PreparedClaim{}, fmt.Errorf("device %q is allocated more than once", allocation.Device)
+		}
+		seen[allocation.Device] = struct{}{}
+		if ownerUID, owned := owners[allocation.Device]; owned && ownerUID != string(claim.UID) {
+			return PreparedClaim{}, fmt.Errorf("device %q is already prepared for claim %s", allocation.Device, ownerUID)
+		}
+		id := cdiID(claim.UID, allocation.Device)
+		prepared.Devices = append(prepared.Devices, ClaimDevice{
+			Pool: allocation.Pool, Device: allocation.Device, StableID: item.StableID, Path: item.Node.Path,
+			Major: item.Node.Major, Minor: item.Node.Minor, CDIID: id,
+		})
+	}
+	return prepared, nil
+}
+
+// sameClaim compares immutable claim identity and exact device allocation details.
+func sameClaim(left, right PreparedClaim) bool {
+	return left.UID == right.UID && left.Namespace == right.Namespace && left.Name == right.Name && reflect.DeepEqual(left.Devices, right.Devices)
 }
 
 // deviceOwners indexes prepared devices by the claim UID that currently owns them.

@@ -75,9 +75,9 @@ Alpine container to create the `/dev/tenstorrent` character devices.
 
 ## 6. Run the supported VM validation flow
 
-This is the shortest complete run. It creates a kind cluster named `tt-dra`,
-labels both workers for the node DaemonSet, installs the Helm chart, waits for
-the topology CRD, and prints the published DRA resources.
+This is the current automated validation run. It creates a kind cluster named
+`tt-dra`, labels both workers for the node DaemonSet, installs the Helm chart,
+waits for the workload CRD, and prints ResourceSlices and node topology.
 
 ```bash
 make -C test/vm vm-validate
@@ -106,9 +106,10 @@ kubectl label node tt-dra-worker2 tenstorrent.com/enabled=true --overwrite
 helm upgrade --install tt-dra deployments/helm/tenstorrent-dra \
   --set image.repository=tenstorrent-dra \
   --set image.tag=dev \
-  --set sysfsMountRoot=/tt-sys \
   --set sysfsRoot=/tt-sys/class/tenstorrent \
-  --set pciSysfsRoot=/tt-sys/bus/pci/devices
+  --set pciSysfsRoot=/tt-sys/bus/pci/devices \
+  --set resetMode=noop \
+  --set requireIOMMU=false
 ```
 
 ## 7. Confirm deployment and discovered hardware
@@ -140,24 +141,24 @@ sudo tail -n 50 /var/lib/tenstorrent-dra/audit.jsonl
 ## 8. Inspect claims and workload placement
 
 The driver allocates complete host-visible accelerator devices through standard
-Kubernetes DRA `ResourceClaim` objects. Apply a claim and Pod manifest prepared
-for the desired `DeviceClass` (for example, `tenstorrent-wormhole`), then
+Kubernetes DRA `ResourceClaim` objects. Replace the image in
+[`examples/standard-claim.yaml`](../examples/standard-claim.yaml), apply it, and
 inspect allocation and scheduling:
 
 ```bash
-kubectl apply -f path/to/resourceclaim-and-pod.yaml
+kubectl apply -f examples/standard-claim.yaml
 kubectl get resourceclaims
 kubectl get pods -o wide
 kubectl describe resourceclaim <claim-name>
 kubectl logs <pod-name>
 ```
 
-For multi-rank, topology-aware placement, apply a
-`scheduling.tenstorrent.com` `TenstorrentWorkload` manifest as described in
-[`DRA.md`](DRA.md), then inspect its assignments and rank Pods:
+For multi-rank, topology-aware placement, apply
+[`examples/topology-workload.yaml`](../examples/topology-workload.yaml), then
+inspect its assignments and rank Pods:
 
 ```bash
-kubectl apply -f path/to/tenstorrent-workload.yaml
+kubectl apply -f examples/topology-workload.yaml
 kubectl get tenstorrentworkloads -o yaml
 kubectl get pods -o wide
 ```

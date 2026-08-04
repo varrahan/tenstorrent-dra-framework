@@ -5,7 +5,6 @@ image:
 nodeSelector:
   tenstorrent.com/enabled: "true"
 deviceRoot: /dev/tenstorrent
-sysfsMountRoot: /sys
 sysfsRoot: /sys/class/tenstorrent
 pciSysfsRoot: /sys/bus/pci/devices
 stateDir: /var/lib/tenstorrent-dra
@@ -13,6 +12,9 @@ cdiDir: /var/run/cdi
 pluginDir: /var/lib/kubelet/plugins/dra.tenstorrent.com
 registrarDir: /var/lib/kubelet/plugins_registry
 interval: 30s
+inventoryGracePeriod: 60s
 topologyTTL: 90s
+placementTimeout: 2s
+controllerReplicas: 2
 resetMode: ioctl
 requireIOMMU: true

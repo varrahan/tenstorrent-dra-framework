@@ -9,17 +9,17 @@ import (
 )
 
 const (
-	TopologyAPIVersion   = "topology.tenstorrent.com/v1alpha1"
-	SchedulingAPIVersion = "scheduling.tenstorrent.com/v1alpha1"
+	TopologyAPIVersion   = "topology.tenstorrent.com/v1"
+	SchedulingAPIVersion = "scheduling.tenstorrent.com/v1"
 	NodeTopologyKind     = "TenstorrentNodeTopology"
 	FabricTopologyKind   = "TenstorrentFabricTopology"
 	WorkloadKind         = "TenstorrentWorkload"
 )
 
 var (
-	NodeTopologyGVR   = schema.GroupVersionResource{Group: "topology.tenstorrent.com", Version: "v1alpha1", Resource: "tenstorrentnodetopologies"}
-	FabricTopologyGVR = schema.GroupVersionResource{Group: "topology.tenstorrent.com", Version: "v1alpha1", Resource: "tenstorrentfabrictopologies"}
-	WorkloadGVR       = schema.GroupVersionResource{Group: "scheduling.tenstorrent.com", Version: "v1alpha1", Resource: "tenstorrentworkloads"}
+	NodeTopologyGVR   = schema.GroupVersionResource{Group: "topology.tenstorrent.com", Version: "v1", Resource: "tenstorrentnodetopologies"}
+	FabricTopologyGVR = schema.GroupVersionResource{Group: "topology.tenstorrent.com", Version: "v1", Resource: "tenstorrentfabrictopologies"}
+	WorkloadGVR       = schema.GroupVersionResource{Group: "scheduling.tenstorrent.com", Version: "v1", Resource: "tenstorrentworkloads"}
 )
 
 type TopologyLink struct {
@@ -61,12 +61,12 @@ type FabricEndpoint struct {
 	Links      []TopologyLink `json:"links,omitempty"`
 }
 type FabricTopologyStatus struct {
-	Generation string             `json:"generation,omitempty"`
-	ObservedAt metav1.Time        `json:"observedAt,omitempty"`
+	Generation string             `json:"generation"`
+	ObservedAt metav1.Time        `json:"observedAt"`
 	Valid      bool               `json:"valid"`
-	Endpoints  []FabricEndpoint   `json:"endpoints,omitempty"`
-	Errors     []string           `json:"errors,omitempty"`
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Endpoints  []FabricEndpoint   `json:"endpoints"`
+	Errors     []string           `json:"errors"`
+	Conditions []metav1.Condition `json:"conditions"`
 }
 type FabricTopology struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -104,10 +104,12 @@ type RankAssignment struct {
 	Devices   []AssignedDevice `json:"devices"`
 }
 type WorkloadStatus struct {
-	Phase            string             `json:"phase,omitempty"`
-	FabricGeneration string             `json:"fabricGeneration,omitempty"`
-	Assignments      []RankAssignment   `json:"assignments,omitempty"`
-	Conditions       []metav1.Condition `json:"conditions,omitempty"`
+	Phase              string             `json:"phase,omitempty"`
+	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
+	SpecHash           string             `json:"specHash,omitempty"`
+	FabricGeneration   string             `json:"fabricGeneration,omitempty"`
+	Assignments        []RankAssignment   `json:"assignments,omitempty"`
+	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
 type Workload struct {
 	metav1.TypeMeta   `json:",inline"`

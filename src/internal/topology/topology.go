@@ -17,6 +17,12 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
+const (
+	MaxNodes     = 256
+	MaxEndpoints = 2048
+	MaxFabrics   = 256
+)
+
 // PublishNode creates or updates the node's eligible accelerator topology observation.
 func PublishNode(ctx context.Context, client dynamic.Interface, nodeName string, nodeUID types.UID, snapshot device.InventorySnapshot) error {
 	object := &ttapi.NodeTopology{
@@ -65,8 +71,17 @@ func PublishNode(ctx context.Context, client dynamic.Interface, nodeName string,
 
 // BuildFabric validates fresh node observations and produces a deterministic cluster fabric graph.
 func BuildFabric(nodes []ttapi.NodeTopology, ttl time.Duration, now time.Time) ttapi.FabricTopologyStatus {
-	status := ttapi.FabricTopologyStatus{ObservedAt: metav1.NewTime(now), Valid: true}
+	status := ttapi.FabricTopologyStatus{
+		ObservedAt: metav1.NewTime(now), Valid: true,
+		Endpoints: []ttapi.FabricEndpoint{}, Errors: []string{},
+	}
 	seen := map[string]struct{}{}
+	fabrics := map[string]struct{}{}
+	endpointOverflow := false
+	if len(nodes) > MaxNodes {
+		status.Errors = append(status.Errors, fmt.Sprintf("node count %d exceeds maximum %d", len(nodes), MaxNodes))
+		nodes = nodes[:MaxNodes]
+	}
 	for _, node := range nodes {
 		if ttl > 0 && now.Sub(node.Spec.ObservedAt.Time) > ttl {
 			status.Errors = append(status.Errors, fmt.Sprintf("node %s topology is stale", node.Spec.NodeName))
@@ -76,17 +91,31 @@ func BuildFabric(nodes []ttapi.NodeTopology, ttl time.Duration, now time.Time) t
 			if item.EndpointID == "" {
 				continue
 			}
+			if item.FabricID == "" || item.RingID == "" {
+				status.Errors = append(status.Errors, "endpoint "+item.EndpointID+" has incomplete fabric identity")
+			}
 			if _, ok := seen[item.EndpointID]; ok {
 				status.Errors = append(status.Errors, "duplicate endpoint "+item.EndpointID)
 				continue
 			}
+			if len(status.Endpoints) == MaxEndpoints {
+				if !endpointOverflow {
+					status.Errors = append(status.Errors, fmt.Sprintf("endpoint count exceeds maximum %d", MaxEndpoints))
+					endpointOverflow = true
+				}
+				continue
+			}
 			seen[item.EndpointID] = struct{}{}
+			fabrics[item.FabricID] = struct{}{}
 			status.Endpoints = append(status.Endpoints, ttapi.FabricEndpoint{
 				NodeName: node.Spec.NodeName, Pool: item.Pool, DeviceName: item.Name, StableID: item.StableID,
 				ChipSeries: item.ChipSeries,
 				FabricID:   item.FabricID, RingID: item.RingID, EndpointID: item.EndpointID, Links: item.Links,
 			})
 		}
+	}
+	if len(fabrics) > MaxFabrics {
+		status.Errors = append(status.Errors, fmt.Sprintf("fabric count %d exceeds maximum %d", len(fabrics), MaxFabrics))
 	}
 	sort.Slice(status.Endpoints, func(i, j int) bool { return status.Endpoints[i].EndpointID < status.Endpoints[j].EndpointID })
 	byID := map[string]ttapi.FabricEndpoint{}
@@ -133,4 +162,33 @@ func BuildFabric(nodes []ttapi.NodeTopology, ttl time.Duration, now time.Time) t
 	}
 	status.Conditions = []metav1.Condition{{Type: "Ready", Status: conditionStatus, Reason: reason, Message: message, LastTransitionTime: metav1.NewTime(now)}}
 	return status
+}
+
+// WorkloadGeneration hashes only the fabric and ring relevant to a workload assignment.
+func WorkloadGeneration(status ttapi.FabricTopologyStatus, requested ttapi.WorkloadTopology, assignments []ttapi.RankAssignment) string {
+	fabricID, ringID := requested.FabricID, requested.RingID
+	selected := map[string]struct{}{}
+	for _, assignment := range assignments {
+		for _, item := range assignment.Devices {
+			selected[item.EndpointID] = struct{}{}
+		}
+	}
+	if fabricID == "" && ringID == "" && len(selected) > 0 {
+		for _, endpoint := range status.Endpoints {
+			if _, found := selected[endpoint.EndpointID]; found {
+				fabricID, ringID = endpoint.FabricID, endpoint.RingID
+				break
+			}
+		}
+	}
+	relevant := make([]ttapi.FabricEndpoint, 0, len(status.Endpoints))
+	for _, endpoint := range status.Endpoints {
+		if (fabricID != "" && endpoint.FabricID != fabricID) || (ringID != "" && endpoint.RingID != ringID) {
+			continue
+		}
+		relevant = append(relevant, endpoint)
+	}
+	data, _ := json.Marshal(relevant)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:8])
 }

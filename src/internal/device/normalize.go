@@ -2,6 +2,7 @@ package device
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sort"
@@ -14,6 +15,7 @@ const (
 	tenstorrentPCIVendor = "0x1e52"
 	wormholePCIDevice    = "0x401e"
 	blackholePCIDevice   = "0xb140"
+	supportedDriverABI   = 2
 )
 
 // BuildSnapshot observes, normalizes, sorts, and validates the current device inventory.
@@ -58,12 +60,15 @@ func normalize(raw RawDevice, observedAt time.Time) InventoryDevice {
 	}
 	device := InventoryDevice{
 		StableID:               raw.ID,
+		HardwareUUID:           firstValue(raw.Values, "device_uuid", "serial_number"),
 		Node:                   raw.Node,
 		CharacterDevicePresent: raw.CharacterDevicePresent,
 		PCI:                    pci,
 		ChipSeries:             chipSeries,
 		FirmwareVersion:        firstValue(raw.Values, "tt_fw_bundle_ver", "firmware_version"),
 		KMDVersion:             firstValue(raw.Values, "kmd_version", "driver_version"),
+		DriverABIVersion:       parseInt(raw.Values["driver_abi_version"]),
+		KernelVersion:          strings.TrimSpace(raw.Values["kernel_version"]),
 		Memory: MemoryInfo{
 			TotalBytes:     parseUint(raw.Values["memory_capacity_bytes"]),
 			AvailableBytes: parseUint(raw.Values["memory_available_bytes"]),
@@ -80,8 +85,8 @@ func normalize(raw RawDevice, observedAt time.Time) InventoryDevice {
 		Provenance: map[string]Provenance{},
 		ObservedAt: observedAt,
 	}
-	if device.PCI.BDF != "" {
-		device.StableID = "pci-" + device.PCI.BDF
+	if device.HardwareUUID != "" {
+		device.StableID = "uuid-" + strings.ToLower(device.HardwareUUID)
 	}
 	if device.Fault.Code != "" && device.Fault.Code != "0" {
 		device.Fault.Message = "non-zero hardware fault code"
@@ -89,7 +94,7 @@ func normalize(raw RawDevice, observedAt time.Time) InventoryDevice {
 			device.Health = HealthUnhealthy
 		}
 	}
-	device.Eligible, device.RejectionReason = eligibility(device, raw.DiscoveryError)
+	device.Eligible, device.RejectionReason = eligibility(device, errors.Join(raw.DiscoveryError, validateRawValues(raw.Values)))
 	device.Node.ChipSeries = device.ChipSeries
 	populateProvenance(&device, raw, observedAt)
 	return device
@@ -103,9 +108,10 @@ func populateProvenance(device *InventoryDevice, raw RawDevice, observedAt time.
 	add("stableID", "pci-sysfs", raw.PCIPath)
 	add("characterDevice", "device-sysfs", raw.SysfsPath)
 	add("pci", "pci-sysfs", raw.PCIPath)
-	for _, field := range []string{"chipSeries", "firmwareVersion", "kmdVersion", "memory", "compute", "health", "fault", "fabric"} {
+	for _, field := range []string{"hardwareUUID", "chipSeries", "firmwareVersion", "kmdVersion", "driverABIVersion", "memory", "compute", "health", "fault", "fabric"} {
 		add(field, "tenstorrent-sysfs", raw.SysfsPath)
 	}
+	add("kernelVersion", "procfs", "/proc/sys/kernel/osrelease")
 	if strings.TrimSpace(raw.Values["architecture"]) == "" && device.ChipSeries != "" {
 		add("chipSeries", "pci-sysfs", raw.PCIPath)
 	}
@@ -120,17 +126,113 @@ func eligibility(device InventoryDevice, discoveryErr error) (bool, string) {
 		return false, "discovery: " + discoveryErr.Error()
 	case !device.CharacterDevicePresent:
 		return false, "character device is missing"
+	case device.Health != HealthHealthy:
+		return false, "device health is " + string(device.Health)
 	case device.PCI.Vendor != "" && device.PCI.Vendor != tenstorrentPCIVendor:
 		return false, "PCI vendor is not Tenstorrent"
 	case device.PCI.BDF == "" || device.PCI.Vendor == "":
 		return false, "PCI identity is incomplete"
+	case !validHardwareID(device.HardwareUUID):
+		return false, "stable hardware UUID is missing or malformed"
 	case device.ChipSeries != "wormhole" && device.ChipSeries != "blackhole":
 		return false, "chip identity is not Wormhole or Blackhole"
-	case device.Health == HealthUnhealthy:
-		return false, "device health is " + string(device.Health)
+	case !supportedKMD(device.KMDVersion):
+		return false, "unsupported tt-kmd version " + device.KMDVersion
+	case !supportedFirmware(device.FirmwareVersion):
+		return false, "unsupported firmware version " + device.FirmwareVersion
+	case device.DriverABIVersion != supportedDriverABI:
+		return false, fmt.Sprintf("unsupported device ABI %d", device.DriverABIVersion)
+	case !supportedKernel(device.KernelVersion):
+		return false, "unsupported kernel version " + device.KernelVersion
+	case malformedObservedNumber(device):
+		return false, "critical numeric sysfs value is malformed"
 	default:
 		return true, ""
 	}
+}
+
+// validHardwareID accepts bounded ASCII identifiers that remain stable across PCI renumbering.
+func validHardwareID(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	hasAlphanumeric := false
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') {
+			hasAlphanumeric = true
+			continue
+		}
+		if strings.ContainsRune("-_.:", char) {
+			continue
+		}
+		return false
+	}
+	return hasAlphanumeric
+}
+
+// supportedKMD limits production discovery to stable tt-kmd 2.5 through 2.10 releases.
+func supportedKMD(value string) bool {
+	parts := strings.Split(strings.TrimSpace(value), ".")
+	if len(parts) != 3 {
+		return false
+	}
+	major, majorErr := strconv.Atoi(parts[0])
+	minor, minorErr := strconv.Atoi(parts[1])
+	_, patchErr := strconv.Atoi(parts[2])
+	return majorErr == nil && minorErr == nil && patchErr == nil && major == 2 && minor >= 5 && minor <= 10
+}
+
+// supportedFirmware limits production discovery to the certified firmware 19.2 line.
+func supportedFirmware(value string) bool {
+	major, minor, ok := versionMajorMinor(value)
+	return ok && major == 19 && minor == 2
+}
+
+// supportedKernel follows tt-kmd's build-tested Linux 5.4 through 6.18 range.
+func supportedKernel(value string) bool {
+	major, minor, ok := versionMajorMinor(value)
+	return ok && ((major == 5 && minor >= 4) || (major == 6 && minor <= 18))
+}
+
+// versionMajorMinor parses the leading numeric major and minor components of a version.
+func versionMajorMinor(value string) (int, int, bool) {
+	parts := strings.SplitN(strings.TrimSpace(value), ".", 3)
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	major, majorErr := strconv.Atoi(parts[0])
+	minor, minorErr := strconv.Atoi(parts[1])
+	return major, minor, majorErr == nil && minorErr == nil
+}
+
+// malformedObservedNumber reports invalid non-empty capacity and topology counts.
+func malformedObservedNumber(device InventoryDevice) bool {
+	return device.Memory.AvailableBytes > device.Memory.TotalBytes && device.Memory.TotalBytes > 0
+}
+
+// validateRawValues rejects malformed numeric sysfs data instead of silently using zero.
+func validateRawValues(values map[string]string) error {
+	for _, key := range []string{"memory_capacity_bytes", "memory_available_bytes", "tensix_cores_total", "pci.current_link_width", "pci.iommu_group", "pci.iommu_group_size"} {
+		value := strings.TrimSpace(values[key])
+		if value == "" {
+			continue
+		}
+		base := 10
+		if strings.HasPrefix(value, "0x") {
+			base = 16
+			value = strings.TrimPrefix(value, "0x")
+		}
+		if _, err := strconv.ParseUint(value, base, 64); err != nil {
+			return fmt.Errorf("%s is malformed", key)
+		}
+	}
+	if value := strings.TrimSpace(values["driver_abi_version"]); value != "" {
+		if _, err := strconv.Atoi(value); err != nil {
+			return errors.New("driver_abi_version is malformed")
+		}
+	}
+	return nil
 }
 
 // pciIdentity builds normalized PCI and isolation metadata from raw sysfs values.
@@ -268,8 +370,15 @@ func DRAName(item InventoryDevice) string {
 		}
 	}
 	result := strings.Trim(name.String(), "-")
-	if len(result) > 59 {
-		result = result[:59]
+	if result != value || len(result) > 59 {
+		if result == "" {
+			result = "device"
+		}
+		if len(result) > 46 {
+			result = strings.TrimRight(result[:46], "-")
+		}
+		sum := sha256.Sum256([]byte(value))
+		result = fmt.Sprintf("%s-%x", result, sum[:6])
 	}
 	return "tt-" + result
 }

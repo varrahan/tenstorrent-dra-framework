@@ -2,109 +2,254 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	ttapi "github.com/varrahan/tenstorrent-dra-framework/src/internal/api"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/placement"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/topology"
+	corev1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/retry"
+	"k8s.io/client-go/util/workqueue"
 )
 
+const fabricQueueKey = "!fabric"
+
+const MaxWorkloads = 1000
+
 type Controller struct {
-	Kube        kubernetes.Interface
-	Dynamic     dynamic.Interface
-	Interval    time.Duration
-	TopologyTTL time.Duration
+	Kube             kubernetes.Interface
+	Dynamic          dynamic.Interface
+	TopologyTTL      time.Duration
+	PlacementTimeout time.Duration
+
+	queue            workqueue.TypedRateLimitingInterface[string]
+	nodeInformer     cache.SharedIndexInformer
+	workloadInformer cache.SharedIndexInformer
+	claimInformer    cache.SharedIndexInformer
+	podInformer      cache.SharedIndexInformer
+	fabric           ttapi.FabricTopologyStatus
+	pending          map[string][]ttapi.RankAssignment
 }
 
-// Run continuously reconciles cluster fabric state and Tenstorrent workloads.
+// Run processes informer events through a per-object rate-limited work queue.
 func (c *Controller) Run(ctx context.Context) error {
-	if c.Interval <= 0 {
-		c.Interval = 5 * time.Second
+	if c.Kube == nil || c.Dynamic == nil {
+		return fmt.Errorf("Kubernetes clients are required")
 	}
-	ticker := time.NewTicker(c.Interval)
-	defer ticker.Stop()
-	for {
-		if err := c.reconcile(ctx); err != nil {
-			fmt.Printf("controller reconciliation: %v\n", err)
-		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-		}
+	if c.PlacementTimeout <= 0 {
+		c.PlacementTimeout = 2 * time.Second
 	}
-}
-
-// reconcile updates the fabric topology before reconciling workloads against it.
-func (c *Controller) reconcile(ctx context.Context) error {
-	fabric, err := c.reconcileFabric(ctx)
-	if err != nil {
+	c.queue = workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+	c.pending = map[string][]ttapi.RankAssignment{}
+	dynamicFactory := dynamicinformer.NewDynamicSharedInformerFactory(c.Dynamic, 0)
+	kubeFactory := informers.NewSharedInformerFactory(c.Kube, 0)
+	c.nodeInformer = dynamicFactory.ForResource(ttapi.NodeTopologyGVR).Informer()
+	c.workloadInformer = dynamicFactory.ForResource(ttapi.WorkloadGVR).Informer()
+	c.claimInformer = kubeFactory.Resource().V1().ResourceClaims().Informer()
+	c.podInformer = kubeFactory.Core().V1().Pods().Informer()
+	if err := c.registerHandlers(); err != nil {
 		return err
 	}
-	return c.reconcileWorkloads(ctx, fabric)
+	dynamicFactory.Start(ctx.Done())
+	kubeFactory.Start(ctx.Done())
+	if !cache.WaitForCacheSync(ctx.Done(), c.nodeInformer.HasSynced, c.workloadInformer.HasSynced, c.claimInformer.HasSynced, c.podInformer.HasSynced) {
+		return fmt.Errorf("controller informer cache did not sync")
+	}
+	c.queue.Add(fabricQueueKey)
+	c.enqueueAllWorkloads()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for c.processNext(ctx) {
+		}
+	}()
+	<-ctx.Done()
+	c.queue.ShutDown()
+	<-done
+	return nil
 }
 
-// reconcileFabric aggregates node topology objects and publishes cluster fabric status.
-func (c *Controller) reconcileFabric(ctx context.Context) (ttapi.FabricTopologyStatus, error) {
-	list, err := c.Dynamic.Resource(ttapi.NodeTopologyGVR).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return ttapi.FabricTopologyStatus{}, err
+// registerHandlers maps topology, workload, claim, and Pod changes to queue keys.
+func (c *Controller) registerHandlers() error {
+	fabricHandler := cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(any) { c.queue.Add(fabricQueueKey) },
+		UpdateFunc: func(any, any) { c.queue.Add(fabricQueueKey) },
+		DeleteFunc: func(any) { c.queue.Add(fabricQueueKey) },
 	}
-	nodes := make([]ttapi.NodeTopology, 0, len(list.Items))
-	for i := range list.Items {
+	if _, err := c.nodeInformer.AddEventHandler(fabricHandler); err != nil {
+		return err
+	}
+	workloadHandler := cache.ResourceEventHandlerFuncs{
+		AddFunc:    c.enqueueWorkload,
+		UpdateFunc: func(_ any, current any) { c.enqueueWorkload(current) },
+		DeleteFunc: c.enqueueWorkload,
+	}
+	if _, err := c.workloadInformer.AddEventHandler(workloadHandler); err != nil {
+		return err
+	}
+	childHandler := cache.ResourceEventHandlerFuncs{
+		AddFunc:    c.enqueueChild,
+		UpdateFunc: func(_ any, current any) { c.enqueueChild(current) },
+		DeleteFunc: c.enqueueChild,
+	}
+	if _, err := c.claimInformer.AddEventHandler(childHandler); err != nil {
+		return err
+	}
+	_, err := c.podInformer.AddEventHandler(childHandler)
+	return err
+}
+
+// enqueueWorkload adds one namespaced workload key, including delete tombstones.
+func (c *Controller) enqueueWorkload(object any) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(object)
+	if err == nil {
+		c.queue.Add(key)
+	}
+}
+
+// enqueueChild adds the owning workload key carried on a controller-created child.
+func (c *Controller) enqueueChild(object any) {
+	if tombstone, ok := object.(cache.DeletedFinalStateUnknown); ok {
+		object = tombstone.Obj
+	}
+	metadata, err := meta.Accessor(object)
+	if err != nil {
+		return
+	}
+	name := metadata.GetLabels()["tenstorrent.com/workload-name"]
+	if name != "" {
+		c.queue.Add(metadata.GetNamespace() + "/" + name)
+	}
+}
+
+// enqueueAllWorkloads schedules every cached workload after fabric changes or startup.
+func (c *Controller) enqueueAllWorkloads() {
+	for _, object := range c.workloadInformer.GetStore().List() {
+		c.enqueueWorkload(object)
+	}
+}
+
+// processNext reconciles one key and applies exponential retry only to that key.
+func (c *Controller) processNext(ctx context.Context) bool {
+	key, shutdown := c.queue.Get()
+	if shutdown {
+		return false
+	}
+	defer c.queue.Done(key)
+	var err error
+	if key == fabricQueueKey {
+		c.fabric, err = c.reconcileFabric(ctx)
+		if err == nil {
+			c.enqueueAllWorkloads()
+			if c.TopologyTTL > 0 {
+				c.queue.AddAfter(fabricQueueKey, c.TopologyTTL/2)
+			}
+		}
+	} else {
+		err = c.reconcileWorkloadKey(ctx, key)
+	}
+	if err != nil {
+		c.queue.AddRateLimited(key)
+		return true
+	}
+	c.queue.Forget(key)
+	return true
+}
+
+// reconcileFabric aggregates cached node observations and publishes cluster fabric status.
+func (c *Controller) reconcileFabric(ctx context.Context) (ttapi.FabricTopologyStatus, error) {
+	objects := c.nodeInformer.GetStore().List()
+	nodes := make([]ttapi.NodeTopology, 0, len(objects))
+	for _, object := range objects {
 		var node ttapi.NodeTopology
-		if err := ttapi.FromUnstructured(&list.Items[i], &node); err != nil {
-			return ttapi.FabricTopologyStatus{}, fmt.Errorf("decode node topology %q: %w", list.Items[i].GetName(), err)
+		if err := ttapi.FromUnstructured(object.(*unstructured.Unstructured), &node); err != nil {
+			return ttapi.FabricTopologyStatus{}, err
 		}
 		nodes = append(nodes, node)
 	}
 	status := topology.BuildFabric(nodes, c.TopologyTTL, time.Now().UTC())
 	resource := c.Dynamic.Resource(ttapi.FabricTopologyGVR)
-	current, err := resource.Get(ctx, "cluster", metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		object, convertErr := ttapi.ToUnstructured(&ttapi.FabricTopology{TypeMeta: metav1.TypeMeta{APIVersion: ttapi.TopologyAPIVersion, Kind: ttapi.FabricTopologyKind}, ObjectMeta: metav1.ObjectMeta{Name: "cluster"}})
-		if convertErr != nil {
-			return status, convertErr
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := resource.Get(ctx, "cluster", metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			object := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": ttapi.TopologyAPIVersion,
+				"kind":       ttapi.FabricTopologyKind,
+				"metadata":   map[string]any{"name": "cluster"},
+			}}
+			current, err = resource.Create(ctx, object, metav1.CreateOptions{})
 		}
-		current, err = resource.Create(ctx, object, metav1.CreateOptions{})
-	}
-	if err != nil {
-		return status, err
-	}
-	statusMap, err := ttapi.ToUnstructured(&ttapi.FabricTopology{Status: status})
-	if err != nil {
-		return status, err
-	}
-	current.Object["status"] = statusMap.Object["status"]
-	_, err = resource.UpdateStatus(ctx, current, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+		encoded, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&status)
+		if err != nil {
+			return err
+		}
+		if reflect.DeepEqual(current.Object["status"], encoded) {
+			return nil
+		}
+		current.Object["status"] = encoded
+		_, err = resource.UpdateStatus(ctx, current, metav1.UpdateOptions{})
+		return err
+	})
 	return status, err
 }
 
-// reconcileWorkloads collects existing reservations and reconciles each workload in one pass.
-func (c *Controller) reconcileWorkloads(ctx context.Context, fabric ttapi.FabricTopologyStatus) error {
-	list, err := c.Dynamic.Resource(ttapi.WorkloadGVR).Namespace(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
+// reconcileWorkloadKey decodes one cached workload and reconciles it in isolation.
+func (c *Controller) reconcileWorkloadKey(ctx context.Context, key string) error {
+	object, found, err := c.workloadInformer.GetStore().GetByKey(key)
 	if err != nil {
 		return err
 	}
-	workloads := make([]ttapi.Workload, 0, len(list.Items))
-	for i := range list.Items {
-		var workload ttapi.Workload
-		if err := ttapi.FromUnstructured(&list.Items[i], &workload); err != nil {
-			return fmt.Errorf("decode workload %q: %w", list.Items[i].GetName(), err)
+	if !found {
+		delete(c.pending, key)
+		return nil
+	}
+	var workload ttapi.Workload
+	if err := ttapi.FromUnstructured(object.(*unstructured.Unstructured), &workload); err != nil {
+		return err
+	}
+	if len(c.workloadInformer.GetStore().List()) > MaxWorkloads {
+		phase := "Pending"
+		if len(workload.Status.Assignments) > 0 {
+			phase = "Degraded"
 		}
-		workloads = append(workloads, workload)
+		setWorkloadStatus(&workload, phase, false, "ClusterScaleExceeded", fmt.Sprintf("active workload count exceeds %d", MaxWorkloads))
+		return c.updateWorkloadStatus(ctx, &workload)
 	}
-	claims, err := c.Kube.ResourceV1().ResourceClaims(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return err
-	}
+	return c.reconcileWorkload(ctx, &workload, c.fabric, c.reservations(key))
+}
+
+// reservations returns devices consumed by claims and other active workload assignments.
+func (c *Controller) reservations(exclude string) placement.Reservations {
 	used := placement.Reservations{}
-	for _, claim := range claims.Items {
+	for key, assignments := range c.pending {
+		if key != exclude {
+			used.AddAssignments(assignments)
+		}
+	}
+	for _, object := range c.claimInformer.GetStore().List() {
+		claim := object.(*resourceapi.ResourceClaim)
+		if claim.Namespace+"/"+claim.Labels["tenstorrent.com/workload-name"] == exclude {
+			continue
+		}
 		if claim.Status.Allocation == nil {
 			continue
 		}
@@ -112,96 +257,219 @@ func (c *Controller) reconcileWorkloads(ctx context.Context, fabric ttapi.Fabric
 			used.Add(result.Pool, result.Device)
 		}
 	}
-	for i := range workloads {
-		used.AddAssignments(workloads[i].Status.Assignments)
-	}
-	for i := range workloads {
-		if err := c.reconcileWorkload(ctx, &workloads[i], fabric, used); err != nil {
-			return err
+	for _, object := range c.workloadInformer.GetStore().List() {
+		item := object.(*unstructured.Unstructured)
+		if item.GetNamespace()+"/"+item.GetName() == exclude {
+			continue
+		}
+		var workload ttapi.Workload
+		if ttapi.FromUnstructured(item, &workload) == nil && workload.Status.Phase != "Failed" && workload.Status.Phase != "Succeeded" {
+			used.AddAssignments(workload.Status.Assignments)
 		}
 	}
-	return nil
+	return used
 }
 
-// reconcileWorkload preserves safe assignments or computes and materializes a new one.
+// reconcileWorkload validates, assigns, observes, and cleans up one workload lifecycle.
 func (c *Controller) reconcileWorkload(ctx context.Context, workload *ttapi.Workload, fabric ttapi.FabricTopologyStatus, used placement.Reservations) error {
+	hash := workloadSpecHash(workload)
+	key := workload.Namespace + "/" + workload.Name
+	if err := validateWorkload(workload); err != nil {
+		setWorkloadStatus(workload, "Failed", false, "InvalidSpec", err.Error())
+		workload.Status.SpecHash = hash
+		return c.updateWorkloadStatus(ctx, workload)
+	}
+	relevantGeneration := topology.WorkloadGeneration(fabric, workload.Spec.Topology, workload.Status.Assignments)
 	if len(workload.Status.Assignments) > 0 {
-		started, err := c.anyRankStarted(ctx, workload)
-		if err != nil {
-			return err
+		if terminalPhase(workload.Status.Phase) {
+			delete(c.pending, key)
+			return c.deleteChildren(ctx, workload)
 		}
-		if workload.Status.FabricGeneration != fabric.Generation {
+		phase, reason, message, started := c.observedPhase(workload)
+		if assignmentsReserved(workload.Status.Assignments, used) {
 			if started {
-				workload.Status.Phase = "Degraded"
-				workload.Status.Conditions = condition(false, "FabricChanged", "fabric topology changed after a rank started; assignment is frozen")
-				if err := c.updateWorkloadStatus(ctx, workload); err != nil {
-					return err
+				setWorkloadStatus(workload, "Degraded", false, "DeviceClaimed", "an assigned device was consumed by another claim")
+				return c.updateWorkloadStatus(ctx, workload)
+			}
+			delete(c.pending, key)
+			if err := c.deleteChildren(ctx, workload); err != nil {
+				return err
+			}
+			workload.Status = ttapi.WorkloadStatus{Phase: "Pending", ObservedGeneration: workload.Generation, SpecHash: hash}
+			setWorkloadStatus(workload, "Pending", false, "Replanning", "an assigned device was consumed by another claim")
+			return c.updateWorkloadStatus(ctx, workload)
+		}
+		if reason == "Unschedulable" && !started {
+			delete(c.pending, key)
+			if err := c.deleteChildren(ctx, workload); err != nil {
+				return err
+			}
+			workload.Status = ttapi.WorkloadStatus{Phase: "Pending", ObservedGeneration: workload.Generation, SpecHash: hash}
+			setWorkloadStatus(workload, "Pending", false, "Replanning", message)
+			return c.updateWorkloadStatus(ctx, workload)
+		}
+		if phase == "Failed" || phase == "Succeeded" {
+			delete(c.pending, key)
+			setWorkloadStatus(workload, phase, phase == "Succeeded", reason, message)
+			if err := c.deleteChildren(ctx, workload); err != nil {
+				return err
+			}
+			return c.updateWorkloadStatus(ctx, workload)
+		}
+		changed := workload.Status.SpecHash != "" && workload.Status.SpecHash != hash
+		fabricChanged := workload.Status.FabricGeneration != relevantGeneration
+		if changed || fabricChanged {
+			if started {
+				reason, message = "FabricChanged", "relevant fabric topology changed after a rank started; assignment is frozen"
+				if changed {
+					reason, message = "SpecChanged", "workload spec changed after a rank started; assignment is frozen"
 				}
-				return c.ensureChildren(ctx, workload)
+				setWorkloadStatus(workload, "Degraded", false, reason, message)
+				return c.updateWorkloadStatus(ctx, workload)
 			}
 			if err := c.deleteChildren(ctx, workload); err != nil {
 				return err
 			}
-			workload.Status = ttapi.WorkloadStatus{Phase: "Pending"}
+			delete(c.pending, key)
+			workload.Status = ttapi.WorkloadStatus{Phase: "Pending", ObservedGeneration: workload.Generation, SpecHash: hash}
 			return c.updateWorkloadStatus(ctx, workload)
 		}
-		return c.ensureChildren(ctx, workload)
+		setWorkloadStatus(workload, phase, phase == "Running", reason, message)
+		workload.Status.SpecHash = hash
+		if err := c.ensureChildren(ctx, workload); err != nil {
+			return err
+		}
+		return c.updateWorkloadStatus(ctx, workload)
 	}
 	if !fabric.Valid {
-		workload.Status = ttapi.WorkloadStatus{Phase: "Pending", Conditions: condition(false, "FabricInvalid", "validated fabric topology is unavailable")}
+		setWorkloadStatus(workload, "Pending", false, "FabricInvalid", "validated fabric topology is unavailable")
+		workload.Status.SpecHash = hash
 		return c.updateWorkloadStatus(ctx, workload)
 	}
-	assignments, ok := placement.Solve(workload, fabric.Endpoints, used)
+	placementCtx, cancel := context.WithTimeout(ctx, c.PlacementTimeout)
+	defer cancel()
+	assignments, ok, err := placement.SolveContext(placementCtx, workload, fabric.Endpoints, used, placement.DefaultLimits)
+	if err != nil {
+		setWorkloadStatus(workload, "Pending", false, "PlacementError", err.Error())
+		return c.updateWorkloadStatus(ctx, workload)
+	}
 	if !ok {
-		workload.Status = ttapi.WorkloadStatus{Phase: "Pending", FabricGeneration: fabric.Generation, Conditions: condition(false, "Unsatisfied", "no connected assignment satisfies all ranks")}
+		setWorkloadStatus(workload, "Pending", false, "Unsatisfied", "no connected assignment satisfies all ranks")
+		workload.Status.FabricGeneration, workload.Status.SpecHash = relevantGeneration, hash
 		return c.updateWorkloadStatus(ctx, workload)
 	}
-	workload.Status = ttapi.WorkloadStatus{Phase: "Assigned", FabricGeneration: fabric.Generation, Assignments: assignments, Conditions: condition(true, "Assigned", "complete connected assignment reserved")}
+	workload.Status.Assignments = assignments
+	workload.Status.FabricGeneration = topology.WorkloadGeneration(fabric, workload.Spec.Topology, assignments)
+	workload.Status.SpecHash = hash
+	setWorkloadStatus(workload, "Assigned", true, "Assigned", "complete connected assignment reserved")
 	if err := c.updateWorkloadStatus(ctx, workload); err != nil {
 		return err
 	}
-	used.AddAssignments(assignments)
+	c.pending[key] = assignments
 	return c.ensureChildren(ctx, workload)
 }
 
-// updateWorkloadStatus writes only the latest status subresource for a workload.
-func (c *Controller) updateWorkloadStatus(ctx context.Context, workload *ttapi.Workload) error {
-	resource := c.Dynamic.Resource(ttapi.WorkloadGVR).Namespace(workload.Namespace)
-	current, err := resource.Get(ctx, workload.Name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	status, err := ttapi.ToUnstructured(&ttapi.Workload{Status: workload.Status})
-	if err != nil {
-		return err
-	}
-	current.Object["status"] = status.Object["status"]
-	_, err = resource.UpdateStatus(ctx, current, metav1.UpdateOptions{})
-	return err
-}
-
-// anyRankStarted reports whether Kubernetes has started any assigned rank Pod.
-func (c *Controller) anyRankStarted(ctx context.Context, workload *ttapi.Workload) (bool, error) {
+// observedPhase derives workload lifecycle from cached rank Pod states.
+func (c *Controller) observedPhase(workload *ttapi.Workload) (string, string, string, bool) {
+	started, succeeded := false, 0
 	for _, assignment := range workload.Status.Assignments {
-		pod, err := c.Kube.CoreV1().Pods(workload.Namespace).Get(ctx, assignment.PodName, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
+		object, found, _ := c.podInformer.GetStore().GetByKey(workload.Namespace + "/" + assignment.PodName)
+		if !found {
 			continue
 		}
-		if err != nil {
-			return false, err
+		pod := object.(*corev1.Pod)
+		if pod.Status.Phase == corev1.PodFailed {
+			return "Failed", "RankFailed", "a rank Pod failed", started
 		}
-		if pod.Status.StartTime != nil {
-			return true, nil
+		if pod.Status.Phase == corev1.PodSucceeded {
+			succeeded++
+		}
+		if pod.Status.StartTime != nil || pod.Status.Phase == corev1.PodRunning {
+			started = true
+		}
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodScheduled && condition.Status == corev1.ConditionFalse && condition.Reason == corev1.PodReasonUnschedulable {
+				return "Assigned", "Unschedulable", condition.Message, started
+			}
 		}
 	}
-	return false, nil
+	if succeeded == len(workload.Status.Assignments) {
+		return "Succeeded", "RanksSucceeded", "all rank Pods succeeded", true
+	}
+	if started {
+		return "Running", "RanksRunning", "one or more rank Pods are running", true
+	}
+	return "Assigned", "ChildrenPending", "rank Pods and claims are pending", false
 }
 
-// condition builds the workload's single Ready condition for a reconciliation outcome.
-func condition(ok bool, reason, message string) []metav1.Condition {
+// updateWorkloadStatus retries conflicts and skips writes when status is unchanged.
+func (c *Controller) updateWorkloadStatus(ctx context.Context, workload *ttapi.Workload) error {
+	workload.Status.ObservedGeneration = workload.Generation
+	resource := c.Dynamic.Resource(ttapi.WorkloadGVR).Namespace(workload.Namespace)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := resource.Get(ctx, workload.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		var latest ttapi.Workload
+		if err := ttapi.FromUnstructured(current, &latest); err != nil {
+			return err
+		}
+		if terminalPhase(latest.Status.Phase) && latest.Status.Phase != workload.Status.Phase {
+			return nil
+		}
+		encoded, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&workload.Status)
+		if err != nil {
+			return err
+		}
+		if reflect.DeepEqual(current.Object["status"], encoded) {
+			return nil
+		}
+		current.Object["status"] = encoded
+		_, err = resource.UpdateStatus(ctx, current, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// terminalPhase reports whether a workload has reached an irreversible final state.
+func terminalPhase(phase string) bool {
+	return phase == "Failed" || phase == "Succeeded"
+}
+
+// setWorkloadStatus updates phase and Ready condition while preserving transition time.
+func setWorkloadStatus(workload *ttapi.Workload, phase string, ready bool, reason, message string) {
 	status := metav1.ConditionFalse
-	if ok {
+	if ready {
 		status = metav1.ConditionTrue
 	}
-	return []metav1.Condition{{Type: "Ready", Status: status, Reason: reason, Message: message, LastTransitionTime: metav1.Now()}}
+	transition := metav1.Now()
+	for _, existing := range workload.Status.Conditions {
+		if existing.Type == "Ready" && existing.Status == status && existing.Reason == reason {
+			transition = existing.LastTransitionTime
+		}
+	}
+	workload.Status.Phase = phase
+	workload.Status.Conditions = []metav1.Condition{{
+		Type: "Ready", Status: status, Reason: reason, Message: message,
+		ObservedGeneration: workload.Generation, LastTransitionTime: transition,
+	}}
+}
+
+// workloadSpecHash returns a short deterministic digest used to detect spec edits.
+func workloadSpecHash(workload *ttapi.Workload) string {
+	data, _ := json.Marshal(workload.Spec)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:8])
+}
+
+// assignmentsReserved reports whether another claim or workload uses an assigned device.
+func assignmentsReserved(assignments []ttapi.RankAssignment, used placement.Reservations) bool {
+	for _, assignment := range assignments {
+		for _, item := range assignment.Devices {
+			if _, found := used[placement.DeviceID{Pool: item.Pool, Name: item.Name}]; found {
+				return true
+			}
+		}
+	}
+	return false
 }

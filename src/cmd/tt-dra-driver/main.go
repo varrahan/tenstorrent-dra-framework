@@ -16,10 +16,13 @@ import (
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/lifecycle"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/topology"
+	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 )
 
@@ -102,9 +105,11 @@ func runNode(args []string) error {
 	nodeName := os.Getenv("NODE_NAME")
 	resetMode := "ioctl"
 	requireIOMMU := true
-	interval, cdiDir, pluginDir, registrarDir := 30*time.Second, "/var/run/cdi", "/var/lib/kubelet/plugins/dra.tenstorrent.com", kubeletplugin.KubeletRegistryDir
+	interval, inventoryGrace := 30*time.Second, 60*time.Second
+	cdiDir, pluginDir, registrarDir := "/var/run/cdi", "/var/lib/kubelet/plugins/dra.tenstorrent.com", kubeletplugin.KubeletRegistryDir
 	set.StringVar(&nodeName, "node-name", nodeName, "Kubernetes node name")
 	set.DurationVar(&interval, "interval", interval, "inventory interval")
+	set.DurationVar(&inventoryGrace, "inventory-grace-period", inventoryGrace, "maximum age of a cached healthy inventory observation")
 	set.StringVar(&resetMode, "reset-mode", resetMode, "device reset mode: ioctl or noop")
 	set.BoolVar(&requireIOMMU, "require-iommu", requireIOMMU, "quarantine devices without an IOMMU group")
 	set.StringVar(&cdiDir, "cdi-dir", cdiDir, "CDI directory")
@@ -118,6 +123,9 @@ func runNode(args []string) error {
 	}
 	if interval <= 0 {
 		return fmt.Errorf("inventory interval must be positive")
+	}
+	if inventoryGrace < interval {
+		return fmt.Errorf("inventory grace period must be at least the inventory interval")
 	}
 	var resetter lifecycle.Resetter
 	switch resetMode {
@@ -140,19 +148,32 @@ func runNode(args []string) error {
 		return err
 	}
 	manager, err := lifecycle.NewManager(lifecycle.Config{
-		NodeName:     nodeName,
-		Driver:       dra.DefaultDriverName,
-		StateDir:     roots.StateDir,
-		CDIDir:       cdiDir,
-		Resetter:     resetter,
-		RequireIOMMU: requireIOMMU,
+		NodeName:        nodeName,
+		Driver:          dra.DefaultDriverName,
+		StateDir:        roots.StateDir,
+		CDIDir:          cdiDir,
+		Resetter:        resetter,
+		RequireIOMMU:    requireIOMMU,
+		MaxInventoryAge: inventoryGrace,
 		Inventory: func(ctx context.Context) (device.InventorySnapshot, error) {
 			return device.BuildSnapshot(ctx, source)
+		},
+		Allocations: func(ctx context.Context) ([]*resourceapi.ResourceClaim, error) {
+			list, err := kube.ResourceV1().ResourceClaims(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			claims := make([]*resourceapi.ResourceClaim, 0, len(list.Items))
+			for index := range list.Items {
+				claims = append(claims, list.Items[index].DeepCopy())
+			}
+			return claims, nil
 		},
 	})
 	if err != nil {
 		return err
 	}
+	defer manager.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	helper, err := kubeletplugin.Start(ctx, manager, kubeletplugin.DriverName(dra.DefaultDriverName), kubeletplugin.KubeClient(kube), kubeletplugin.NodeName(nodeName), kubeletplugin.PluginDataDirectoryPath(pluginDir), kubeletplugin.RegistrarDirectoryPath(registrarDir))
@@ -179,7 +200,7 @@ func runNode(args []string) error {
 		if monitorErr != nil {
 			log.Printf("hardware janitor: %v", monitorErr)
 		}
-		if err := helper.PublishResources(ctx, dra.DriverResources(nodeName, snapshot)); err != nil {
+		if err := helper.PublishResources(ctx, dra.DriverResourcesAt(nodeName, snapshot, inventoryGrace, time.Now())); err != nil {
 			log.Printf("publish resources: %v", err)
 		}
 		if err := topology.PublishNode(ctx, dynamicClient, nodeName, node.UID, snapshot); err != nil {
@@ -199,11 +220,26 @@ func runNode(args []string) error {
 // runController starts the cluster topology and workload reconciliation loop.
 func runController(args []string) error {
 	set := flag.NewFlagSet("controller", flag.ContinueOnError)
-	interval, ttl := 5*time.Second, 90*time.Second
-	set.DurationVar(&interval, "interval", interval, "controller interval")
+	ttl, placementTimeout := 90*time.Second, 2*time.Second
+	leaderElect := true
+	leaseName, leaseNamespace := "tenstorrent-dra-controller", os.Getenv("POD_NAMESPACE")
+	identity := os.Getenv("POD_NAME")
+	if leaseNamespace == "" {
+		leaseNamespace = "default"
+	}
+	if identity == "" {
+		identity, _ = os.Hostname()
+	}
 	set.DurationVar(&ttl, "topology-ttl", ttl, "node topology TTL")
+	set.DurationVar(&placementTimeout, "placement-timeout", placementTimeout, "maximum placement solve time")
+	set.BoolVar(&leaderElect, "leader-elect", leaderElect, "run controller reconciliation under a Lease")
+	set.StringVar(&leaseName, "leader-election-name", leaseName, "leader election Lease name")
+	set.StringVar(&leaseNamespace, "leader-election-namespace", leaseNamespace, "leader election Lease namespace")
 	if err := set.Parse(args); err != nil {
 		return err
+	}
+	if ttl <= 0 || placementTimeout <= 0 {
+		return fmt.Errorf("topology TTL and placement timeout must be positive")
 	}
 	kube, dynamicClient, err := clusterClients()
 	if err != nil {
@@ -211,7 +247,44 @@ func runController(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	return (&controller.Controller{Kube: kube, Dynamic: dynamicClient, Interval: interval, TopologyTTL: ttl}).Run(ctx)
+	reconciler := &controller.Controller{Kube: kube, Dynamic: dynamicClient, TopologyTTL: ttl, PlacementTimeout: placementTimeout}
+	if !leaderElect {
+		return reconciler.Run(ctx)
+	}
+	result := make(chan error, 1)
+	report := func(err error) {
+		select {
+		case result <- err:
+		default:
+		}
+	}
+	go leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+		Lock: &resourcelock.LeaseLock{
+			LeaseMeta: metav1.ObjectMeta{Name: leaseName, Namespace: leaseNamespace},
+			Client:    kube.CoordinationV1(), LockConfig: resourcelock.ResourceLockConfig{Identity: identity},
+		},
+		LeaseDuration: 15 * time.Second, RenewDeadline: 10 * time.Second, RetryPeriod: 2 * time.Second,
+		ReleaseOnCancel: true,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(leaderCtx context.Context) {
+				if err := reconciler.Run(leaderCtx); err != nil {
+					report(err)
+				}
+			},
+			OnStoppedLeading: func() {
+				if ctx.Err() == nil {
+					report(fmt.Errorf("controller leader election lost"))
+				}
+			},
+		},
+	})
+	select {
+	case err := <-result:
+		stop()
+		return err
+	case <-ctx.Done():
+		return nil
+	}
 }
 
 // fatal writes a command error to stderr and terminates with a failure status.

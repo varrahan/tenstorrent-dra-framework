@@ -107,12 +107,15 @@ type FabricInfo struct {
 // numbers are local runtime data and must not become scheduling policy.
 type InventoryDevice struct {
 	StableID               string                `json:"stableID"`
+	HardwareUUID           string                `json:"hardwareUUID,omitempty"`
 	Node                   Node                  `json:"node"`
 	CharacterDevicePresent bool                  `json:"characterDevicePresent"`
 	PCI                    PCIIdentity           `json:"pci"`
 	ChipSeries             string                `json:"chipSeries,omitempty"`
 	FirmwareVersion        string                `json:"firmwareVersion,omitempty"`
 	KMDVersion             string                `json:"kmdVersion,omitempty"`
+	DriverABIVersion       int                   `json:"driverABIVersion"`
+	KernelVersion          string                `json:"kernelVersion,omitempty"`
 	Memory                 MemoryInfo            `json:"memory"`
 	Compute                ComputeInfo           `json:"compute"`
 	Health                 HealthState           `json:"health"`

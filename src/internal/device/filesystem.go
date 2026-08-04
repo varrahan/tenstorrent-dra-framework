@@ -69,6 +69,7 @@ func (p FilesystemProvider) observeEntry(id string) RawDevice {
 	} else {
 		raw.Values = values
 	}
+	raw.Values["kernel_version"] = kernelVersion()
 
 	raw.Node.ID = id
 	raw.Node.Path = valuesPath(raw.Values, "uevent", "DEVNAME")
@@ -83,6 +84,18 @@ func (p FilesystemProvider) observeEntry(id string) RawDevice {
 		} else if ok {
 			raw.Node = discovered
 			raw.CharacterDevicePresent = true
+		}
+	}
+	if raw.CharacterDevicePresent {
+		if version, abi, err := readKMDInfo(raw.Node.Path); err == nil {
+			if observed := firstValue(raw.Values, "kmd_version", "driver_version"); observed != "" && observed != version {
+				raw.DiscoveryError = errors.Join(raw.DiscoveryError, fmt.Errorf("tt-kmd version sources disagree: %s != %s", observed, version))
+			}
+			if observed := raw.Values["driver_abi_version"]; observed != "" && observed != fmt.Sprint(abi) {
+				raw.DiscoveryError = errors.Join(raw.DiscoveryError, fmt.Errorf("tt-kmd ABI sources disagree: %s != %d", observed, abi))
+			}
+			raw.Values["kmd_version"] = version
+			raw.Values["driver_abi_version"] = fmt.Sprint(abi)
 		}
 	}
 	if dev := raw.Values["dev"]; dev != "" && raw.Node.Major == 0 && raw.Node.Minor == 0 {
@@ -108,6 +121,15 @@ func (p FilesystemProvider) observeEntry(id string) RawDevice {
 	return raw
 }
 
+// kernelVersion returns the running kernel release used by compatibility policy.
+func kernelVersion() string {
+	data, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
 // String identifies this provider in diagnostics.
 func (p FilesystemProvider) String() string { return "filesystem" }
 
@@ -115,8 +137,9 @@ func (p FilesystemProvider) String() string { return "filesystem" }
 // whose simulator-only register paths can destabilize the guest.
 func readDeviceValues(root string) (map[string]string, error) {
 	return readSelectedValues(root, []string{
-		"uevent", "dev", "architecture", "health", "fault_code",
+		"uevent", "dev", "architecture", "health", "fault_code", "device_uuid", "serial_number",
 		"firmware_version", "tt_fw_bundle_ver", "kmd_version", "driver_version",
+		"driver_abi_version",
 		"memory_capacity_bytes", "memory_available_bytes", "tensix_cores_total",
 		"fabric_id", "fabric_domain", "ring_id", "fabric_ring", "fabric_endpoint",
 		"fabric_endpoint_id",
