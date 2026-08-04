@@ -222,6 +222,7 @@ func runController(args []string) error {
 	set := flag.NewFlagSet("controller", flag.ContinueOnError)
 	ttl, placementTimeout := 90*time.Second, 2*time.Second
 	leaderElect := true
+	disableWorkloadAppArmor := false
 	leaseName, leaseNamespace := "tenstorrent-dra-controller", os.Getenv("POD_NAMESPACE")
 	identity := os.Getenv("POD_NAME")
 	if leaseNamespace == "" {
@@ -233,6 +234,7 @@ func runController(args []string) error {
 	set.DurationVar(&ttl, "topology-ttl", ttl, "node topology TTL")
 	set.DurationVar(&placementTimeout, "placement-timeout", placementTimeout, "maximum placement solve time")
 	set.BoolVar(&leaderElect, "leader-elect", leaderElect, "run controller reconciliation under a Lease")
+	set.BoolVar(&disableWorkloadAppArmor, "synthetic-disable-workload-apparmor", disableWorkloadAppArmor, "omit workload AppArmor profiles for synthetic validation")
 	set.StringVar(&leaseName, "leader-election-name", leaseName, "leader election Lease name")
 	set.StringVar(&leaseNamespace, "leader-election-namespace", leaseNamespace, "leader election Lease namespace")
 	if err := set.Parse(args); err != nil {
@@ -247,7 +249,7 @@ func runController(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	reconciler := &controller.Controller{Kube: kube, Dynamic: dynamicClient, TopologyTTL: ttl, PlacementTimeout: placementTimeout}
+	reconciler := &controller.Controller{Kube: kube, Dynamic: dynamicClient, TopologyTTL: ttl, PlacementTimeout: placementTimeout, DisableWorkloadAppArmor: disableWorkloadAppArmor}
 	if !leaderElect {
 		return reconciler.Run(ctx)
 	}

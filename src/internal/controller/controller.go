@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"time"
 
@@ -33,10 +34,11 @@ const fabricQueueKey = "!fabric"
 const MaxWorkloads = 1000
 
 type Controller struct {
-	Kube             kubernetes.Interface
-	Dynamic          dynamic.Interface
-	TopologyTTL      time.Duration
-	PlacementTimeout time.Duration
+	Kube                    kubernetes.Interface
+	Dynamic                 dynamic.Interface
+	TopologyTTL             time.Duration
+	PlacementTimeout        time.Duration
+	DisableWorkloadAppArmor bool
 
 	queue            workqueue.TypedRateLimitingInterface[string]
 	nodeInformer     cache.SharedIndexInformer
@@ -165,6 +167,7 @@ func (c *Controller) processNext(ctx context.Context) bool {
 		err = c.reconcileWorkloadKey(ctx, key)
 	}
 	if err != nil {
+		log.Printf("reconcile %s: %v", key, err)
 		c.queue.AddRateLimited(key)
 		return true
 	}

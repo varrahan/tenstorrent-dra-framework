@@ -104,10 +104,10 @@ images must write through mounted writable volumes when needed.
 
 The privileged node DaemonSet is the sole Pod Security exception. It needs
 read/write access to `/dev/tenstorrent`, read-only access to the configured
-Tenstorrent and PCI sysfs roots, and write access to the state, CDI, kubelet
-plugin, and registrar directories. No whole `/sys` mount is used. Cluster
-operators must label the node-agent namespace for privileged Pod Security and
-apply local SELinux/AppArmor rules only to those seven paths. Workload Pods need
+Tenstorrent class, PCI, and backing device sysfs roots, and write access to the
+state, CDI, kubelet plugin, and registrar directories. No whole `/sys` mount is
+used. Cluster operators must label the node-agent namespace for privileged Pod
+Security and apply local SELinux/AppArmor rules only to those eight paths. Workload Pods need
 no device hostPath, privileged, SELinux, or AppArmor exception because CDI and
 the container runtime inject only allocated device nodes.
 

@@ -33,6 +33,7 @@ spec:
         - -leader-elect=true
         - -leader-election-name={{ .Release.Name }}-controller
         - -leader-election-namespace={{ .Release.Namespace }}
+        - -synthetic-disable-workload-apparmor={{ .Values.syntheticDisableWorkloadAppArmor }}
         env:
         - name: POD_NAME
           valueFrom: {fieldRef: {fieldPath: metadata.name}}

@@ -117,6 +117,7 @@ does not depend on the fabric graph or the Tenstorrent workload controller.
   implemented.
 - Controller reconciliation is informer-driven, per-object rate limited, and
   leader elected across two replicas.
-- The current validation harness exercises synthetic QEMU/kind discovery and
-  publication. CDI-backed allocation and physical hardware certification remain
-  explicit release-gate work in `TODO.md`.
+- The validation harness exercises synthetic QEMU/kind discovery, publication,
+  native and topology-aware DRA allocation, CDI device isolation, lifecycle
+  audit, cleanup, and reuse. Physical hardware certification remains explicit
+  release-gate work in `TODO.md`.

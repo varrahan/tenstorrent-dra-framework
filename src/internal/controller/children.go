@@ -84,11 +84,12 @@ func buildClaim(workload *ttapi.Workload, rank ttapi.WorkloadRank, assignment tt
 
 // ensurePod idempotently creates the node-pinned Pod for one assigned rank.
 func (c *Controller) ensurePod(ctx context.Context, workload *ttapi.Workload, rankIndex int, assignment ttapi.RankAssignment) error {
-	pod, err := buildPod(workload, rankIndex, assignment)
+	pod, err := buildPod(workload, rankIndex, assignment, c.DisableWorkloadAppArmor)
 	if err != nil {
 		return err
 	}
 	kubescheme.Scheme.Default(pod)
+	pinAdmissionDefaults(pod)
 	pods := c.Kube.CoreV1().Pods(workload.Namespace)
 	_, err = pods.Create(ctx, pod, metav1.CreateOptions{})
 	if !apierrors.IsAlreadyExists(err) {
@@ -109,8 +110,34 @@ func (c *Controller) ensurePod(ctx context.Context, workload *ttapi.Workload, ra
 	return nil
 }
 
+// pinAdmissionDefaults makes known API-server Pod mutations part of the controller-owned desired spec.
+func pinAdmissionDefaults(pod *corev1.Pod) {
+	enabled := true
+	priority := int32(0)
+	policy := corev1.PreemptLowerPriority
+	seconds := int64(300)
+	pod.Spec.DNSPolicy = corev1.DNSClusterFirst
+	pod.Spec.SchedulerName = corev1.DefaultSchedulerName
+	pod.Spec.EnableServiceLinks = &enabled
+	pod.Spec.ServiceAccountName = "default"
+	pod.Spec.DeprecatedServiceAccount = "default"
+	pod.Spec.Priority = &priority
+	pod.Spec.PreemptionPolicy = &policy
+	pod.Spec.Tolerations = append(pod.Spec.Tolerations,
+		corev1.Toleration{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute, TolerationSeconds: &seconds},
+		corev1.Toleration{Key: "node.kubernetes.io/unreachable", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute, TolerationSeconds: &seconds},
+	)
+	containers := []*[]corev1.Container{&pod.Spec.InitContainers, &pod.Spec.Containers}
+	for _, group := range containers {
+		for index := range *group {
+			(*group)[index].TerminationMessagePath = corev1.TerminationMessagePathDefault
+			(*group)[index].TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		}
+	}
+}
+
 // buildPod injects node placement, the DRA claim, and distributed rank environment variables.
-func buildPod(workload *ttapi.Workload, rankIndex int, assignment ttapi.RankAssignment) (*corev1.Pod, error) {
+func buildPod(workload *ttapi.Workload, rankIndex int, assignment ttapi.RankAssignment, disableAppArmor bool) (*corev1.Pod, error) {
 	templateMeta := workload.Spec.PodTemplate.ObjectMeta.DeepCopy()
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Labels: templateMeta.Labels, Annotations: templateMeta.Annotations}, Spec: *workload.Spec.PodTemplate.Spec.DeepCopy()}
 	pod.Name, pod.Namespace, pod.OwnerReferences = assignment.PodName, workload.Namespace, owner(workload)
@@ -137,14 +164,14 @@ func buildPod(workload *ttapi.Workload, rankIndex int, assignment ttapi.RankAssi
 			corev1.EnvVar{Name: "TT_RANK", Value: fmt.Sprint(rankIndex)},
 			corev1.EnvVar{Name: "TT_WORLD_SIZE", Value: fmt.Sprint(len(workload.Spec.Ranks))},
 		)
-		hardenPod(pod)
+		hardenPod(pod, disableAppArmor)
 		return pod, nil
 	}
 	return nil, fmt.Errorf("container %q not found in Pod template", workload.Spec.ContainerName)
 }
 
 // hardenPod applies the production baseline to every controller-created container.
-func hardenPod(pod *corev1.Pod) {
+func hardenPod(pod *corev1.Pod, disableAppArmor bool) {
 	trueValue, falseValue := true, false
 	pod.Spec.AutomountServiceAccountToken = &falseValue
 	if pod.Spec.SecurityContext == nil {
@@ -152,7 +179,9 @@ func hardenPod(pod *corev1.Pod) {
 	}
 	pod.Spec.SecurityContext.RunAsNonRoot = &trueValue
 	pod.Spec.SecurityContext.SeccompProfile = &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}
-	pod.Spec.SecurityContext.AppArmorProfile = &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeRuntimeDefault}
+	if !disableAppArmor {
+		pod.Spec.SecurityContext.AppArmorProfile = &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeRuntimeDefault}
+	}
 	containers := []*[]corev1.Container{&pod.Spec.InitContainers, &pod.Spec.Containers}
 	for _, group := range containers {
 		for index := range *group {

@@ -24,7 +24,7 @@ func TestEnsureChildrenRejectsNameCollisions(t *testing.T) {
 	if err := controller.ensureClaim(context.Background(), workload, rank, assignment); err == nil {
 		t.Fatal("foreign ResourceClaim collision was accepted")
 	}
-	foreignPod, err := buildPod(workload, 0, assignment)
+	foreignPod, err := buildPod(workload, 0, assignment, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,21 +35,46 @@ func TestEnsureChildrenRejectsNameCollisions(t *testing.T) {
 	}
 }
 
+// TestEnsurePodAcceptsItsScheduledChild verifies pinned defaults keep exact-spec reconciliation stable.
+func TestEnsurePodAcceptsItsScheduledChild(t *testing.T) {
+	workload := safeWorkload()
+	assignment := ttapi.RankAssignment{NodeName: "node-a", ClaimName: "claim", PodName: "pod"}
+	controller := &Controller{Kube: fake.NewSimpleClientset()}
+	if err := controller.ensurePod(context.Background(), workload, 0, assignment); err != nil {
+		t.Fatal(err)
+	}
+	pod, err := controller.Kube.CoreV1().Pods(workload.Namespace).Get(context.Background(), assignment.PodName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod.Spec.NodeName = assignment.NodeName
+	if _, err := controller.Kube.CoreV1().Pods(workload.Namespace).Update(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.ensurePod(context.Background(), workload, 0, assignment); err != nil {
+		t.Fatalf("scheduled controller child was rejected: %v", err)
+	}
+}
+
 // TestBuildPodAppliesRestrictedSecurity verifies every generated rank Pod is hardened.
 func TestBuildPodAppliesRestrictedSecurity(t *testing.T) {
 	workload := safeWorkload()
 	assignment := ttapi.RankAssignment{NodeName: "node-a", ClaimName: "claim", PodName: "pod"}
-	pod, err := buildPod(workload, 0, assignment)
+	pod, err := buildPod(workload, 0, assignment, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	container := pod.Spec.Containers[0]
 	if pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken ||
-		pod.Spec.SecurityContext == nil || pod.Spec.SecurityContext.SeccompProfile == nil ||
+		pod.Spec.SecurityContext == nil || pod.Spec.SecurityContext.SeccompProfile == nil || pod.Spec.SecurityContext.AppArmorProfile == nil ||
 		container.SecurityContext == nil || container.SecurityContext.AllowPrivilegeEscalation == nil ||
 		*container.SecurityContext.AllowPrivilegeEscalation || container.SecurityContext.ReadOnlyRootFilesystem == nil ||
 		!*container.SecurityContext.ReadOnlyRootFilesystem || len(container.SecurityContext.Capabilities.Drop) != 1 {
 		t.Fatalf("Pod security baseline is incomplete: %#v", pod.Spec)
+	}
+	validationPod, err := buildPod(workload, 0, assignment, true)
+	if err != nil || validationPod.Spec.SecurityContext.AppArmorProfile != nil || validationPod.Spec.SecurityContext.SeccompProfile == nil {
+		t.Fatalf("synthetic AppArmor override changed the remaining security baseline: %#v, %v", validationPod.Spec, err)
 	}
 }
 
