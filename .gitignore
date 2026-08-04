@@ -47,3 +47,5 @@ coverage.txt
 *.njsproj
 *.sln
 *.swp
+
+TODO.md
