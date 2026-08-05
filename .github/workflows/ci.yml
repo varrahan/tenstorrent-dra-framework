@@ -80,7 +80,22 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Check dependency graph availability
+        id: dependency-graph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status="$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.security_and_analysis.dependency_graph.status // empty')"
+          if [ "$status" = "enabled" ]; then
+            echo "supported=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "supported=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Dependency graph is ${status:-disabled}; skipping dependency review."
+          fi
       - uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
+        if: steps.dependency-graph.outputs.supported == 'true'
+        id: dependency-review
         with:
           fail-on-severity: moderate
           allow-licenses: Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, ImageMagick, MIT, MPL-2.0
