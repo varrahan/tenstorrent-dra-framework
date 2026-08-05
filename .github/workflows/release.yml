@@ -107,11 +107,13 @@ jobs:
           image_repository="$(awk '$1 == "repository:" { print $2; exit }' deployments/helm/tenstorrent-dra/values.yaml)"
           [[ "$image_repository" == "ghcr.io/$owner/tenstorrent-dra" ]]
           epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
-          echo "date=$(date -u --date="@$epoch" +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-          echo "image_name=ghcr.io/$owner/tenstorrent-dra" >> "$GITHUB_OUTPUT"
-          echo "chart_registry=oci://ghcr.io/$owner/charts" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "epoch=$epoch"
+            echo "date=$(date -u --date="@$epoch" +%Y-%m-%dT%H:%M:%SZ)"
+            echo "image_name=ghcr.io/$owner/tenstorrent-dra"
+            echo "chart_registry=oci://ghcr.io/$owner/charts"
+          } >> "$GITHUB_OUTPUT"
       - name: Validate source release gates
         run: go mod verify && make build ci
       - name: Build release files
@@ -165,7 +167,7 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           first="$(docker image inspect "tt-dra-release-candidate:${GITHUB_SHA}" --format '{{.Id}}')"
-          docker build --no-cache --provenance=false --tag tt-dra-release-rebuild:${GITHUB_SHA} \
+          docker build --no-cache --provenance=false --tag "tt-dra-release-rebuild:${GITHUB_SHA}" \
             --build-arg VERSION="$VERSION" \
             --build-arg VCS_REF="$GITHUB_SHA" \
             --build-arg BUILD_DATE="$BUILD_DATE" \
