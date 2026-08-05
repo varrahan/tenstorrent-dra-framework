@@ -19,11 +19,15 @@ overrides. Production defaults remain ioctl reset and dedicated IOMMU groups.
 ```bash
 make -C test/vm fake-hardware
 make -C test/vm vm-validate
+make -C test/vm vm-chaos
 ```
 
 Use `make -C test/vm kind-clean` to remove the disposable cluster. Synthetic
 trees are validation fixtures only. The harness deliberately keeps the
-production workload AppArmor profile enabled. Its cluster name, kind config,
-image names, and AppArmor behavior are fixed constants rather than environment
-overrides. Physical hardware certification remains a release gate in
-[`TODO.md`](../TODO.md).
+production workload AppArmor profile enabled in `vm-validate`. The separate
+chaos suite disables AppArmor explicitly so it can isolate lifecycle and
+control-plane interruption behavior, captures evidence under `artifacts/`, and
+always removes its disposable cluster. Cluster names, kind config, and image
+names are fixed validation constants rather than runtime overrides. The
+physical matrix, preflight, evidence rules, and remaining lab-owned release
+gates are in [`CERTIFICATION.md`](CERTIFICATION.md).

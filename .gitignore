@@ -12,6 +12,7 @@ bin/
 obj/
 /dist/
 /coverage/
+/artifacts/
 
 # Core dumps
 gmon.out

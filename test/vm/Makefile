@@ -5,7 +5,7 @@ KIND_CONFIG := kind/ttsim-dra.yaml
 HOST_UID := $(shell id -u)
 HOST_GID := $(shell id -g)
 
-.PHONY: fake-hardware kind-smoke kind-clean vm-validate
+.PHONY: fake-hardware kind-smoke kind-chaos kind-clean vm-validate vm-chaos
 
 fake-hardware:
 	python3 ./ttsim_fake_hardware.py --root /tmp/tt-node-a --devices wormhole,blackhole
@@ -15,7 +15,12 @@ fake-hardware:
 kind-smoke:
 	bash ./validate.sh $(KIND_CLUSTER) $(KIND_CONFIG)
 
+kind-chaos:
+	bash ./chaos.sh $(KIND_CLUSTER)-chaos $(KIND_CONFIG)
+
 kind-clean:
 	kind delete cluster --name "$(KIND_CLUSTER)" || true
 
 vm-validate: fake-hardware kind-smoke
+
+vm-chaos: fake-hardware kind-chaos

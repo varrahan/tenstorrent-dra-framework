@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -10,12 +11,14 @@ import (
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/controller"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 )
 
@@ -188,6 +191,34 @@ func TestControllerRejectsInvalidWorkloadWithoutChildren(t *testing.T) {
 	claims, _ := kube.ResourceV1().ResourceClaims("default").List(context.Background(), metav1.ListOptions{})
 	if len(pods.Items) != 0 || len(claims.Items) != 0 {
 		t.Fatalf("invalid workload created children: pods=%d claims=%d", len(pods.Items), len(claims.Items))
+	}
+}
+
+// TestControllerRetriesWorkloadStatusConflict verifies a stale resource version
+// cannot strand an otherwise valid assignment.
+func TestControllerRetriesWorkloadStatusConflict(t *testing.T) {
+	dynamicClient := controllerDynamicClient(t, controllerNodeTopology(), controllerWorkload("conflict"))
+	kube := kubernetesfake.NewSimpleClientset()
+	conflicts := 0
+	dynamicClient.PrependReactor("update", ttapi.WorkloadGVR.Resource, func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if conflicts > 0 {
+			return false, nil, nil
+		}
+		conflicts++
+		return true, nil, apierrors.NewConflict(
+			schema.GroupResource{Group: ttapi.WorkloadGVR.Group, Resource: ttapi.WorkloadGVR.Resource},
+			"conflict", errors.New("injected resource version conflict"),
+		)
+	})
+	cancel, done := runController(kube, dynamicClient)
+	defer cancel()
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "conflict") == "Assigned" })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if conflicts != 1 {
+		t.Fatalf("injected conflicts = %d, want 1", conflicts)
 	}
 }
 

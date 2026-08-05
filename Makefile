@@ -30,7 +30,7 @@ BUILD_FLAGS := -mod=readonly -trimpath -buildvcs=false -ldflags="$(LDFLAGS)"
 .PHONY: build test race coverage coverage-check fmt-check vet staticcheck govulncheck \
 	license-check secret-scan actionlint shellcheck security image-build image-check \
 	supply-chain-check helm-lint helm-package release-binaries release-reproducibility \
-	release-checksums release vm-validation check ci clean
+	release-checksums release vm-validation chaos-validation hardware-certification check ci clean
 
 build:
 	$(GO) build $(BUILD_FLAGS) ./...
@@ -74,7 +74,8 @@ actionlint:
 
 shellcheck:
 	$(DOCKER) run --rm --volume "$(CURDIR):/mnt:ro" --workdir /mnt $(SHELLCHECK_IMAGE) \
-		shellcheck test/coverage/check.sh test/helm/validate.sh test/supply-chain/validate.sh test/vm/validate.sh
+		shellcheck test/coverage/check.sh test/hardware/certify.sh test/helm/validate.sh \
+		test/supply-chain/validate.sh test/vm/chaos.sh test/vm/validate.sh
 
 supply-chain-check:
 	bash test/supply-chain/validate.sh
@@ -123,6 +124,13 @@ release: clean release-binaries helm-package release-checksums
 
 vm-validation:
 	$(MAKE) -C test/vm vm-validate
+
+chaos-validation:
+	$(MAKE) -C test/vm vm-chaos
+
+hardware-certification:
+	@test -n "$(MATRIX_ENTRY)" || { echo 'MATRIX_ENTRY is required'; exit 2; }
+	bash test/hardware/certify.sh preflight "$(MATRIX_ENTRY)"
 
 check: fmt-check vet build test helm-lint
 

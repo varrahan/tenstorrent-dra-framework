@@ -107,18 +107,24 @@ and Kubernetes API Service identity are injected by Kubernetes, while rank
 identity is controller-generated for managed workloads. The authoritative list
 and override rules are in [`ENV.md`](ENV.md).
 
-Every image process uses UID and GID 65532. Controller and cleanup containers
-run without privilege escalation or Linux capabilities. The privileged,
-non-root node DaemonSet is the sole Pod Security exception; privileged mode
-still grants the capabilities required to cross root-owned host-path and
-device permission boundaries. It needs
+The image defaults to UID and GID 65532, and the controller and cleanup
+containers retain that identity without privilege escalation or Linux
+capabilities. The node DaemonSet is the sole Pod Security exception: it
+explicitly runs as root and privileged because Linux clears effective
+capabilities when this image is forced to a non-root UID, preventing access to
+root-owned CDI, kubelet-plugin, registrar, state, and device paths. Running a
+non-root privileged node agent is therefore unsupported unless the operator
+pre-provisions and continuously maintains equivalent ownership on every
+required host path. The node agent needs
 read/write access to `/dev/tenstorrent`, read-only access to the configured
 Tenstorrent class, PCI, and backing device sysfs roots, and write access to the
 state, CDI, kubelet plugin, and registrar directories. No whole `/sys` mount is
-used. Cluster operators must label the node-agent namespace for privileged Pod
-Security and apply local SELinux/AppArmor rules only to those eight paths. Workload Pods need
-no device hostPath, privileged, SELinux, or AppArmor exception because CDI and
-the container runtime inject only allocated device nodes.
+used. Root and privileged execution do not expand the stated tenant boundary:
+host root and other privileged workloads are already outside it. Cluster
+operators must label the node-agent namespace for privileged Pod Security and
+apply local SELinux/AppArmor rules only to those eight paths. Workload Pods
+need no device hostPath, privileged, SELinux, or AppArmor exception because CDI
+and the container runtime inject only allocated device nodes.
 
 ## Controller lifecycle and limits
 

@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "compatibility": {
+    "firmwareMajorMinor": "19.2",
+    "driverABI": 2,
+    "kmdMinorRange": [5, 10],
+    "kernelRange": ["5.4", "6.18"],
+    "kubernetesMinimum": "1.34",
+    "containerRuntime": "containerd 2.x with CDI enabled",
+    "helm": "4.2.3"
+  },
+  "entries": [
+    {
+      "id": "wormhole-single-floor",
+      "chipCounts": {"wormhole": 1, "blackhole": 0},
+      "minimumNodes": 1,
+      "boardConfiguration": "single ASIC",
+      "kmd": "2.5.x",
+      "kernel": "5.4.x",
+      "topology": "local"
+    },
+    {
+      "id": "wormhole-multi-current",
+      "chipCounts": {"wormhole": 2, "blackhole": 0},
+      "minimumNodes": 1,
+      "boardConfiguration": "multi-ASIC",
+      "kmd": "2.10.x",
+      "kernel": "6.6.x",
+      "topology": "intra-node-ring"
+    },
+    {
+      "id": "wormhole-single-ceiling",
+      "chipCounts": {"wormhole": 1, "blackhole": 0},
+      "minimumNodes": 1,
+      "boardConfiguration": "single ASIC",
+      "kmd": "2.10.x",
+      "kernel": "6.18.x",
+      "topology": "local"
+    },
+    {
+      "id": "blackhole-single-floor",
+      "chipCounts": {"wormhole": 0, "blackhole": 1},
+      "minimumNodes": 1,
+      "boardConfiguration": "single ASIC",
+      "kmd": "2.5.x",
+      "kernel": "5.4.x",
+      "topology": "local"
+    },
+    {
+      "id": "blackhole-multi-current",
+      "chipCounts": {"wormhole": 0, "blackhole": 2},
+      "minimumNodes": 1,
+      "boardConfiguration": "multi-ASIC",
+      "kmd": "2.10.x",
+      "kernel": "6.6.x",
+      "topology": "intra-node-ring"
+    },
+    {
+      "id": "blackhole-single-ceiling",
+      "chipCounts": {"wormhole": 0, "blackhole": 1},
+      "minimumNodes": 1,
+      "boardConfiguration": "single ASIC",
+      "kmd": "2.10.x",
+      "kernel": "6.18.x",
+      "topology": "local"
+    },
+    {
+      "id": "mixed-multi-asic",
+      "chipCounts": {"wormhole": 1, "blackhole": 1},
+      "minimumNodes": 1,
+      "boardConfiguration": "mixed whole-card node",
+      "kmd": "2.10.x",
+      "kernel": "6.6.x",
+      "topology": "intra-node-ring"
+    },
+    {
+      "id": "wormhole-scaleout-multi-node-fabric",
+      "chipCounts": {"wormhole": 2, "blackhole": 0},
+      "minimumNodes": 2,
+      "boardConfiguration": "homogeneous Wormhole nodes in one physical Ethernet fabric",
+      "kmd": "2.10.x",
+      "kernel": "6.6.x",
+      "topology": "multi-node-ring"
+    },
+    {
+      "id": "blackhole-scaleout-multi-node-fabric",
+      "chipCounts": {"wormhole": 0, "blackhole": 2},
+      "minimumNodes": 2,
+      "boardConfiguration": "homogeneous Blackhole nodes in one physical Ethernet fabric",
+      "kmd": "2.10.x",
+      "kernel": "6.6.x",
+      "topology": "multi-node-ring"
+    }
+  ]
+}

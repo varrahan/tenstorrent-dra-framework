@@ -27,4 +27,5 @@ Documents:
 - [RELEASE.md](RELEASE.md): CI gates, immutable packaging, SBOMs, attestations, signatures, release verification, and rollback.
 - [RUN.md](RUN.md): prerequisite, build, deployment, inspection, troubleshooting, and cleanup commands.
 - [VM.md](VM.md): synthetic heterogeneous hardware and kind validation.
+- [CERTIFICATION.md](CERTIFICATION.md): failure/chaos gates, physical matrix, evidence, and release criteria.
 - [README.md](README.md): this project-wide routing document.

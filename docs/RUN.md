@@ -94,6 +94,14 @@ sanitization, audit, teardown, and device reuse.
 make -C test/vm vm-validate
 ```
 
+Run the destructive synthetic fault and restart suite separately. It creates
+and removes a dedicated `tt-dra-chaos` kind cluster and writes its evidence
+under `artifacts/`:
+
+```bash
+make -C test/vm vm-chaos
+```
+
 The validation script mounts the synthetic trees as `/tt-sys` in the kind
 workers and passes these paths to the driver. Synthetic character devices do
 not implement the `tt-kmd` reset ioctl, so this disposable path explicitly uses

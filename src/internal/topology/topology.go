@@ -33,7 +33,9 @@ func PublishNode(ctx context.Context, client dynamic.Interface, nodeName string,
 				APIVersion: "v1", Kind: "Node", Name: nodeName, UID: nodeUID,
 			}},
 		},
-		Spec: ttapi.NodeTopologySpec{NodeName: nodeName, ObservedAt: metav1.NewTime(snapshot.ObservedAt)},
+		Spec: ttapi.NodeTopologySpec{
+			NodeName: nodeName, ObservedAt: metav1.NewTime(snapshot.ObservedAt), Devices: []ttapi.TopologyDevice{},
+		},
 	}
 	for _, item := range snapshot.Devices {
 		if !item.Eligible {

@@ -12,6 +12,7 @@ import (
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/device"
 	tttopology "github.com/varrahan/tenstorrent-dra-framework/src/internal/topology"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -180,6 +181,10 @@ func TestPublishNodeCreatesAndUpdatesTopology(t *testing.T) {
 	}
 	if len(topology.Spec.Devices) != 0 {
 		t.Fatalf("updated topology still has devices: %#v", topology.Spec.Devices)
+	}
+	devices, found, err := unstructured.NestedSlice(object.Object, "spec", "devices")
+	if err != nil || !found || devices == nil || len(devices) != 0 {
+		t.Fatalf("empty topology omitted required devices array: %#v, found=%v, err=%v", devices, found, err)
 	}
 }
 
