@@ -28,7 +28,7 @@ jobs:
         run: bash test/vm/certify.sh "$GITHUB_SHA" "$EVIDENCE_DIR"
       - name: Preserve VM certification evidence
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vm-certification-${{ github.sha }}
           path: ${{ runner.temp }}/tt-vm-certification-${{ github.sha }}
@@ -93,7 +93,7 @@ jobs:
             echo "supported=false" >> "$GITHUB_OUTPUT"
             echo "::warning::Dependency graph is ${status:-disabled}; skipping dependency review."
           fi
-      - uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         if: steps.dependency-graph.outputs.supported == 'true'
         id: dependency-review
         with:
@@ -110,7 +110,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Derive reproducible metadata
         id: metadata
         shell: bash
@@ -119,7 +119,7 @@ jobs:
           echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u --date="@$epoch" +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - name: Build production image
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           load: true
@@ -167,7 +167,7 @@ jobs:
           output-file: tt-dra-ci.spdx.json
           upload-artifact: false
           syft-version: v1.44.0
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tt-dra-ci-sbom
           path: tt-dra-ci.spdx.json

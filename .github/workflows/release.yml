@@ -28,7 +28,7 @@ jobs:
         run: bash test/vm/certify.sh "$GITHUB_SHA" "$EVIDENCE_DIR"
       - name: Preserve VM certification evidence
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-vm-certification-${{ github.sha }}
           path: ${{ runner.temp }}/tt-vm-certification-${{ github.sha }}
@@ -123,9 +123,9 @@ jobs:
           SOURCE_DATE_EPOCH: ${{ steps.release.outputs.epoch }}
           BUILD_DATE: ${{ steps.release.outputs.date }}
         run: make release release-reproducibility
-      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-      - uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -145,7 +145,7 @@ jobs:
             exit 1
           fi
       - name: Build scan candidate
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           platforms: linux/amd64
@@ -211,7 +211,7 @@ jobs:
           cache-db: true
       - name: Build and push multi-architecture image
         id: image
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -262,27 +262,27 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
         run: make release-checksums
       - name: Attest image build provenance
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-name: ${{ steps.release.outputs.image_name }}
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
       - name: Attest AMD64 image SBOM
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-name: ${{ steps.release.outputs.image_name }}
           subject-digest: ${{ steps.platforms.outputs.amd64 }}
           sbom-path: dist/tenstorrent-dra-${{ steps.release.outputs.version }}-linux-amd64.spdx.json
           push-to-registry: true
       - name: Attest ARM64 image SBOM
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-name: ${{ steps.release.outputs.image_name }}
           subject-digest: ${{ steps.platforms.outputs.arm64 }}
           sbom-path: dist/tenstorrent-dra-${{ steps.release.outputs.version }}-linux-arm64.spdx.json
           push-to-registry: true
       - name: Attest release files
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-checksums: dist/checksums.txt
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
