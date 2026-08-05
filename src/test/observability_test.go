@@ -1,4 +1,4 @@
-package observability
+package test
 
 import (
 	"errors"
@@ -7,13 +7,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/varrahan/tenstorrent-dra-framework/src/internal/observability"
 )
 
 // TestHealthEndpointsTrackIndependentStates verifies Kubernetes probes do not
 // conflate process liveness with initialization or readiness.
 func TestHealthEndpointsTrackIndependentStates(t *testing.T) {
-	metrics := NewMetrics()
-	health := NewHealth("node", "worker-a", metrics)
+	metrics := observability.NewMetrics()
+	health := observability.NewHealth("node", "worker-a", metrics)
 	handler := health.Handler(metrics.Handler())
 
 	assertStatus(t, handler, "/livez", http.StatusOK)
@@ -32,7 +34,7 @@ func TestHealthEndpointsTrackIndependentStates(t *testing.T) {
 // TestMetricsExposeProductionSignals verifies the required operations surface
 // is present in Prometheus exposition format.
 func TestMetricsExposeProductionSignals(t *testing.T) {
-	metrics := NewMetrics()
+	metrics := observability.NewMetrics()
 	metrics.SetComponentReady("node", "worker-a", true)
 	metrics.ObserveInventory("worker-a", time.Now().Add(-time.Second), time.Minute, 2, 1, 1)
 	metrics.ObserveClaim("worker-a", "prepare", 25*time.Millisecond, errors.New("prepare failed"))
@@ -61,15 +63,5 @@ func TestMetricsExposeProductionSignals(t *testing.T) {
 		if !strings.Contains(body, signal) {
 			t.Fatalf("metrics output does not contain %q:\n%s", signal, body)
 		}
-	}
-}
-
-func assertStatus(t *testing.T, handler http.Handler, path string, expected int) {
-	t.Helper()
-	request := httptest.NewRequest(http.MethodGet, path, nil)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != expected {
-		t.Fatalf("GET %s status = %d, want %d", path, response.Code, expected)
 	}
 }

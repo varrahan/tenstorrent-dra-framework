@@ -37,14 +37,14 @@ build:
 	$(GO) build $(BUILD_FLAGS) ./...
 
 test:
-	$(GO) test ./...
+	$(GO) test ./src/test
 
 race:
-	$(GO) test -race ./...
+	$(GO) test -race ./src/test
 
 coverage:
 	mkdir -p coverage
-	$(GO) test -race -covermode=atomic -coverpkg=./src/... -coverprofile=coverage/coverage.out ./src/...
+	$(GO) test -race -covermode=atomic -coverpkg=./src/internal/... -coverprofile=coverage/coverage.out ./src/test
 
 coverage-check: coverage
 	bash test/coverage/check.sh coverage/coverage.out

@@ -1,4 +1,4 @@
-package controller
+package test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	ttapi "github.com/varrahan/tenstorrent-dra-framework/src/internal/api"
+	"github.com/varrahan/tenstorrent-dra-framework/src/internal/controller"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,7 +28,7 @@ func TestControllerFreezesNewWorkAboveScaleLimit(t *testing.T) {
 	if err := informer.GetStore().Add(object); err != nil {
 		t.Fatal(err)
 	}
-	for index := 0; index < MaxWorkloads; index++ {
+	for index := 0; index < controller.MaxWorkloads; index++ {
 		item := object.DeepCopy()
 		item.SetName(fmt.Sprintf("job-%04d", index))
 		if err := informer.GetStore().Add(item); err != nil {
@@ -37,8 +38,9 @@ func TestControllerFreezesNewWorkAboveScaleLimit(t *testing.T) {
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
 		runtime.NewScheme(), map[schema.GroupVersionResource]string{ttapi.WorkloadGVR: "TenstorrentWorkloadList"}, object,
 	)
-	controller := &Controller{Dynamic: client, workloadInformer: informer}
-	if err := controller.reconcileWorkloadKey(context.Background(), "default/job"); err != nil {
+	controllerUnderTest := &controller.Controller{Dynamic: client}
+	controllerUnderTest.SetWorkloadInformer(informer)
+	if err := controllerUnderTest.ReconcileWorkloadKey(context.Background(), "default/job"); err != nil {
 		t.Fatal(err)
 	}
 	current, err := client.Resource(ttapi.WorkloadGVR).Namespace("default").Get(context.Background(), "job", metav1.GetOptions{})
@@ -57,16 +59,13 @@ func TestControllerFreezesNewWorkAboveScaleLimit(t *testing.T) {
 // TestDeletedWorkloadReleasesPendingReservations verifies deletion cleanup stays on the queue worker.
 func TestDeletedWorkloadReleasesPendingReservations(t *testing.T) {
 	informer := cache.NewSharedIndexInformer(nil, &unstructured.Unstructured{}, 0, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
-	controller := &Controller{
-		workloadInformer: informer,
-		pending: map[string][]ttapi.RankAssignment{
-			"default/deleted": {{Rank: "rank"}},
-		},
-	}
-	if err := controller.reconcileWorkloadKey(context.Background(), "default/deleted"); err != nil {
+	controllerUnderTest := &controller.Controller{}
+	controllerUnderTest.SetWorkloadInformer(informer)
+	controllerUnderTest.SetPending(map[string][]ttapi.RankAssignment{"default/deleted": {{Rank: "rank"}}})
+	if err := controllerUnderTest.ReconcileWorkloadKey(context.Background(), "default/deleted"); err != nil {
 		t.Fatal(err)
 	}
-	if len(controller.pending) != 0 {
-		t.Fatalf("deleted workload retained reservations: %#v", controller.pending)
+	if len(controllerUnderTest.Pending()) != 0 {
+		t.Fatalf("deleted workload retained reservations: %#v", controllerUnderTest.Pending())
 	}
 }

@@ -1,4 +1,4 @@
-package controller
+package test
 
 import (
 	"context"
@@ -8,11 +8,10 @@ import (
 	"time"
 
 	ttapi "github.com/varrahan/tenstorrent-dra-framework/src/internal/api"
-	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
+	"github.com/varrahan/tenstorrent-dra-framework/src/internal/controller"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 )
@@ -22,19 +21,19 @@ func TestEnsureChildrenRejectsNameCollisions(t *testing.T) {
 	workload := safeWorkload()
 	assignment := ttapi.RankAssignment{Rank: "rank-0", NodeName: "node-a", ClaimName: "child", PodName: "child", Devices: []ttapi.AssignedDevice{{Pool: "node-a", Name: "device", StableID: "uuid-device"}}}
 	rank := workload.Spec.Ranks[0]
-	foreignClaim := buildClaim(workload, rank, assignment)
+	foreignClaim := controller.BuildClaim(workload, rank, assignment)
 	foreignClaim.OwnerReferences = nil
-	controller := &Controller{Kube: fake.NewSimpleClientset(foreignClaim)}
-	if err := controller.ensureClaim(context.Background(), workload, rank, assignment); err == nil {
+	controllerUnderTest := &controller.Controller{Kube: fake.NewSimpleClientset(foreignClaim)}
+	if err := controllerUnderTest.EnsureClaim(context.Background(), workload, rank, assignment); err == nil {
 		t.Fatal("foreign ResourceClaim collision was accepted")
 	}
-	foreignPod, err := buildPod(workload, 0, assignment, false)
+	foreignPod, err := controller.BuildPod(workload, 0, assignment, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	foreignPod.OwnerReferences = nil
-	controller.Kube = fake.NewSimpleClientset(foreignPod)
-	if err := controller.ensurePod(context.Background(), workload, 0, assignment); err == nil {
+	controllerUnderTest.Kube = fake.NewSimpleClientset(foreignPod)
+	if err := controllerUnderTest.EnsurePod(context.Background(), workload, 0, assignment); err == nil {
 		t.Fatal("foreign Pod collision was accepted")
 	}
 }
@@ -43,35 +42,36 @@ func TestEnsureChildrenRejectsNameCollisions(t *testing.T) {
 func TestEnsurePodAcceptsItsScheduledChild(t *testing.T) {
 	workload := safeWorkload()
 	assignment := ttapi.RankAssignment{NodeName: "node-a", ClaimName: "claim", PodName: "pod"}
-	controller := &Controller{Kube: fake.NewSimpleClientset()}
-	if err := controller.ensurePod(context.Background(), workload, 0, assignment); err != nil {
+	controllerUnderTest := &controller.Controller{Kube: fake.NewSimpleClientset()}
+	if err := controllerUnderTest.EnsurePod(context.Background(), workload, 0, assignment); err != nil {
 		t.Fatal(err)
 	}
-	pod, err := controller.Kube.CoreV1().Pods(workload.Namespace).Get(context.Background(), assignment.PodName, metav1.GetOptions{})
+	pod, err := controllerUnderTest.Kube.CoreV1().Pods(workload.Namespace).Get(context.Background(), assignment.PodName, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	pod.Spec.NodeName = assignment.NodeName
-	if _, err := controller.Kube.CoreV1().Pods(workload.Namespace).Update(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
+	if _, err := controllerUnderTest.Kube.CoreV1().Pods(workload.Namespace).Update(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := controller.ensurePod(context.Background(), workload, 0, assignment); err != nil {
+	if err := controllerUnderTest.EnsurePod(context.Background(), workload, 0, assignment); err != nil {
 		t.Fatalf("scheduled controller child was rejected: %v", err)
 	}
 }
 
+// TestDeleteChildrenIsIdempotentAndReportsAPIErrors verifies one delete run is enough and failures surface with intent.
 func TestDeleteChildrenIsIdempotentAndReportsAPIErrors(t *testing.T) {
 	workload := safeWorkload()
 	assignment := ttapi.RankAssignment{ClaimName: "claim", PodName: "pod"}
 	workload.Status.Assignments = []ttapi.RankAssignment{assignment}
-	controller := &Controller{Kube: fake.NewSimpleClientset(
+	controllerUnderTest := &controller.Controller{Kube: fake.NewSimpleClientset(
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: assignment.PodName, Namespace: workload.Namespace}},
-		buildClaim(workload, workload.Spec.Ranks[0], assignment),
+		controller.BuildClaim(workload, workload.Spec.Ranks[0], assignment),
 	)}
-	if err := controller.deleteChildren(context.Background(), workload); err != nil {
+	if err := controllerUnderTest.DeleteChildren(context.Background(), workload); err != nil {
 		t.Fatalf("delete children: %v", err)
 	}
-	if err := controller.deleteChildren(context.Background(), workload); err != nil {
+	if err := controllerUnderTest.DeleteChildren(context.Background(), workload); err != nil {
 		t.Fatalf("idempotent delete children: %v", err)
 	}
 
@@ -79,8 +79,8 @@ func TestDeleteChildrenIsIdempotentAndReportsAPIErrors(t *testing.T) {
 	podFailure.Fake.PrependReactor("delete", "pods", func(clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("pod API unavailable")
 	})
-	controller.Kube = podFailure
-	if err := controller.deleteChildren(context.Background(), workload); err == nil || !strings.Contains(err.Error(), "delete Pod") {
+	controllerUnderTest.Kube = podFailure
+	if err := controllerUnderTest.DeleteChildren(context.Background(), workload); err == nil || !strings.Contains(err.Error(), "delete Pod") {
 		t.Fatalf("Pod deletion error = %v", err)
 	}
 
@@ -88,8 +88,8 @@ func TestDeleteChildrenIsIdempotentAndReportsAPIErrors(t *testing.T) {
 	claimFailure.Fake.PrependReactor("delete", "resourceclaims", func(clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("claim API unavailable")
 	})
-	controller.Kube = claimFailure
-	if err := controller.deleteChildren(context.Background(), workload); err == nil || !strings.Contains(err.Error(), "delete ResourceClaim") {
+	controllerUnderTest.Kube = claimFailure
+	if err := controllerUnderTest.DeleteChildren(context.Background(), workload); err == nil || !strings.Contains(err.Error(), "delete ResourceClaim") {
 		t.Fatalf("ResourceClaim deletion error = %v", err)
 	}
 }
@@ -98,7 +98,7 @@ func TestDeleteChildrenIsIdempotentAndReportsAPIErrors(t *testing.T) {
 func TestBuildPodAppliesRestrictedSecurity(t *testing.T) {
 	workload := safeWorkload()
 	assignment := ttapi.RankAssignment{NodeName: "node-a", ClaimName: "claim", PodName: "pod"}
-	pod, err := buildPod(workload, 0, assignment, false)
+	pod, err := controller.BuildPod(workload, 0, assignment, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestBuildPodAppliesRestrictedSecurity(t *testing.T) {
 		!*container.SecurityContext.ReadOnlyRootFilesystem || len(container.SecurityContext.Capabilities.Drop) != 1 {
 		t.Fatalf("Pod security baseline is incomplete: %#v", pod.Spec)
 	}
-	validationPod, err := buildPod(workload, 0, assignment, true)
+	validationPod, err := controller.BuildPod(workload, 0, assignment, true)
 	if err != nil || validationPod.Spec.SecurityContext.AppArmorProfile != nil || validationPod.Spec.SecurityContext.SeccompProfile == nil {
 		t.Fatalf("synthetic AppArmor override changed the remaining security baseline: %#v, %v", validationPod.Spec, err)
 	}
@@ -137,7 +137,7 @@ func TestValidateWorkloadRejectsUnsafeTemplates(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			workload := safeWorkload()
 			mutate(workload)
-			if err := validateWorkload(workload); err == nil {
+			if err := controller.ValidateWorkload(workload); err == nil {
 				t.Fatal("unsafe workload was accepted")
 			}
 		})
@@ -150,27 +150,12 @@ func TestSetWorkloadStatusPreservesTransitionTime(t *testing.T) {
 	workload.Generation = 7
 	old := metav1.NewTime(time.Unix(1, 0).UTC())
 	workload.Status.Conditions = []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse, Reason: "Pending", LastTransitionTime: old}}
-	setWorkloadStatus(workload, "Pending", false, "Pending", "still waiting")
+	controller.SetWorkloadStatus(workload, "Pending", false, "Pending", "still waiting")
 	if !workload.Status.Conditions[0].LastTransitionTime.Equal(&old) || workload.Status.Conditions[0].ObservedGeneration != 7 {
 		t.Fatalf("stable transition metadata changed: %#v", workload.Status.Conditions[0])
 	}
-	setWorkloadStatus(workload, "Failed", false, "Invalid", "failed")
+	controller.SetWorkloadStatus(workload, "Failed", false, "Invalid", "failed")
 	if workload.Status.Conditions[0].LastTransitionTime.Equal(&old) {
 		t.Fatal("changed condition retained its old transition time")
-	}
-}
-
-// safeWorkload returns a minimal workload accepted by the production validator.
-func safeWorkload() *ttapi.Workload {
-	return &ttapi.Workload{
-		ObjectMeta: metav1.ObjectMeta{Name: "job", Namespace: "default", UID: types.UID("job-uid")},
-		Spec: ttapi.WorkloadSpec{
-			ContainerName: "worker",
-			PodTemplate: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
-				RestartPolicy: corev1.RestartPolicyNever,
-				Containers:    []corev1.Container{{Name: "worker", Image: "example.invalid/worker"}},
-			}},
-			Ranks: []ttapi.WorkloadRank{{Name: "rank-0", DeviceClassName: dra.GenericDeviceClassName, Count: 1}},
-		},
 	}
 }
