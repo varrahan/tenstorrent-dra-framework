@@ -8,8 +8,10 @@ nodes:
   extraMounts:
   - {hostPath: /tmp/tt-node-a/dev/tenstorrent, containerPath: /dev/tenstorrent}
   - {hostPath: /tmp/tt-node-a/sys, containerPath: /tt-sys}
+  - {hostPath: /sys/kernel/security, containerPath: /sys/kernel/security}
 - role: worker
   image: kindest/node:v1.34.0
   extraMounts:
   - {hostPath: /tmp/tt-node-b/dev/tenstorrent, containerPath: /dev/tenstorrent}
   - {hostPath: /tmp/tt-node-b/sys, containerPath: /tt-sys}
+  - {hostPath: /sys/kernel/security, containerPath: /sys/kernel/security}

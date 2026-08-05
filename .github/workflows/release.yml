@@ -12,8 +12,65 @@ concurrency:
 permissions: {}
 
 jobs:
+  vm-certification:
+    name: QEMU VM certification
+    runs-on: [self-hosted, linux, x64, tt-qemu-vm]
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Run exact-commit smoke and chaos certification
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/tt-vm-certification-${{ github.sha }}
+        run: bash test/vm/certify.sh "$GITHUB_SHA" "$EVIDENCE_DIR"
+      - name: Preserve VM certification evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: release-vm-certification-${{ github.sha }}
+          path: ${{ runner.temp }}/tt-vm-certification-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 90
+
+  security-approval:
+    name: Security release approval
+    needs: vm-certification
+    runs-on: ubuntu-24.04
+    environment: security-release-approval
+    steps:
+      - name: Verify protected approval control
+        env:
+          APPROVAL_CONTROL: ${{ vars.RELEASE_APPROVAL_REQUIRED }}
+        run: test "$APPROVAL_CONTROL" = enabled
+
+  operations-approval:
+    name: Operations release approval
+    needs: vm-certification
+    runs-on: ubuntu-24.04
+    environment: operations-release-approval
+    steps:
+      - name: Verify protected approval control
+        env:
+          APPROVAL_CONTROL: ${{ vars.RELEASE_APPROVAL_REQUIRED }}
+        run: test "$APPROVAL_CONTROL" = enabled
+
+  hardware-approval:
+    name: Physical certification approval
+    needs: vm-certification
+    runs-on: ubuntu-24.04
+    environment: hardware-release-approval
+    steps:
+      - name: Verify protected approval control
+        env:
+          APPROVAL_CONTROL: ${{ vars.RELEASE_APPROVAL_REQUIRED }}
+        run: test "$APPROVAL_CONTROL" = enabled
+
   release:
     name: Build, attest, sign, and publish
+    needs: [vm-certification, security-approval, operations-approval, hardware-approval]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

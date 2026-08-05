@@ -30,7 +30,8 @@ BUILD_FLAGS := -mod=readonly -trimpath -buildvcs=false -ldflags="$(LDFLAGS)"
 .PHONY: build test race coverage coverage-check fmt-check vet staticcheck govulncheck \
 	license-check secret-scan actionlint shellcheck security image-build image-check \
 	supply-chain-check helm-lint helm-package release-binaries release-reproducibility \
-	release-checksums release vm-validation chaos-validation hardware-certification check ci clean
+	release-checksums release vm-validation chaos-validation vm-certification \
+	hardware-certification check ci clean
 
 build:
 	$(GO) build $(BUILD_FLAGS) ./...
@@ -75,7 +76,7 @@ actionlint:
 shellcheck:
 	$(DOCKER) run --rm --volume "$(CURDIR):/mnt:ro" --workdir /mnt $(SHELLCHECK_IMAGE) \
 		shellcheck test/coverage/check.sh test/hardware/certify.sh test/helm/validate.sh \
-		test/supply-chain/validate.sh test/vm/chaos.sh test/vm/validate.sh
+		test/supply-chain/validate.sh test/vm/certify.sh test/vm/chaos.sh test/vm/validate.sh
 
 supply-chain-check:
 	bash test/supply-chain/validate.sh
@@ -127,6 +128,9 @@ vm-validation:
 
 chaos-validation:
 	$(MAKE) -C test/vm vm-chaos
+
+vm-certification:
+	$(MAKE) -C test/vm vm-certification EXPECTED_COMMIT="$(COMMIT)"
 
 hardware-certification:
 	@test -n "$(MATRIX_ENTRY)" || { echo 'MATRIX_ENTRY is required'; exit 2; }

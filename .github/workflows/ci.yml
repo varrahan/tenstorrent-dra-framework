@@ -13,6 +13,28 @@ permissions:
   contents: read
 
 jobs:
+  vm-certification:
+    name: QEMU VM certification
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, tt-qemu-vm]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Run exact-commit smoke and chaos certification
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/tt-vm-certification-${{ github.sha }}
+        run: bash test/vm/certify.sh "$GITHUB_SHA" "$EVIDENCE_DIR"
+      - name: Preserve VM certification evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: vm-certification-${{ github.sha }}
+          path: ${{ runner.temp }}/tt-vm-certification-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+
   quality:
     name: Go, policy, and workflow gates
     runs-on: ubuntu-24.04

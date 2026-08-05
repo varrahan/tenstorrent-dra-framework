@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,8 +11,10 @@ import (
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 )
 
 // TestEnsureChildrenRejectsNameCollisions verifies existing names require exact ownership and specs.
@@ -53,6 +57,40 @@ func TestEnsurePodAcceptsItsScheduledChild(t *testing.T) {
 	}
 	if err := controller.ensurePod(context.Background(), workload, 0, assignment); err != nil {
 		t.Fatalf("scheduled controller child was rejected: %v", err)
+	}
+}
+
+func TestDeleteChildrenIsIdempotentAndReportsAPIErrors(t *testing.T) {
+	workload := safeWorkload()
+	assignment := ttapi.RankAssignment{ClaimName: "claim", PodName: "pod"}
+	workload.Status.Assignments = []ttapi.RankAssignment{assignment}
+	controller := &Controller{Kube: fake.NewSimpleClientset(
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: assignment.PodName, Namespace: workload.Namespace}},
+		buildClaim(workload, workload.Spec.Ranks[0], assignment),
+	)}
+	if err := controller.deleteChildren(context.Background(), workload); err != nil {
+		t.Fatalf("delete children: %v", err)
+	}
+	if err := controller.deleteChildren(context.Background(), workload); err != nil {
+		t.Fatalf("idempotent delete children: %v", err)
+	}
+
+	podFailure := fake.NewSimpleClientset()
+	podFailure.Fake.PrependReactor("delete", "pods", func(clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("pod API unavailable")
+	})
+	controller.Kube = podFailure
+	if err := controller.deleteChildren(context.Background(), workload); err == nil || !strings.Contains(err.Error(), "delete Pod") {
+		t.Fatalf("Pod deletion error = %v", err)
+	}
+
+	claimFailure := fake.NewSimpleClientset()
+	claimFailure.Fake.PrependReactor("delete", "resourceclaims", func(clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("claim API unavailable")
+	})
+	controller.Kube = claimFailure
+	if err := controller.deleteChildren(context.Background(), workload); err == nil || !strings.Contains(err.Error(), "delete ResourceClaim") {
+		t.Fatalf("ResourceClaim deletion error = %v", err)
 	}
 }
 

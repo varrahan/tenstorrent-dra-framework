@@ -59,27 +59,32 @@ func main() {
 		"commit", commit,
 	)
 	slog.SetDefault(logger)
-	if len(os.Args) < 2 {
-		fatal("usage: tt-dra-driver <version|list|node|controller|cleanup>")
-	}
-	var err error
-	switch os.Args[1] {
-	case "version":
-		err = runVersion(os.Stdout)
-	case "list":
-		err = runList(os.Args[2:])
-	case "node":
-		err = runNode(os.Args[2:])
-	case "controller":
-		err = runController(os.Args[2:])
-	case "cleanup":
-		err = runCleanup(os.Args[2:])
-	default:
-		err = fmt.Errorf("unknown command %q", os.Args[1])
-	}
-	if err != nil {
+	if err := runCommand(os.Args[1:], os.Stdout); err != nil {
 		fatal(err.Error())
 	}
+}
+
+// runCommand validates and dispatches one executable invocation.
+func runCommand(args []string, stdout io.Writer) error {
+	if len(args) < 1 {
+		return errors.New("usage: tt-dra-driver <version|list|node|controller|cleanup>")
+	}
+	var err error
+	switch args[0] {
+	case "version":
+		err = runVersion(stdout)
+	case "list":
+		err = runList(args[1:])
+	case "node":
+		err = runNode(args[1:])
+	case "controller":
+		err = runController(args[1:])
+	case "cleanup":
+		err = runCleanup(args[1:])
+	default:
+		err = fmt.Errorf("unknown command %q", args[0])
+	}
+	return err
 }
 
 // runVersion emits machine-readable provenance for the running binary.

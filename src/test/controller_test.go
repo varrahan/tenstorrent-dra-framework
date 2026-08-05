@@ -66,7 +66,10 @@ func TestControllerCreatesExactChildrenAndReservesWithinPass(t *testing.T) {
 	waitFor(t, func() bool {
 		first := workloadPhase(t, dynamicClient, "first")
 		second := workloadPhase(t, dynamicClient, "second")
-		return (first == "Assigned" && second == "Pending") || (first == "Pending" && second == "Assigned")
+		phasesReady := (first == "Assigned" && second == "Pending") || (first == "Pending" && second == "Assigned")
+		pods, _ := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+		claims, _ := kube.ResourceV1().ResourceClaims("default").List(context.Background(), metav1.ListOptions{})
+		return phasesReady && len(pods.Items) == 1 && len(claims.Items) == 1
 	})
 	cancel()
 	if err := <-done; err != nil {
@@ -142,7 +145,10 @@ func TestControllerTracksRunningAndSucceededCleanup(t *testing.T) {
 	kube := kubernetesfake.NewSimpleClientset()
 	cancel, done := runController(kube, dynamicClient)
 	defer cancel()
-	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "lifecycle") == "Assigned" })
+	waitFor(t, func() bool {
+		pods, _ := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+		return workloadPhase(t, dynamicClient, "lifecycle") == "Assigned" && len(pods.Items) == 1
+	})
 	pods, err := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
 	if err != nil || len(pods.Items) != 1 {
 		t.Fatalf("rank Pod was not created: %#v %v", pods, err)

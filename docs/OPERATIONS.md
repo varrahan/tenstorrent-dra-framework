@@ -3,6 +3,9 @@
 This document is the production operations contract for the Tenstorrent DRA
 node agent and controller. Hardware- and Kubernetes-dependent commands run
 inside the QEMU `ttsim` Ubuntu VM or an equivalent supported cluster node.
+Accountable dashboard, alert, paging, and runbook ownership is recorded through
+the protected operations gate in [`ACCEPTANCE.md`](ACCEPTANCE.md); these
+procedures do not assign an on-call owner by themselves.
 
 ## Deployment baseline
 

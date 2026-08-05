@@ -37,13 +37,15 @@ if [[ -z "$entry" ]]; then
   exit 2
 fi
 
-for command in go kubectl helm find python3 uname; do
+for command in go kubectl helm find python3 systemd-detect-virt uname; do
   require_command "$command"
 done
 
 uname -a | tee "$evidence_dir/uname.txt"
-if grep -qi microsoft "$evidence_dir/uname.txt"; then
-  printf 'WSL is not a physical Tenstorrent certification environment\n' >&2
+virtualization="$(systemd-detect-virt 2>/dev/null || true)"
+printf '%s\n' "${virtualization:-none}" | tee "$evidence_dir/virtualization.txt"
+if [[ -n "$virtualization" && "$virtualization" != none ]]; then
+  printf '%s is not a physical Tenstorrent certification environment\n' "$virtualization" >&2
   exit 1
 fi
 test -d /dev/tenstorrent

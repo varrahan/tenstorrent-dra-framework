@@ -5,7 +5,11 @@ KIND_CONFIG := kind/ttsim-dra.yaml
 HOST_UID := $(shell id -u)
 HOST_GID := $(shell id -g)
 
-.PHONY: fake-hardware kind-smoke kind-chaos kind-clean vm-validate vm-chaos
+CHAOS_EVIDENCE_DIR ?=
+CERTIFICATION_EVIDENCE_DIR ?=
+EXPECTED_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+
+.PHONY: fake-hardware kind-smoke kind-chaos kind-clean vm-validate vm-chaos vm-certification
 
 fake-hardware:
 	python3 ./ttsim_fake_hardware.py --root /tmp/tt-node-a --devices wormhole,blackhole
@@ -16,7 +20,7 @@ kind-smoke:
 	bash ./validate.sh $(KIND_CLUSTER) $(KIND_CONFIG)
 
 kind-chaos:
-	bash ./chaos.sh $(KIND_CLUSTER)-chaos $(KIND_CONFIG)
+	bash ./chaos.sh $(KIND_CLUSTER)-chaos $(KIND_CONFIG) "$(CHAOS_EVIDENCE_DIR)"
 
 kind-clean:
 	kind delete cluster --name "$(KIND_CLUSTER)" || true
@@ -24,3 +28,6 @@ kind-clean:
 vm-validate: fake-hardware kind-smoke
 
 vm-chaos: fake-hardware kind-chaos
+
+vm-certification:
+	bash ./certify.sh "$(EXPECTED_COMMIT)" "$(CERTIFICATION_EVIDENCE_DIR)"

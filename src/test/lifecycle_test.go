@@ -38,6 +38,10 @@ func TestLifecycleManagerPrepareIsIdempotentAndIsolated(t *testing.T) {
 	if result[uid].Err != nil || len(result[uid].Devices) != 1 {
 		t.Fatalf("unexpected prepare result: %#v", result[uid])
 	}
+	if stats := m.SnapshotStats(); stats.Allocated != 1 || stats.Quarantined != 0 {
+		t.Fatalf("prepared lifecycle stats = %#v", stats)
+	}
+	m.HandleError(context.Background(), errors.New("recoverable kubelet reconnect"), "NodePrepareResources")
 	firstID := result[uid].Devices[0].CDIDeviceIDs[0]
 	repeated, err := m.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{claim})
 	if err != nil || repeated[uid].Err != nil || repeated[uid].Devices[0].CDIDeviceIDs[0] != firstID {
@@ -89,6 +93,9 @@ func TestLifecycleManagerPrepareIsIdempotentAndIsolated(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "cdi", "claim-claim-uid.json")); !os.IsNotExist(err) {
 		t.Fatalf("CDI file remains after unprepare: %v", err)
+	}
+	if stats := m.SnapshotStats(); stats.Allocated != 0 || stats.Quarantined != 0 {
+		t.Fatalf("released lifecycle stats = %#v", stats)
 	}
 }
 

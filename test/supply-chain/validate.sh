@@ -52,6 +52,17 @@ while IFS= read -r use; do
 done < <(awk '/^[[:space:]]*-[[:space:]]+uses:/ { value=$3; sub(/[[:space:]]+#.*/, "", value); print value }' .github/workflows/*.yml)
 
 release_workflow=.github/workflows/release.yml
+grep -q '^  vm-certification:$' .github/workflows/ci.yml
+grep -q '^  vm-certification:$' "$release_workflow"
+grep -q '^  security-approval:$' "$release_workflow"
+grep -q '^  operations-approval:$' "$release_workflow"
+grep -q '^  hardware-approval:$' "$release_workflow"
+grep -q '^    environment: security-release-approval$' "$release_workflow"
+grep -q '^    environment: operations-release-approval$' "$release_workflow"
+grep -q '^    environment: hardware-release-approval$' "$release_workflow"
+grep -q '^    needs: \[vm-certification, security-approval, operations-approval, hardware-approval\]$' "$release_workflow"
+grep -q 'runs-on: \[self-hosted, linux, x64, tt-qemu-vm\]' .github/workflows/ci.yml
+grep -qF -- 'bash test/vm/certify.sh' .github/workflows/ci.yml
 for required in \
   'linux/amd64,linux/arm64' \
   'docker build --no-cache --provenance=false' \

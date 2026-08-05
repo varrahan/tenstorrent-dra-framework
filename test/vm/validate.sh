@@ -9,8 +9,46 @@ readonly IMAGE_REPOSITORY="tenstorrent-dra"
 readonly IMAGE_TAG="dev"
 readonly E2E_IMAGE="tenstorrent-dra-e2e:dev"
 readonly DISABLE_WORKLOAD_APPARMOR="false"
+candidate_version="$(git -C "$repo_root" describe --tags --always --dirty 2>/dev/null || echo dev)"
+candidate_commit="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || echo unknown)"
+candidate_source_epoch="$(git -C "$repo_root" log -1 --format=%ct 2>/dev/null || echo 0)"
+candidate_build_date="$(date -u --date="@$candidate_source_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo 1970-01-01T00:00:00Z)"
+candidate_image_args=(
+  --build-arg "VERSION=$candidate_version"
+  --build-arg "VCS_REF=$candidate_commit"
+  --build-arg "SOURCE_DATE_EPOCH=$candidate_source_epoch"
+  --build-arg "BUILD_DATE=$candidate_build_date"
+)
 kubectl_context="kind-$cluster"
 cluster_ready=false
+
+# kind's Debian node image does not include apparmor_parser. Mounting the
+# guest's securityfs lets kubelet detect AppArmor, and this installs only the
+# node-native parser binary needed by containerd to load RuntimeDefault. The
+# package is extracted rather than installed so its service scripts cannot
+# load unrelated profiles into the guest kernel.
+install_apparmor_parser() {
+  local node
+  for node in "${cluster}-worker" "${cluster}-worker2"; do
+    docker exec "$node" sh -ec '
+      if ! apparmor_parser --version >/dev/null 2>&1; then
+        apt-get update
+        apt-get install --download-only -y --no-install-recommends apparmor
+        archive="$(find /var/cache/apt/archives -maxdepth 1 -type f -name "apparmor_*.deb" -print -quit)"
+        test -n "$archive"
+        staging=/tmp/tt-apparmor-parser-package
+        mkdir -p "$staging"
+        dpkg-deb --extract "$archive" "$staging"
+        parser="$(find "$staging" -type f -name apparmor_parser -print -quit)"
+        test -n "$parser"
+        install -m 0755 "$parser" /usr/sbin/apparmor_parser
+      fi
+      apparmor_parser --version
+      systemctl restart containerd
+      systemctl is-active --quiet containerd
+    '
+  done
+}
 
 # cleanup_e2e removes only the validation-owned workloads and claims from this cluster.
 cleanup_e2e() {
@@ -39,11 +77,12 @@ wait_claim_cleanup() {
   return 1
 }
 
-docker build --provenance=false --tag "$IMAGE_REPOSITORY:$IMAGE_TAG" "$repo_root"
+docker build --provenance=false --tag "$IMAGE_REPOSITORY:$IMAGE_TAG" "${candidate_image_args[@]}" "$repo_root"
 docker build --platform linux/amd64 --provenance=false --file "$script_dir/e2e.Dockerfile" --tag "$E2E_IMAGE" "$script_dir"
 kind create cluster --name "$cluster" --config "$script_dir/$config"
 cluster_ready=true
 trap cleanup_e2e EXIT
+install_apparmor_parser
 kind load docker-image "$IMAGE_REPOSITORY:$IMAGE_TAG" --name "$cluster"
 kind load docker-image "$E2E_IMAGE" --name "$cluster"
 kubectl --context "$kubectl_context" label node "${cluster}-worker" tenstorrent.com/enabled=true --overwrite
@@ -65,6 +104,10 @@ helm upgrade --install tt-dra "$repo_root/deployments/helm/tenstorrent-dra" \
   --wait --timeout=180s
 kubectl --context "$kubectl_context" rollout status deployment/tt-dra-controller --timeout=120s
 kubectl --context "$kubectl_context" rollout status daemonset/tt-dra-node --timeout=120s
+for node in "${cluster}-worker" "${cluster}-worker2"; do
+  docker exec "$node" test -S /var/lib/kubelet/plugins_registry/dra.tenstorrent.com-reg.sock
+  docker exec "$node" test -S /var/lib/kubelet/plugins/dra.tenstorrent.com/dra.sock
+done
 kubectl --context "$kubectl_context" wait --for=create "tenstorrentnodetopology/${cluster}-worker" --timeout=120s
 kubectl --context "$kubectl_context" wait --for=create "tenstorrentnodetopology/${cluster}-worker2" --timeout=120s
 kubectl --context "$kubectl_context" wait --for=jsonpath='{.status.valid}'=true tenstorrentfabrictopology/cluster --timeout=120s

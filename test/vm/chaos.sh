@@ -9,6 +9,16 @@ evidence_dir="${3:-$repo_root/artifacts/chaos-$(date -u +%Y%m%dT%H%M%SZ)}"
 readonly IMAGE_REPOSITORY="tenstorrent-dra"
 readonly IMAGE_TAG="dev"
 readonly E2E_IMAGE="tenstorrent-dra-e2e:dev"
+candidate_version="$(git -C "$repo_root" describe --tags --always --dirty 2>/dev/null || echo dev)"
+candidate_commit="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || echo unknown)"
+candidate_source_epoch="$(git -C "$repo_root" log -1 --format=%ct 2>/dev/null || echo 0)"
+candidate_build_date="$(date -u --date="@$candidate_source_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo 1970-01-01T00:00:00Z)"
+candidate_image_args=(
+  --build-arg "VERSION=$candidate_version"
+  --build-arg "VCS_REF=$candidate_commit"
+  --build-arg "SOURCE_DATE_EPOCH=$candidate_source_epoch"
+  --build-arg "BUILD_DATE=$candidate_build_date"
+)
 kubectl_context="kind-$cluster"
 worker_a="${cluster}-worker"
 worker_b="${cluster}-worker2"
@@ -151,7 +161,7 @@ go -C "$repo_root" test -race ./src/test -run '^(TestControllerRetriesWorkloadSt
 record 'api-conflict-inventory-reset-scrub-failure-injection\tPASS'
 
 record 'setup\tSTART'
-docker build --provenance=false --tag "$IMAGE_REPOSITORY:$IMAGE_TAG" "$repo_root"
+docker build --provenance=false --tag "$IMAGE_REPOSITORY:$IMAGE_TAG" "${candidate_image_args[@]}" "$repo_root"
 docker build --platform linux/amd64 --provenance=false --file "$script_dir/e2e.Dockerfile" --tag "$E2E_IMAGE" "$script_dir"
 kind create cluster --name "$cluster" --config "$script_dir/$config"
 cluster_created=true

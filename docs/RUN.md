@@ -107,7 +107,11 @@ workers and passes these paths to the driver. Synthetic character devices do
 not implement the `tt-kmd` reset ioctl, so this disposable path explicitly uses
 `resetMode=noop` and disables the IOMMU requirement. Never use those overrides
 for production hardware. The workload AppArmor profile remains enabled in the
-fixed validation configuration.
+fixed validation configuration. The kind worker configuration mounts the
+guest's `/sys/kernel/security`; verify AppArmor and securityfs are active in the
+guest before creating the cluster. The harness downloads and extracts the
+node-native AppArmor parser inside each disposable kind worker, so the guest
+also needs package-network access during cluster setup.
 
 ```text
 sysfsRoot=/tt-sys/class/tenstorrent

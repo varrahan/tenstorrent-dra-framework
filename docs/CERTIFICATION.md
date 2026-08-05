@@ -14,6 +14,21 @@ make -C test/vm vm-validate
 make -C test/vm vm-chaos
 ```
 
+The complete exact-commit gate used by CI and release automation is:
+
+```bash
+make -C test/vm vm-certification \
+  EXPECTED_COMMIT="$(git rev-parse HEAD)" \
+  CERTIFICATION_EVIDENCE_DIR="$PWD/artifacts/vm-certification"
+```
+
+This combined entry point requires a clean QEMU/KVM checkout, exercises both
+suites, verifies the kubelet registration and DRA sockets, records the source
+tree and candidate image digest, exports kind logs, and writes checksummed
+evidence. `.github/workflows/release.yml` runs it before any approval or
+publication job. The required isolated runner and protected-environment setup
+are defined in [`ACCEPTANCE.md`](ACCEPTANCE.md).
+
 `vm-chaos` uses short synthetic observation intervals and the explicit
 validation-only `resetMode=noop`, `requireIOMMU=false`, and AppArmor-disable
 settings. The baseline `vm-validate` gate keeps the production workload

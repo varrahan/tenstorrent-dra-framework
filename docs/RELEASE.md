@@ -46,10 +46,20 @@ registry identity, and digest remain release-specific inputs.
    `## [MAJOR.MINOR.PATCH]` section and update comparison links.
 3. Run `go mod verify && make ci image-check` on a development machine. Image,
    kind, and Tenstorrent hardware checks run inside the supported `ttsim` VM.
-4. Run `make -C test/vm vm-validate` and any physical certification gates for
-   the supported matrix. Preserve the test run with the release approval.
+4. Run `make -C test/vm vm-certification` and any physical certification gates
+   for the supported matrix. Preserve the checksummed evidence with the
+   release approval. The tag workflow reruns exact-commit VM certification and
+   does not trust an earlier branch run.
 5. Merge through protected CI, create `vMAJOR.MINOR.PATCH` at the approved
    commit, and push the tag. Do not manually upload or replace release files.
+
+The tag workflow publishes only after `QEMU VM certification` passes and the
+protected `security-release-approval`, `operations-release-approval`, and
+`hardware-release-approval` environments approve. Those environments must
+have required reviewers, self-review prevention, protected-tag restrictions,
+and `RELEASE_APPROVAL_REQUIRED=enabled`; see
+[`ACCEPTANCE.md`](ACCEPTANCE.md). Absent environment configuration fails the
+approval jobs rather than silently publishing.
 
 The release workflow rechecks version agreement, changelog presence, module
 integrity, CI policy, Helm packaging, image vulnerability policy, and whether

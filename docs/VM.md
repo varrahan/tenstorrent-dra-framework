@@ -15,12 +15,22 @@ teardown, and release uninstall cleanup. It does not use `tt-smi`.
 Synthetic device nodes do not implement the `tt-kmd` reset ioctl, so the harness
 uses the explicit validation-only `resetMode=noop` and `requireIOMMU=false`
 overrides. Production defaults remain ioctl reset and dedicated IOMMU groups.
+The kind workers also receive the guest's `/sys/kernel/security` mount so
+kubelet can verify and enforce the production AppArmor profile. The guest must
+have AppArmor enabled; an empty or unavailable securityfs fails the baseline
+workload gate closed. Before installing the chart, the harness extracts the
+node-native `apparmor_parser` from Debian's package into each disposable worker
+so containerd can load its RuntimeDefault profile without executing package
+service scripts against the guest kernel.
 
 ```bash
 make -C test/vm fake-hardware
 make -C test/vm vm-validate
 make -C test/vm vm-chaos
 ```
+
+Use `make -C test/vm vm-certification` from a clean checkout to run both suites
+as the exact-commit release gate and produce checksummed evidence.
 
 Use `make -C test/vm kind-clean` to remove the disposable cluster. Synthetic
 trees are validation fixtures only. The harness deliberately keeps the

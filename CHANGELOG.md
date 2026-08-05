@@ -6,25 +6,6 @@ Versioning.
 
 ## [Unreleased]
 
-### Changed
-
-- Restricted runtime environment configuration to dynamic Kubernetes and
-  workload identity; fixed build and VM policy now uses immutable constants.
-- Locked release builds to CGO-disabled Linux output with Go 1.25.12 and made
-  CI tool versions explicit workflow literals.
-
-### Documentation
-
-- Added the complete driver and managed-workload environment-variable contract
-  and synchronized the design, runbooks, release process, and validation
-  baseline with current behavior.
-
-### Fixed
-
-- Corrected multi-architecture container compilation to use BuildKit's target
-  architecture with a native build platform, ensuring the ARM64 manifest
-  contains an AArch64 executable.
-
 ## [0.1.0] - 2026-08-04
 
 ### Added
@@ -40,6 +21,31 @@ Versioning.
   with embedded version, commit, and build-time metadata.
 - SPDX JSON SBOMs, GitHub artifact attestations, keyless Cosign signatures,
   immutable image tags, and versioned OCI Helm releases.
+- Exact-commit QEMU smoke and chaos release gating with checksummed evidence,
+  direct kubelet/DRA socket assertions, and protected release approvals.
+
+### Changed
+
+- Restricted runtime environment configuration to dynamic Kubernetes and
+  workload identity; fixed build and VM policy now uses immutable constants.
+- Locked release builds to CGO-disabled Linux output with Go 1.25.12 and made
+  CI tool versions explicit workflow literals.
+- Raised the risk-weighted overall coverage gate from 65% to 70% with direct
+  command startup, child cleanup, persisted-state, and failure-path tests.
+
+### Documentation
+
+- Added the complete driver and managed-workload environment-variable contract
+  and synchronized the design, runbooks, release process, approval controls,
+  and validation baseline with current behavior.
+
+### Fixed
+
+- Corrected multi-architecture container compilation to use BuildKit's target
+  architecture with a native build platform, ensuring the ARM64 manifest
+  contains an AArch64 executable.
+- Made kind AppArmor support deterministic in the `ttsim` VM and rejected
+  physical certification on virtualized and WSL hosts.
 
 ### Security
 

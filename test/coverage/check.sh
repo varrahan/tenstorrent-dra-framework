@@ -21,7 +21,7 @@ selectors=(
   /src/internal/topology/
 )
 names=(overall controller device dra lifecycle observability placement topology)
-minimums=(65.0 80.0 70.0 95.0 69.0 75.0 90.0 90.0)
+minimums=(70.0 80.0 70.0 95.0 69.0 75.0 90.0 90.0)
 
 failed=0
 for index in "${!selectors[@]}"; do
