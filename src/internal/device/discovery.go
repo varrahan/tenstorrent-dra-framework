@@ -18,6 +18,7 @@ type Node struct {
 	ChipSeries string `json:"chipSeries,omitempty"`
 }
 
+// classifyCharacterDevice validates a filesystem entry and extracts its device numbers.
 func classifyCharacterDevice(path string, info fs.FileInfo) (Node, bool, error) {
 	if info.Mode()&os.ModeCharDevice == 0 {
 		return Node{}, false, nil
@@ -38,6 +39,7 @@ func classifyCharacterDevice(path string, info fs.FileInfo) (Node, bool, error) 
 	}, true, nil
 }
 
+// majorMinor decodes Linux's packed device identifier into major and minor numbers.
 func majorMinor(device uint64) (uint64, uint64) {
 	major := (device >> 8) & 0xfff
 	major |= (device >> 32) & ^uint64(0xfff)

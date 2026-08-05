@@ -1,0 +1,39 @@
+apiVersion: scheduling.tenstorrent.com/v1
+kind: TenstorrentWorkload
+metadata:
+  name: tt-e2e-topology
+spec:
+  containerName: worker
+  topology:
+    fabricID: fabric-0
+    ringID: ring-0
+  podTemplate:
+    metadata:
+      labels:
+        app: tt-e2e-topology
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 1
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+      - name: worker
+        image: tenstorrent-dra-e2e:dev
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-ec"]
+        args:
+        - |
+          devices="$(find /dev/tenstorrent -mindepth 1 -maxdepth 1 -type c -print | sort)"
+          test "$(printf '%s\n' "$devices" | sed '/^$/d' | wc -l)" -eq 1
+          test "$TT_WORLD_SIZE" -eq 2
+          printf 'rank=%s world=%s devices=%s\n' "$TT_RANK" "$TT_WORLD_SIZE" "$devices"
+          sleep 300
+  ranks:
+  - name: rank-0
+    deviceClassName: tenstorrent-wormhole
+    count: 1
+  - name: rank-1
+    deviceClassName: tenstorrent-blackhole
+    count: 1

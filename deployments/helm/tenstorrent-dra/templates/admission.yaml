@@ -1,0 +1,28 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-workload-authorizer
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["scheduling.tenstorrent.com"]
+      apiVersions: ["v1", "v1alpha1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["tenstorrentworkloads"]
+  validations:
+  - expression: authorizer.group('').resource('pods').namespace(request.namespace).check('create').allowed()
+    message: creating a TenstorrentWorkload requires permission to create Pods in its namespace
+    reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-workload-authorizer
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
+spec:
+  policyName: {{ include "tenstorrent-dra.fullname" . }}-workload-authorizer
+  validationActions: [Deny, Audit]

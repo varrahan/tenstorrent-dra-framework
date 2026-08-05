@@ -39,6 +39,7 @@ type cdiNode struct {
 	FileMode *uint32 `json:"fileMode,omitempty"`
 }
 
+// writeCDI creates the per-claim CDI device specification with restricted device-node access.
 func (m *Manager) writeCDI(claim PreparedClaim) error {
 	if err := os.MkdirAll(m.config.CDIDir, 0o755); err != nil {
 		return err
@@ -56,6 +57,7 @@ func (m *Manager) writeCDI(claim PreparedClaim) error {
 	return atomicJSON(filepath.Join(m.config.CDIDir, cdiFilename(claim.UID)), spec, 0o644)
 }
 
+// cdiResults converts persisted claim devices into kubelet prepare results.
 func cdiResults(claim PreparedClaim) []kubeletplugin.Device {
 	result := make([]kubeletplugin.Device, 0, len(claim.Devices))
 	for _, item := range claim.Devices {
@@ -66,14 +68,17 @@ func cdiResults(claim PreparedClaim) []kubeletplugin.Device {
 	return result
 }
 
+// cdiID builds the fully qualified CDI identifier for a claim-owned device.
 func cdiID(uid types.UID, device string) string {
 	return cdiVendor + "/" + cdiClass + "=" + string(uid) + "-" + strings.ReplaceAll(device, "/", "-")
 }
 
+// cdiName removes the CDI kind prefix to obtain the spec-local device name.
 func cdiName(id string) string {
 	return strings.TrimPrefix(id, cdiKind+"=")
 }
 
+// cdiFilename derives a filesystem-safe per-claim CDI specification name.
 func cdiFilename(uid types.UID) string {
 	return "claim-" + strings.ReplaceAll(string(uid), "/", "-") + ".json"
 }

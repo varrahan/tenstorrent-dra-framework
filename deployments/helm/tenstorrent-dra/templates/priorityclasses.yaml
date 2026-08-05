@@ -1,0 +1,23 @@
+{{ if .Values.priorityClass.create }}
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ include "tenstorrent-dra.controllerPriorityClassName" . }}
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
+value: {{ .Values.priorityClass.controller.value }}
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: Keeps the Tenstorrent topology and workload controller available during node pressure.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ include "tenstorrent-dra.nodePriorityClassName" . }}
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
+value: {{ .Values.priorityClass.node.value }}
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: Keeps the Tenstorrent DRA node lifecycle and sanitization agent available during node pressure.
+{{ end }}

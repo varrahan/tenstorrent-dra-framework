@@ -3,9 +3,10 @@
 This runbook starts the implemented DRA driver, node agents, topology
 controller, and Kubernetes resources in the supported QEMU `ttsim` environment.
 Run the hardware- and Kubernetes-dependent commands inside the Ubuntu guest.
-The guest must provide Docker, kind, kubectl, Helm, Kubernetes v1.34 or newer,
-and `tt-kmd`. The driver uses `/dev/tenstorrent`, `/sys/class/tenstorrent`, and
-PCI sysfs directly; it does not use `tt-smi`.
+The guest must provide Docker, kind, kubectl, Helm v4.2.3, Kubernetes v1.34 or
+newer, `tt-kmd`, and the Go 1.25.12 toolchain for repository checks. The driver
+uses `/dev/tenstorrent`, `/sys/class/tenstorrent`, and PCI sysfs directly; it
+does not use `tt-smi`.
 
 ## 1. Check the guest prerequisites
 
@@ -17,9 +18,11 @@ docker version
 kind version
 kubectl version --client
 helm version
+go version
 test -e /dev/tenstorrent
 test -d /sys/class/tenstorrent
 test -d /sys/bus/pci/devices
+test -L /sys/bus/pci/devices/<bdf>/iommu_group
 ```
 
 ## 2. Enter the repository
@@ -42,11 +45,15 @@ make fmt-check
 go vet ./...
 ```
 
-The combined Make target runs formatting, build, tests, and Helm linting:
+The combined Make target runs formatting, vet, build, tests, and Helm linting:
 
 ```bash
 make check
 ```
+
+Production probes, Prometheus metrics, dashboards, alerts, upgrade and rollback
+procedures, and incident runbooks are defined in
+[`OPERATIONS.md`](OPERATIONS.md).
 
 ## 4. Build the container image
 
@@ -57,7 +64,10 @@ make image-build
 ```
 
 This creates `tenstorrent-dra:dev`. Use a registry image instead if the cluster
-nodes cannot access the local Docker daemon.
+nodes cannot access the local Docker daemon. The local repository/tag, kind
+cluster/config, and synthetic AppArmor policy are fixed validation constants;
+they are not environment overrides. Runtime variables used by installed Pods
+are documented in [`ENV.md`](ENV.md).
 
 ## 5. Prepare the validation hardware (optional)
 
@@ -74,20 +84,39 @@ Alpine container to create the `/dev/tenstorrent` character devices.
 
 ## 6. Run the supported VM validation flow
 
-This is the shortest complete run. It creates a kind cluster named `tt-dra`,
-labels both workers for the node DaemonSet, installs the Helm chart, waits for
-the topology CRD, and prints the published DRA resources.
+This automated validation creates a kind cluster named `tt-dra`, builds and
+loads the exact driver and test images, installs the Helm chart, and asserts
+exact inventory and topology. It exercises a native DRA claim and a connected
+two-rank topology workload through CDI preparation, isolated device visibility,
+sanitization, audit, teardown, and device reuse.
 
 ```bash
 make -C test/vm vm-validate
 ```
 
+Run the destructive synthetic fault and restart suite separately. It creates
+and removes a dedicated `tt-dra-chaos` kind cluster and writes its evidence
+under `artifacts/`:
+
+```bash
+make -C test/vm vm-chaos
+```
+
 The validation script mounts the synthetic trees as `/tt-sys` in the kind
-workers and passes these paths to the driver:
+workers and passes these paths to the driver. Synthetic character devices do
+not implement the `tt-kmd` reset ioctl, so this disposable path explicitly uses
+`resetMode=noop` and disables the IOMMU requirement. Never use those overrides
+for production hardware. The workload AppArmor profile remains enabled in the
+fixed validation configuration. The kind worker configuration mounts the
+guest's `/sys/kernel/security`; verify AppArmor and securityfs are active in the
+guest before creating the cluster. The harness downloads and extracts the
+node-native AppArmor parser inside each disposable kind worker, so the guest
+also needs package-network access during cluster setup.
 
 ```text
 sysfsRoot=/tt-sys/class/tenstorrent
 pciSysfsRoot=/tt-sys/bus/pci/devices
+sysfsDevicesRoot=/tt-sys/devices
 ```
 
 If using a locally built image rather than a pullable registry image, create
@@ -102,9 +131,11 @@ kubectl label node tt-dra-worker2 tenstorrent.com/enabled=true --overwrite
 helm upgrade --install tt-dra deployments/helm/tenstorrent-dra \
   --set image.repository=tenstorrent-dra \
   --set image.tag=dev \
-  --set sysfsMountRoot=/tt-sys \
   --set sysfsRoot=/tt-sys/class/tenstorrent \
-  --set pciSysfsRoot=/tt-sys/bus/pci/devices
+  --set pciSysfsRoot=/tt-sys/bus/pci/devices \
+  --set sysfsDevicesRoot=/tt-sys/devices \
+  --set resetMode=noop \
+  --set requireIOMMU=false
 ```
 
 ## 7. Confirm deployment and discovered hardware
@@ -119,32 +150,43 @@ kubectl get deviceclasses
 kubectl get resourceslices -o yaml
 kubectl get tenstorrentnodetopologies -o yaml
 kubectl get tenstorrentfabrictopologies -o yaml
+kubectl get node -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="TenstorrentAcceleratorsHealthy")].status}{"\n"}{end}'
+kubectl get --raw /api/v1/namespaces/default/services/http:tt-dra-metrics:8080/proxy/readyz
+kubectl get --raw /api/v1/namespaces/default/services/http:tt-dra-metrics:8080/proxy/metrics
 ```
 
 The synthetic run should show two devices on the first worker, one device on the
 second worker, and a valid fabric topology when all expected links are present.
 
+Production uses `resetMode=ioctl` and `requireIOMMU=true`, the chart defaults.
+The node agent calls the `tt-kmd` ASIC_RESET and POST_RESET ioctls before and
+after each claim. Audit records are stored on the node at:
+
+```bash
+sudo tail -n 50 /var/lib/tenstorrent-dra/audit.jsonl
+```
+
 ## 8. Inspect claims and workload placement
 
 The driver allocates complete host-visible accelerator devices through standard
-Kubernetes DRA `ResourceClaim` objects. Apply a claim and Pod manifest prepared
-for the desired `DeviceClass` (for example, `tenstorrent-wormhole`), then
+Kubernetes DRA `ResourceClaim` objects. Replace the image in
+[`examples/standard-claim.yaml`](../examples/standard-claim.yaml), apply it, and
 inspect allocation and scheduling:
 
 ```bash
-kubectl apply -f path/to/resourceclaim-and-pod.yaml
+kubectl apply -f examples/standard-claim.yaml
 kubectl get resourceclaims
 kubectl get pods -o wide
 kubectl describe resourceclaim <claim-name>
 kubectl logs <pod-name>
 ```
 
-For multi-rank, topology-aware placement, apply a
-`scheduling.tenstorrent.com` `TenstorrentWorkload` manifest as described in
-[`DRA.md`](DRA.md), then inspect its assignments and rank Pods:
+For multi-rank, topology-aware placement, apply
+[`examples/topology-workload.yaml`](../examples/topology-workload.yaml), then
+inspect its assignments and rank Pods:
 
 ```bash
-kubectl apply -f path/to/tenstorrent-workload.yaml
+kubectl apply -f examples/topology-workload.yaml
 kubectl get tenstorrentworkloads -o yaml
 kubectl get pods -o wide
 ```
@@ -159,6 +201,7 @@ kubectl logs deployment/tt-dra-controller
 kubectl logs daemonset/tt-dra-node
 kubectl describe pod <pod-name>
 kubectl get events --sort-by=.lastTimestamp
+kubectl describe node <node-name>
 ```
 
 Check the guest's simulated hardware paths if discovery is empty:

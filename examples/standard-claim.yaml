@@ -1,0 +1,37 @@
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: wormhole
+spec:
+  devices:
+    requests:
+    - name: accelerator
+      exactly:
+        deviceClassName: tenstorrent-wormhole
+        allocationMode: ExactCount
+        count: 1
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: wormhole-example
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  resourceClaims:
+  - name: tenstorrent
+    resourceClaimName: wormhole
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: {type: RuntimeDefault}
+  containers:
+  - name: worker
+    image: example.invalid/tenstorrent-workload:replace-me
+    resources:
+      claims:
+      - name: tenstorrent
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: {drop: ["ALL"]}
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true

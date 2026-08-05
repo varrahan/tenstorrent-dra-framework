@@ -1,0 +1,9 @@
+.git
+.github
+.code-review-graph
+bin
+dist
+coverage
+*.out
+*.coverprofile
+TODO.md

@@ -2,6 +2,8 @@ package test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,14 +11,52 @@ import (
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/controller"
 	"github.com/varrahan/tenstorrent-dra-framework/src/internal/dra"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/record"
 )
 
+// TestControllerEmitsTopologyAndWorkloadEvents verifies scheduling decisions
+// are visible without parsing controller logs.
+func TestControllerEmitsTopologyAndWorkloadEvents(t *testing.T) {
+	dynamicClient := controllerDynamicClient(t, controllerNodeTopology(), controllerWorkload("events"))
+	kube := kubernetesfake.NewSimpleClientset()
+	recorder := record.NewFakeRecorder(20)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- (&controller.Controller{Kube: kube, Dynamic: dynamicClient, TopologyTTL: time.Minute, Recorder: recorder}).Run(ctx)
+	}()
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "events") == "Assigned" })
+
+	want := map[string]bool{"TopologyValidated": false, "Assigned": false}
+	deadline := time.After(2 * time.Second)
+	for !(want["TopologyValidated"] && want["Assigned"]) {
+		select {
+		case event := <-recorder.Events:
+			for reason := range want {
+				if strings.Contains(event, reason) {
+					want[reason] = true
+				}
+			}
+		case <-deadline:
+			cancel()
+			t.Fatalf("events observed = %v", want)
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestControllerCreatesExactChildrenAndReservesWithinPass verifies distinct claims and Pods are created for concurrent workloads.
 func TestControllerCreatesExactChildrenAndReservesWithinPass(t *testing.T) {
 	dynamicClient := controllerDynamicClient(t, controllerNodeTopology(), controllerWorkload("first"), controllerWorkload("second"))
 	kube := kubernetesfake.NewSimpleClientset()
@@ -24,7 +64,12 @@ func TestControllerCreatesExactChildrenAndReservesWithinPass(t *testing.T) {
 	defer cancel()
 
 	waitFor(t, func() bool {
-		return workloadPhase(t, dynamicClient, "first") != "" && workloadPhase(t, dynamicClient, "second") != ""
+		first := workloadPhase(t, dynamicClient, "first")
+		second := workloadPhase(t, dynamicClient, "second")
+		phasesReady := (first == "Assigned" && second == "Pending") || (first == "Pending" && second == "Assigned")
+		pods, _ := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+		claims, _ := kube.ResourceV1().ResourceClaims("default").List(context.Background(), metav1.ListOptions{})
+		return phasesReady && len(pods.Items) == 1 && len(claims.Items) == 1
 	})
 	cancel()
 	if err := <-done; err != nil {
@@ -59,6 +104,7 @@ func TestControllerCreatesExactChildrenAndReservesWithinPass(t *testing.T) {
 	}
 }
 
+// TestControllerFreezesStartedAssignmentAfterFabricChange verifies running ranks are not moved after topology changes.
 func TestControllerFreezesStartedAssignmentAfterFabricChange(t *testing.T) {
 	workload := controllerWorkload("job")
 	workload.Status = ttapi.WorkloadStatus{
@@ -93,6 +139,96 @@ func TestControllerFreezesStartedAssignmentAfterFabricChange(t *testing.T) {
 	}
 }
 
+// TestControllerTracksRunningAndSucceededCleanup verifies terminal Pods release child resources.
+func TestControllerTracksRunningAndSucceededCleanup(t *testing.T) {
+	dynamicClient := controllerDynamicClient(t, controllerNodeTopology(), controllerWorkload("lifecycle"))
+	kube := kubernetesfake.NewSimpleClientset()
+	cancel, done := runController(kube, dynamicClient)
+	defer cancel()
+	waitFor(t, func() bool {
+		pods, _ := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+		return workloadPhase(t, dynamicClient, "lifecycle") == "Assigned" && len(pods.Items) == 1
+	})
+	pods, err := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+	if err != nil || len(pods.Items) != 1 {
+		t.Fatalf("rank Pod was not created: %#v %v", pods, err)
+	}
+	pod := pods.Items[0].DeepCopy()
+	now := metav1.Now()
+	pod.Status.Phase, pod.Status.StartTime = corev1.PodRunning, &now
+	if _, err := kube.CoreV1().Pods("default").UpdateStatus(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "lifecycle") == "Running" })
+	pod, err = kube.CoreV1().Pods("default").Get(context.Background(), pod.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod.Status.Phase = corev1.PodSucceeded
+	if _, err := kube.CoreV1().Pods("default").UpdateStatus(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "lifecycle") == "Succeeded" })
+	waitFor(t, func() bool {
+		pods, _ := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+		claims, _ := kube.ResourceV1().ResourceClaims("default").List(context.Background(), metav1.ListOptions{})
+		return len(pods.Items) == 0 && len(claims.Items) == 0
+	})
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestControllerRejectsInvalidWorkloadWithoutChildren verifies unsafe templates fail closed.
+func TestControllerRejectsInvalidWorkloadWithoutChildren(t *testing.T) {
+	workload := controllerWorkload("invalid")
+	workload.Spec.ContainerName = "missing"
+	dynamicClient := controllerDynamicClient(t, controllerNodeTopology(), workload)
+	kube := kubernetesfake.NewSimpleClientset()
+	cancel, done := runController(kube, dynamicClient)
+	defer cancel()
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "invalid") == "Failed" })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	pods, _ := kube.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+	claims, _ := kube.ResourceV1().ResourceClaims("default").List(context.Background(), metav1.ListOptions{})
+	if len(pods.Items) != 0 || len(claims.Items) != 0 {
+		t.Fatalf("invalid workload created children: pods=%d claims=%d", len(pods.Items), len(claims.Items))
+	}
+}
+
+// TestControllerRetriesWorkloadStatusConflict verifies a stale resource version
+// cannot strand an otherwise valid assignment.
+func TestControllerRetriesWorkloadStatusConflict(t *testing.T) {
+	dynamicClient := controllerDynamicClient(t, controllerNodeTopology(), controllerWorkload("conflict"))
+	kube := kubernetesfake.NewSimpleClientset()
+	conflicts := 0
+	dynamicClient.PrependReactor("update", ttapi.WorkloadGVR.Resource, func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if conflicts > 0 {
+			return false, nil, nil
+		}
+		conflicts++
+		return true, nil, apierrors.NewConflict(
+			schema.GroupResource{Group: ttapi.WorkloadGVR.Group, Resource: ttapi.WorkloadGVR.Resource},
+			"conflict", errors.New("injected resource version conflict"),
+		)
+	})
+	cancel, done := runController(kube, dynamicClient)
+	defer cancel()
+	waitFor(t, func() bool { return workloadPhase(t, dynamicClient, "conflict") == "Assigned" })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if conflicts != 1 {
+		t.Fatalf("injected conflicts = %d, want 1", conflicts)
+	}
+}
+
+// controllerDynamicClient builds a fake dynamic client with the project's custom resource list kinds.
 func controllerDynamicClient(t *testing.T, objects ...any) *dynamicfake.FakeDynamicClient {
 	t.Helper()
 	runtimeObjects := make([]runtime.Object, 0, len(objects))
@@ -113,15 +249,17 @@ func controllerDynamicClient(t *testing.T, objects ...any) *dynamicfake.FakeDyna
 	)
 }
 
+// runController starts a fast test reconciliation loop and returns cancellation and completion handles.
 func runController(kube *kubernetesfake.Clientset, dynamicClient *dynamicfake.FakeDynamicClient) (context.CancelFunc, <-chan error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- (&controller.Controller{Kube: kube, Dynamic: dynamicClient, Interval: time.Hour, TopologyTTL: time.Minute}).Run(ctx)
+		done <- (&controller.Controller{Kube: kube, Dynamic: dynamicClient, TopologyTTL: time.Minute}).Run(ctx)
 	}()
 	return cancel, done
 }
 
+// workloadPhase reads and decodes the current phase of a fake workload resource.
 func workloadPhase(t *testing.T, client *dynamicfake.FakeDynamicClient, name string) string {
 	t.Helper()
 	object, err := client.Resource(ttapi.WorkloadGVR).Namespace("default").Get(context.Background(), name, metav1.GetOptions{})
@@ -135,6 +273,7 @@ func workloadPhase(t *testing.T, client *dynamicfake.FakeDynamicClient, name str
 	return workload.Status.Phase
 }
 
+// waitFor polls a test condition until it succeeds or the short deadline expires.
 func waitFor(t *testing.T, ready func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -147,6 +286,7 @@ func waitFor(t *testing.T, ready func() bool) {
 	t.Fatal("timed out waiting for controller reconciliation")
 }
 
+// controllerNodeTopology returns the connected two-device fabric used by controller tests.
 func controllerNodeTopology() *ttapi.NodeTopology {
 	return &ttapi.NodeTopology{
 		TypeMeta:   metav1.TypeMeta{APIVersion: ttapi.TopologyAPIVersion, Kind: ttapi.NodeTopologyKind},
@@ -161,6 +301,7 @@ func controllerNodeTopology() *ttapi.NodeTopology {
 	}
 }
 
+// controllerWorkload returns a minimal single-rank workload with stable test metadata.
 func controllerWorkload(name string) *ttapi.Workload {
 	return &ttapi.Workload{
 		TypeMeta: metav1.TypeMeta{APIVersion: ttapi.SchedulingAPIVersion, Kind: ttapi.WorkloadKind},

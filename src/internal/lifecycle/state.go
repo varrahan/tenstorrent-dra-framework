@@ -5,15 +5,30 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
-const stateVersion = 1
+const stateVersion = 3
 
-type persistedState struct {
-	Version int                      `json:"version"`
-	Claims  map[string]PreparedClaim `json:"claims"`
+type QuarantineRecord struct {
+	Reason         string    `json:"reason"`
+	Since          time.Time `json:"since"`
+	AwaitingHealth bool      `json:"awaitingHealth,omitempty"`
 }
 
+type KnownDevice struct {
+	Path     string    `json:"path"`
+	LastSeen time.Time `json:"lastSeen"`
+}
+
+type persistedState struct {
+	Version     int                         `json:"version"`
+	Claims      map[string]PreparedClaim    `json:"claims"`
+	Quarantined map[string]QuarantineRecord `json:"quarantined"`
+	Known       map[string]KnownDevice      `json:"known"`
+}
+
+// load restores claims and quarantine metadata from the manager's durable state file.
 func (m *Manager) load() error {
 	data, err := os.ReadFile(filepath.Join(m.config.StateDir, "claims.json"))
 	if os.IsNotExist(err) {
@@ -25,12 +40,26 @@ func (m *Manager) load() error {
 	if err := json.Unmarshal(data, &m.state); err != nil {
 		return fmt.Errorf("decode claim state: %w", err)
 	}
+	if m.state.Version == 1 || m.state.Version == 2 {
+		m.state.Version = stateVersion
+		for uid, claim := range m.state.Claims {
+			claim.Phase = ClaimPrepared
+			m.state.Claims[uid] = claim
+		}
+	}
 	if m.state.Version != stateVersion || m.state.Claims == nil {
 		return fmt.Errorf("unsupported claim state version %d", m.state.Version)
+	}
+	if m.state.Quarantined == nil {
+		m.state.Quarantined = map[string]QuarantineRecord{}
+	}
+	if m.state.Known == nil {
+		m.state.Known = map[string]KnownDevice{}
 	}
 	return nil
 }
 
+// persist atomically writes the manager's current lifecycle state to disk.
 func (m *Manager) persist() error {
 	if err := os.MkdirAll(m.config.StateDir, 0o755); err != nil {
 		return err
@@ -38,6 +67,7 @@ func (m *Manager) persist() error {
 	return atomicJSON(filepath.Join(m.config.StateDir, "claims.json"), m.state, 0o600)
 }
 
+// atomicJSON writes formatted JSON through a synced temporary file and atomic rename.
 func atomicJSON(path string, value any, mode os.FileMode) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {

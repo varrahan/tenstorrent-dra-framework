@@ -11,14 +11,24 @@ The Go implementation is rooted under `src/`. The node command publishes
 ResourceSlices and node topology; the controller validates fabric topology and
 creates exact claims and Pods for `TenstorrentWorkload` objects.
 
-From inside the VM, the supported validation entry point is:
+From inside the VM, the supported smoke validation entry point is:
 
 ```bash
 make -C test/vm vm-validate
 ```
 
+The clean, exact-commit release gate is `make -C test/vm vm-certification`.
+
 Documents:
 
+- [DESIGN.md](DESIGN.md): component responsibilities, execution stages, isolation, and scope boundaries.
 - [DRA.md](DRA.md): resource model, attributes, claims, topology, and workload APIs.
+- [ENV.md](ENV.md): complete driver and managed-workload runtime environment-variable contract.
+- [PRODUCTION.md](PRODUCTION.md): compatibility, security, recovery, scale, and API guarantees.
+- [OPERATIONS.md](OPERATIONS.md): deployment policy, observability, SLOs, alerts, incident response, lifecycle runbooks, and capacity planning.
+- [RELEASE.md](RELEASE.md): CI gates, immutable packaging, SBOMs, attestations, signatures, release verification, and rollback.
+- [RUN.md](RUN.md): prerequisite, build, deployment, inspection, troubleshooting, and cleanup commands.
 - [VM.md](VM.md): synthetic heterogeneous hardware and kind validation.
+- [CERTIFICATION.md](CERTIFICATION.md): failure/chaos gates, physical matrix, evidence, and release criteria.
+- [ACCEPTANCE.md](ACCEPTANCE.md): protected release approvals and candidate evidence contract.
 - [README.md](README.md): this project-wide routing document.

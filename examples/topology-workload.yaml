@@ -1,0 +1,26 @@
+apiVersion: scheduling.tenstorrent.com/v1
+kind: TenstorrentWorkload
+metadata:
+  name: connected-workers
+spec:
+  containerName: worker
+  topology:
+    fabricID: fabric-0
+    ringID: ring-0
+  podTemplate:
+    metadata:
+      labels:
+        app: connected-workers
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+      - name: worker
+        image: example.invalid/tenstorrent-workload:replace-me
+  ranks:
+  - name: rank-0
+    deviceClassName: tenstorrent-wormhole
+    count: 1
+  - name: rank-1
+    deviceClassName: tenstorrent-wormhole
+    count: 1

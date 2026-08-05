@@ -2,25 +2,31 @@ apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
   name: tenstorrent
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
 spec:
   selectors:
   - cel:
-      expression: device.driver == "dra.tenstorrent.com"
+      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent.com"].health == "Healthy"
 ---
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
   name: tenstorrent-wormhole
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
 spec:
   selectors:
   - cel:
-      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent.com"].chipSeries == "wormhole"
+      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent.com"].health == "Healthy" && device.attributes["tenstorrent.com"].chipSeries == "wormhole"
 ---
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
   name: tenstorrent-blackhole
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
 spec:
   selectors:
   - cel:
-      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent.com"].chipSeries == "blackhole"
+      expression: device.driver == "dra.tenstorrent.com" && device.attributes["tenstorrent.com"].health == "Healthy" && device.attributes["tenstorrent.com"].chipSeries == "blackhole"

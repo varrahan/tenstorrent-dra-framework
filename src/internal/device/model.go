@@ -16,6 +16,7 @@ type Roots struct {
 	StateDir             string
 }
 
+// DefaultRoots returns the production host paths used for discovery and state.
 func DefaultRoots() Roots {
 	return Roots{
 		DeviceRoot:           "/dev/tenstorrent",
@@ -25,6 +26,7 @@ func DefaultRoots() Roots {
 	}
 }
 
+// validate ensures every configured discovery and state path is absolute and non-empty.
 func (r Roots) validate() error {
 	paths := map[string]string{
 		"device root":            r.DeviceRoot,
@@ -65,6 +67,8 @@ type PCIIdentity struct {
 	SubsystemDevice string `json:"subsystemDevice,omitempty"`
 	Revision        string `json:"revision,omitempty"`
 	NUMANode        int    `json:"numaNode"`
+	IOMMUGroup      int    `json:"iommuGroup"`
+	IOMMUGroupSize  int    `json:"iommuGroupSize"`
 	LinkState       string `json:"linkState,omitempty"`
 	LinkSpeed       string `json:"linkSpeed,omitempty"`
 	LinkWidth       int    `json:"linkWidth,omitempty"`
@@ -103,12 +107,15 @@ type FabricInfo struct {
 // numbers are local runtime data and must not become scheduling policy.
 type InventoryDevice struct {
 	StableID               string                `json:"stableID"`
+	HardwareUUID           string                `json:"hardwareUUID,omitempty"`
 	Node                   Node                  `json:"node"`
 	CharacterDevicePresent bool                  `json:"characterDevicePresent"`
 	PCI                    PCIIdentity           `json:"pci"`
 	ChipSeries             string                `json:"chipSeries,omitempty"`
 	FirmwareVersion        string                `json:"firmwareVersion,omitempty"`
 	KMDVersion             string                `json:"kmdVersion,omitempty"`
+	DriverABIVersion       int                   `json:"driverABIVersion"`
+	KernelVersion          string                `json:"kernelVersion,omitempty"`
 	Memory                 MemoryInfo            `json:"memory"`
 	Compute                ComputeInfo           `json:"compute"`
 	Health                 HealthState           `json:"health"`
@@ -145,6 +152,7 @@ type StaticProvider struct {
 	Devices []RawDevice
 }
 
+// Observe returns a copy of the static device observations for deterministic callers.
 func (p StaticProvider) Observe(context.Context) ([]RawDevice, error) {
 	return append([]RawDevice(nil), p.Devices...), nil
 }

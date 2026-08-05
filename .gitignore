@@ -10,6 +10,9 @@
 # Common Go binary output directories
 bin/
 obj/
+/dist/
+/coverage/
+/artifacts/
 
 # Core dumps
 gmon.out
@@ -47,3 +50,5 @@ coverage.txt
 *.njsproj
 *.sln
 *.swp
+
+TODO.md

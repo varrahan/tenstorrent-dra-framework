@@ -1,16 +1,130 @@
+nameOverride: ""
+fullnameOverride: ""
+
 image:
-  repository: ghcr.io/tenstorrent/tenstorrent-dra
-  tag: "dev"
+  repository: ghcr.io/varrahan/tenstorrent-dra
+  tag: "0.1.0"
+  digest: ""
   pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Nodes must be explicitly opted in. These top-level hardware values remain
+# stable for existing installations and the VM validation overrides.
 nodeSelector:
   tenstorrent.com/enabled: "true"
 deviceRoot: /dev/tenstorrent
-sysfsMountRoot: /sys
 sysfsRoot: /sys/class/tenstorrent
 pciSysfsRoot: /sys/bus/pci/devices
+sysfsDevicesRoot: /sys/devices
 stateDir: /var/lib/tenstorrent-dra
 cdiDir: /var/run/cdi
 pluginDir: /var/lib/kubelet/plugins/dra.tenstorrent.com
 registrarDir: /var/lib/kubelet/plugins_registry
 interval: 30s
+inventoryGracePeriod: 60s
 topologyTTL: 90s
+placementTimeout: 2s
+controllerReplicas: 2
+resetMode: ioctl
+requireIOMMU: true
+syntheticDisableWorkloadAppArmor: false
+httpPort: 8080
+kubeAPI:
+  qps: 20
+  burst: 40
+
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  terminationGracePeriodSeconds: 30
+  minReadySeconds: 10
+  progressDeadlineSeconds: 300
+  rollout:
+    maxUnavailable: 0
+    maxSurge: 1
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 2
+  readinessProbe:
+    failureThreshold: 3
+    periodSeconds: 5
+  livenessProbe:
+    failureThreshold: 3
+    periodSeconds: 10
+  tolerations: []
+  podAnnotations: {}
+
+node:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  terminationGracePeriodSeconds: 60
+  minReadySeconds: 10
+  rollout:
+    maxUnavailable: 1
+  startupProbe:
+    failureThreshold: 60
+    periodSeconds: 2
+  readinessProbe:
+    failureThreshold: 3
+    periodSeconds: 5
+  livenessProbe:
+    failureThreshold: 3
+    periodSeconds: 10
+  tolerations: []
+  podAnnotations: {}
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+topologySpreadConstraints:
+  enabled: true
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: ScheduleAnyway
+
+priorityClass:
+  create: true
+  controller:
+    name: ""
+    value: 900000000
+  node:
+    name: ""
+    value: 1000000000
+
+metrics:
+  service:
+    enabled: true
+    annotations: {}
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    additionalLabels: {}
+
+networkPolicy:
+  # API-server egress is intentionally unrestricted. Enable this ingress-only
+  # policy after labeling the namespaces allowed to scrape metrics.
+  enabled: false
+  namespaceSelector: {}
+  podSelector: {}
+
+dashboard:
+  enabled: true
+  labels:
+    grafana_dashboard: "1"
+
+alerts:
+  # Requires the prometheus-operator monitoring.coreos.com/v1 CRDs.
+  enabled: false
+  additionalLabels: {}
