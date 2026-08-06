@@ -26,6 +26,9 @@ SHELLCHECK_IMAGE := docker.io/koalaman/shellcheck-alpine@sha256:9955be09ea7f0dbf
 GO_FILES := $(shell find src -type f -name '*.go' -print)
 LDFLAGS := -s -w -buildid= -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 BUILD_FLAGS := -mod=readonly -trimpath -buildvcs=false -ldflags="$(LDFLAGS)"
+SECURITY_CONFIG_DIR := config/security
+STATICCHECK_CONFIG := $(SECURITY_CONFIG_DIR)/staticcheck.conf
+STATICCHECK_CHECKS := $(shell awk -F'=' '/^[[:space:]]*checks[[:space:]]*=/ {gsub(/[[:space:]]/, "", $$2); gsub(/["\[\]]/, "", $$2); print $$2; exit}' $(STATICCHECK_CONFIG))
 
 .PHONY: build test race coverage coverage-check fmt-check vet staticcheck govulncheck \
 	license-check secret-scan actionlint shellcheck security image-build image-check \
@@ -56,7 +59,7 @@ vet:
 	$(GO) vet ./...
 
 staticcheck:
-	$(GO) run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) ./...
+	$(GO) run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) -checks="$(STATICCHECK_CHECKS)" ./...
 
 govulncheck:
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
@@ -65,10 +68,10 @@ license-check:
 	@temporary_binary="$$(mktemp)"; \
 		trap 'rm -f -- "$$temporary_binary"' EXIT; \
 		CGO_ENABLED=$(CGO_MODE) $(GO) build $(BUILD_FLAGS) -o "$$temporary_binary" $(COMMAND); \
-		GOTOOLCHAIN=$(GO_TOOLCHAIN) $(GO) run github.com/selesy/lichen@$(LICHEN_VERSION) --config=.lichen.yaml "$$temporary_binary"
+		GOTOOLCHAIN=$(GO_TOOLCHAIN) $(GO) run github.com/selesy/lichen@$(LICHEN_VERSION) --config=$(SECURITY_CONFIG_DIR)/.lichen.yaml "$$temporary_binary"
 
 secret-scan:
-	$(GO) run github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION) git --redact --no-banner .
+	$(GO) run github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION) git --redact --no-banner --config=$(SECURITY_CONFIG_DIR)/.gitleaks.toml .
 
 actionlint:
 	$(GO) run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)

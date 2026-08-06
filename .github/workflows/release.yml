@@ -209,6 +209,7 @@ jobs:
           output-format: table
           grype-version: v0.112.0
           cache-db: true
+          config: config/security/.grype.yaml
       - name: Build and push multi-architecture image
         id: image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
