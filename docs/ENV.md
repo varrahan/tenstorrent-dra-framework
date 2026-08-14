@@ -15,6 +15,7 @@ contract.
 | Variable | Commands | Requirement | Source and behavior |
 |---|---|---|---|
 | `NODE_NAME` | `node` | Required unless `-node-name` is supplied | The node DaemonSet obtains `spec.nodeName` through the Kubernetes Downward API. It identifies the node whose devices, topology, health, claims, CDI state, and Kubernetes Events the process manages. Startup fails with `node name is required` when both the variable and flag are empty. An explicit `-node-name` flag takes precedence. |
+| `POD_UID` | `node` | Recommended; supplied by the Helm chart | The node DaemonSet obtains `metadata.uid` through the Downward API. The kubelet helper uses it to give overlapping old and new node-agent Pods distinct registration sockets during a seamless upgrade. An explicit `-pod-uid` flag takes precedence. Omitting it disables seamless handoff. |
 | `POD_NAME` | `controller` | Optional | The controller Deployment obtains `metadata.name` through the Downward API. The value is the leader-election identity and is included in logs and Kubernetes Events. When empty, the process uses its operating-system hostname. Each controller replica must have a distinct identity. |
 | `POD_NAMESPACE` | `controller` | Optional | The controller Deployment obtains `metadata.namespace` through the Downward API. It initializes the namespace for the leader-election Lease, logs, and leader Events. When empty, it defaults to `default`; `-leader-election-namespace` takes precedence. The Helm chart always passes the release namespace explicitly through that flag. |
 | `KUBERNETES_SERVICE_HOST` | `node`, `controller`, `cleanup` | Required by in-cluster client setup | Kubernetes injects the API Service host. `client-go` combines it with `KUBERNETES_SERVICE_PORT` to construct the API-server URL. The program intentionally supports only in-cluster Kubernetes authentication, so these commands fail before startup if either variable is absent. Do not hard-code or override it. |
@@ -41,7 +42,7 @@ topology assignment.
 
 ## Helm wiring
 
-The chart wires `NODE_NAME`, `POD_NAME`, and `POD_NAMESPACE` with Downward API
+The chart wires `NODE_NAME`, `POD_UID`, `POD_NAME`, and `POD_NAMESPACE` with Downward API
 `fieldRef` entries. Kubernetes supplies its API Service variables. No Secret or
 ConfigMap is used for runtime environment configuration.
 

@@ -39,6 +39,10 @@ type AuditEvent struct {
 func (m *Manager) Monitor(ctx context.Context, snapshot device.InventorySnapshot) (device.InventorySnapshot, Safety, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.lockAndReload(); err != nil {
+		return device.InventorySnapshot{}, Safety{}, err
+	}
+	defer m.unlockState()
 	if err := m.inventoryFresh(snapshot); err != nil {
 		return m.inventoryFailedLocked(err)
 	}
@@ -54,6 +58,10 @@ func (m *Manager) Monitor(ctx context.Context, snapshot device.InventorySnapshot
 func (m *Manager) InventoryFailed(err error) (device.InventorySnapshot, Safety, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if lockErr := m.lockAndReload(); lockErr != nil {
+		return device.InventorySnapshot{}, Safety{}, lockErr
+	}
+	defer m.unlockState()
 	return m.inventoryFailedLocked(err)
 }
 

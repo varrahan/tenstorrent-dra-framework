@@ -17,6 +17,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+	drahealthv1alpha1 "k8s.io/kubelet/pkg/apis/dra-health/v1alpha1"
 )
 
 type Config struct {
@@ -32,9 +33,11 @@ type Config struct {
 	Metrics         *observability.Metrics
 	Logger          *slog.Logger
 	EventSink       func(AuditEvent, *PreparedClaim)
+	FatalError      func(error, string)
 }
 
 type Manager struct {
+	drahealthv1alpha1.UnimplementedDRAResourceHealthServer
 	config       Config
 	mu           sync.Mutex
 	state        persistedState
@@ -60,13 +63,14 @@ type PreparedClaim struct {
 }
 
 type ClaimDevice struct {
-	Pool     string `json:"pool"`
-	Device   string `json:"device"`
-	StableID string `json:"stableID"`
-	Path     string `json:"path"`
-	Major    uint64 `json:"major"`
-	Minor    uint64 `json:"minor"`
-	CDIID    string `json:"cdiID"`
+	Requests []string `json:"requests"`
+	Pool     string   `json:"pool"`
+	Device   string   `json:"device"`
+	StableID string   `json:"stableID"`
+	Path     string   `json:"path"`
+	Major    uint64   `json:"major"`
+	Minor    uint64   `json:"minor"`
+	CDIID    string   `json:"cdiID"`
 }
 
 // NewManager validates lifecycle dependencies and restores persisted allocation state.
@@ -96,9 +100,14 @@ func NewManager(config Config) (*Manager, error) {
 		Version: stateVersion, Claims: map[string]PreparedClaim{},
 		Quarantined: map[string]QuarantineRecord{}, Known: map[string]KnownDevice{},
 	}}
-	if err := m.acquireLock(); err != nil {
+	if err := m.openLock(); err != nil {
 		return nil, err
 	}
+	if err := m.lockState(); err != nil {
+		m.Close()
+		return nil, err
+	}
+	defer m.unlockState()
 	if err := m.load(); err != nil {
 		if recoverErr := m.recoverCorruptState(err); recoverErr != nil {
 			m.Close()
@@ -118,6 +127,10 @@ func NewManager(config Config) (*Manager, error) {
 func (m *Manager) PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.lockAndReload(); err != nil {
+		return nil, err
+	}
+	defer m.unlockState()
 	refreshStarted := time.Now()
 	snapshot, err := m.config.Inventory(ctx)
 	if err != nil {
@@ -163,6 +176,10 @@ func (m *Manager) PrepareResourceClaims(ctx context.Context, claims []*resourcea
 func (m *Manager) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.lockAndReload(); err != nil {
+		return nil, err
+	}
+	defer m.unlockState()
 	refreshStarted := time.Now()
 	snapshot, err := m.config.Inventory(ctx)
 	if err != nil {
@@ -262,6 +279,9 @@ type Stats struct {
 func (m *Manager) SnapshotStats() Stats {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.lockAndReload(); err == nil {
+		defer m.unlockState()
+	}
 	stats := Stats{Quarantined: len(m.state.Quarantined)}
 	for _, claim := range m.state.Claims {
 		stats.Allocated += len(claim.Devices)
@@ -276,11 +296,20 @@ func (m *Manager) observeClaim(operation string, started time.Time, err error) {
 	}
 }
 
-// HandleError leaves recoverable kubelet helper errors to the caller without mutating state.
-func (m *Manager) HandleError(_ context.Context, _ error, _ string) {
-	// The caller decides whether a helper error is fatal. Keeping this callback
-	// side-effect free avoids turning a recoverable kubelet reconnect into data
-	// loss or premature CDI cleanup.
+// HandleError logs helper failures and terminates the process on errors that
+// cannot be repaired by retrying, such as invalid or field-dropped slices.
+func (m *Manager) HandleError(_ context.Context, err error, msg string) {
+	if err == nil {
+		return
+	}
+	if errors.Is(err, kubeletplugin.ErrRecoverable) {
+		m.config.Logger.Warn("recoverable kubelet helper error", "operation", msg, "error", err)
+		return
+	}
+	m.config.Logger.Error("fatal kubelet helper error", "operation", msg, "error", err)
+	if m.config.FatalError != nil {
+		m.config.FatalError(err, msg)
+	}
 }
 
 // prepareOne validates one allocation, performs preflight sanitization, and writes its CDI spec.
@@ -378,14 +407,22 @@ func (m *Manager) prepareOne(ctx context.Context, claim *resourceapi.ResourceCla
 
 // claimFromAllocation validates a local allocation and captures its exact current identity.
 func (m *Manager) claimFromAllocation(claim *resourceapi.ResourceClaim, byName map[string]device.InventoryDevice, owners map[string]string) (PreparedClaim, error) {
-	if len(claim.Status.Allocation.Devices.Results) == 0 {
-		return PreparedClaim{}, errors.New("claim allocation has no devices")
+	for _, config := range claim.Status.Allocation.Devices.Config {
+		if config.Opaque != nil && config.Opaque.Driver == m.config.Driver {
+			return PreparedClaim{}, fmt.Errorf("driver configuration from %q is not supported", config.Source)
+		}
 	}
 	prepared := PreparedClaim{UID: claim.UID, Namespace: claim.Namespace, Name: claim.Name, Phase: ClaimPreparing}
 	seen := map[string]struct{}{}
 	for _, allocation := range claim.Status.Allocation.Devices.Results {
 		if allocation.Driver != m.config.Driver {
-			return PreparedClaim{}, fmt.Errorf("allocation driver %q does not match %q", allocation.Driver, m.config.Driver)
+			continue
+		}
+		if allocation.AdminAccess != nil && *allocation.AdminAccess {
+			return PreparedClaim{}, errors.New("administrative device access is not supported")
+		}
+		if strings.TrimSpace(allocation.Request) == "" {
+			return PreparedClaim{}, errors.New("allocation request name is empty")
 		}
 		if allocation.Pool != m.config.NodeName {
 			return PreparedClaim{}, fmt.Errorf("allocation pool %q is not local node %q", allocation.Pool, m.config.NodeName)
@@ -406,9 +443,12 @@ func (m *Manager) claimFromAllocation(claim *resourceapi.ResourceClaim, byName m
 		}
 		id := cdiID(claim.UID, allocation.Device)
 		prepared.Devices = append(prepared.Devices, ClaimDevice{
-			Pool: allocation.Pool, Device: allocation.Device, StableID: item.StableID, Path: item.Node.Path,
+			Requests: []string{allocation.Request}, Pool: allocation.Pool, Device: allocation.Device, StableID: item.StableID, Path: item.Node.Path,
 			Major: item.Node.Major, Minor: item.Node.Minor, CDIID: id,
 		})
+	}
+	if len(prepared.Devices) == 0 {
+		return PreparedClaim{}, fmt.Errorf("claim allocation has no devices for driver %q", m.config.Driver)
 	}
 	return prepared, nil
 }

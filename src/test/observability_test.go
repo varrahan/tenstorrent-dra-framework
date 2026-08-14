@@ -31,6 +31,19 @@ func TestHealthEndpointsTrackIndependentStates(t *testing.T) {
 	assertStatus(t, handler, "/livez", http.StatusServiceUnavailable)
 }
 
+// TestHealthWatchdogDetectsReconcileStalls verifies a responsive HTTP server
+// does not conceal a stuck node reconciliation loop.
+func TestHealthWatchdogDetectsReconcileStalls(t *testing.T) {
+	health := observability.NewHealth("node", "worker-a", nil)
+	handler := health.Handler(nil)
+	health.SetProgressDeadline(time.Millisecond)
+	assertStatus(t, handler, "/livez", http.StatusOK)
+	time.Sleep(5 * time.Millisecond)
+	assertStatus(t, handler, "/livez", http.StatusServiceUnavailable)
+	health.MarkProgress()
+	assertStatus(t, handler, "/livez", http.StatusOK)
+}
+
 // TestMetricsExposeProductionSignals verifies the required operations surface
 // is present in Prometheus exposition format.
 func TestMetricsExposeProductionSignals(t *testing.T) {

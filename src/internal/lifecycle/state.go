@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const stateVersion = 3
+const stateVersion = 4
 
 type QuarantineRecord struct {
 	Reason         string    `json:"reason"`
@@ -40,7 +40,7 @@ func (m *Manager) load() error {
 	if err := json.Unmarshal(data, &m.state); err != nil {
 		return fmt.Errorf("decode claim state: %w", err)
 	}
-	if m.state.Version == 1 || m.state.Version == 2 {
+	if m.state.Version >= 1 && m.state.Version < stateVersion {
 		m.state.Version = stateVersion
 		for uid, claim := range m.state.Claims {
 			claim.Phase = ClaimPrepared

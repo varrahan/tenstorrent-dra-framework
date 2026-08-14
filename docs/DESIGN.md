@@ -86,6 +86,14 @@ does not depend on the fabric graph or the Tenstorrent workload controller.
    retains ownership and quarantine so the device cannot be reused. The
    operation is retried by kubelet.
 
+The node plugin also streams complete device health observations through the
+kubelet `DRAResourceHealth` service. A controller-leader watchdog treats the
+custom node-condition heartbeat as a lease. If the heartbeat exceeds the
+configured node-agent TTL, it taints the node, deletes that node's Tenstorrent
+ResourceSlices, and removes its node-topology observation. A legacy node agent
+without seamless-upgrade identity performs the same fencing on shutdown; an
+upgrade-aware agent leaves publication to its overlapping successor.
+
 ## Tenant-isolation contract
 
 - CDI exposes only each claim's allocated character-device nodes, including the

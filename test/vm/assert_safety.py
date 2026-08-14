@@ -23,7 +23,7 @@ def main() -> None:
             raise SystemExit(f"incomplete safety snapshot for {node_dir.name}")
         nodes += 1
         state = json.loads(state_path.read_text(encoding="utf-8"))
-        if state.get("version") != 3:
+        if state.get("version") != 4:
             raise SystemExit(f"{node_dir.name}: unsupported state version {state.get('version')!r}")
         for uid, claim in state.get("claims", {}).items():
             claim_uids.add(uid)

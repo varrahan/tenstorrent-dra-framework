@@ -10,7 +10,7 @@ differs from the candidate named in the release.
 The `QEMU VM certification` job runs on a dedicated self-hosted runner labeled
 `tt-qemu-vm`. The runner must be an ephemeral, disposable instance of the
 supported QEMU `ttsim` Ubuntu VM with Docker, kind, Kubernetes 1.34 or newer,
-Helm 4.2.3, Go 1.25.12, and no production credentials. Pull requests from
+Helm 4.2.3, Go 1.25.13, and no production credentials. Pull requests from
 forks do not execute repository code on this privileged runner; maintainers
 must move an accepted fork change to a trusted branch before certification.
 

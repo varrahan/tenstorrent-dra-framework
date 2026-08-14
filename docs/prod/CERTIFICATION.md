@@ -105,3 +105,8 @@ maintenance authority and platform-specific controls. The release approver
 must reject evidence with missing phases, synthetic/noop settings, mutable
 images, edited state/CDI files outside a declared orphan-injection case, or
 failed SLOs.
+
+Chart rendering and schema validation run against Kubernetes 1.34, 1.35, and
+1.36 in CI. Runtime certification evidence must identify the exact Kubernetes
+minor; the physical matrix collectively must contain a passing entry for every
+minor claimed as supported by the release.

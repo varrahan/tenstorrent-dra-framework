@@ -11,6 +11,7 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxUnavailable: {{ .Values.node.rollout.maxUnavailable }}
+      maxSurge: {{ .Values.node.rollout.maxSurge }}
   selector:
     matchLabels:
       {{- include "tenstorrent-dra.selectorLabels" (dict "root" . "component" "node") | nindent 6 }}
@@ -89,6 +90,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
         volumeMounts:
         - {name: device, mountPath: {{ .Values.deviceRoot | quote }}}
         - {name: tt-sysfs, mountPath: {{ .Values.sysfsRoot | quote }}, readOnly: true}

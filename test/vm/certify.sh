@@ -82,8 +82,8 @@ esac
 go_version="$(go version)"
 helm_version="$(helm version --short)"
 kubectl_version="$(kubectl version --client=true -o json | python3 -c 'import json,sys; print(json.load(sys.stdin)["clientVersion"]["gitVersion"])')"
-if [[ "$go_version" != "go version go1.25.12 "* ]]; then
-  printf 'VM certification requires Go 1.25.12; found %s\n' "$go_version" >&2
+if [[ "$go_version" != "go version go1.25.13 "* ]]; then
+  printf 'VM certification requires Go 1.25.13; found %s\n' "$go_version" >&2
   exit 1
 fi
 if [[ "$helm_version" != "v4.2.3"* ]]; then

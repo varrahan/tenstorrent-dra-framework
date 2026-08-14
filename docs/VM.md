@@ -5,13 +5,42 @@ Docker, kind, kubectl, Helm v4.2.3, Kubernetes v1.34+, and `tt-kmd`. The driver
 reads the guest's `/dev/tenstorrent`, `/sys/class/tenstorrent`, and PCI sysfs
 paths.
 
+## Rebuilding and starting the guest
+
+Host-side recovery helpers live in `test/vm/host/`. They expect a QEMU binary
+with the `ttsim` device, an Ubuntu qcow2 disk, and the matching simulator
+library at the following defaults:
+
+```text
+~/.local/bin/qemu-system-x86_64
+~/sim/ttsim-qemu/ubuntu.qcow2
+~/sim/libttsim_wh.so
+```
+
+Create the cloud-init seed once, launch the four-vCPU TCG guest, and provision
+its pinned validation tools:
+
+```bash
+test/vm/host/create-seed.sh
+test/vm/host/launch.sh
+ssh -i ~/.ssh/ttsim_vm_ed25519 -p 2222 ubuntu@127.0.0.1 \
+  'bash -s' < test/vm/host/provision-guest.sh
+```
+
+The provisioner installs kind v0.30.0, kubectl v1.34.8, Helm v4.2.3, Go
+v1.25.13, Docker, and validation utilities. Sync this repository into the
+guest at `/home/ubuntu/tt-device-plugin`, then run the commands below over SSH.
+The VM launch helper records the QEMU PID under `~/sim/ttsim-qemu/vm.pid` and
+the serial console at `/tmp/ttsim-qemu-serial.log`.
+
 The validation harness creates heterogeneous synthetic device trees, mounts
 separate trees into two kind workers, installs the Helm chart, and asserts exact
-ResourceSlice and topology contents. It then runs a standard CDI-backed claim
-and a connected two-rank `TenstorrentWorkload`, verifies per-container device
-visibility, upgrades and rolls back the controller and node agents while a
-claim remains prepared, and checks claim state, audit, Events, metrics, CDI,
-teardown, and release uninstall cleanup. It does not use `tt-smi`.
+ResourceSlice and topology contents. It then runs standard single- and
+multi-request CDI-backed claims, proves request-level isolation between two
+containers, and runs a connected two-rank `TenstorrentWorkload`. It upgrades
+and rolls back overlapping controller and node agents while a claim remains
+prepared, and checks claim state, audit, Events, metrics, CDI, teardown, and
+release uninstall cleanup. It does not use `tt-smi`.
 Synthetic device nodes do not implement the `tt-kmd` reset ioctl, so the harness
 uses the explicit validation-only `resetMode=noop` and `requireIOMMU=false`
 overrides. Production defaults remain ioctl reset and dedicated IOMMU groups.

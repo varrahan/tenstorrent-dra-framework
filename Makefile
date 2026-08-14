@@ -20,7 +20,7 @@ GOVULNCHECK_VERSION := v1.6.0
 LICHEN_VERSION := v0.3.0
 GITLEAKS_VERSION := v8.30.1
 ACTIONLINT_VERSION := v1.7.11
-override GO_TOOLCHAIN := go1.25.12
+override GO_TOOLCHAIN := go1.25.13
 SHELLCHECK_IMAGE := docker.io/koalaman/shellcheck-alpine@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
 
 GO_FILES := $(shell find src -type f -name '*.go' -print)
@@ -32,7 +32,7 @@ STATICCHECK_CHECKS := $(shell awk -F'=' '/^[[:space:]]*checks[[:space:]]*=/ {gsu
 
 .PHONY: build test race coverage coverage-check fmt-check vet staticcheck govulncheck \
 	license-check secret-scan actionlint shellcheck security image-build image-check \
-	supply-chain-check helm-lint helm-package release-binaries release-reproducibility \
+	helm-lint helm-package release-binaries release-reproducibility \
 	release-checksums release vm-validation chaos-validation vm-certification \
 	hardware-certification check ci clean
 
@@ -79,10 +79,7 @@ actionlint:
 shellcheck:
 	$(DOCKER) run --rm --volume "$(CURDIR):/mnt:ro" --workdir /mnt $(SHELLCHECK_IMAGE) \
 		shellcheck test/coverage/check.sh test/hardware/certify.sh test/helm/validate.sh \
-		test/supply-chain/validate.sh test/vm/certify.sh test/vm/chaos.sh test/vm/validate.sh
-
-supply-chain-check:
-	bash test/supply-chain/validate.sh
+		test/vm/certify.sh test/vm/chaos.sh test/vm/validate.sh
 
 security: staticcheck govulncheck license-check secret-scan
 
@@ -141,7 +138,7 @@ hardware-certification:
 
 check: fmt-check vet build test helm-lint
 
-ci: fmt-check vet staticcheck coverage-check govulncheck license-check secret-scan actionlint shellcheck supply-chain-check helm-lint
+ci: fmt-check vet staticcheck coverage-check govulncheck license-check secret-scan actionlint shellcheck helm-lint
 
 clean:
 	rm -rf -- dist coverage

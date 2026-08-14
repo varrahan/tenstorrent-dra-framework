@@ -1,11 +1,16 @@
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
-  name: tt-e2e-standard
+  name: tt-e2e-request-isolation
 spec:
   devices:
     requests:
-    - name: accelerator
+    - name: wormhole
+      exactly:
+        deviceClassName: tenstorrent-wormhole
+        allocationMode: ExactCount
+        count: 1
+    - name: blackhole
       exactly:
         deviceClassName: tenstorrent-blackhole
         allocationMode: ExactCount
@@ -14,36 +19,51 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: tt-e2e-standard
+  name: tt-e2e-request-isolation
 spec:
   restartPolicy: Never
   terminationGracePeriodSeconds: 1
   automountServiceAccountToken: false
   resourceClaims:
   - name: tenstorrent
-    resourceClaimName: tt-e2e-standard
+    resourceClaimName: tt-e2e-request-isolation
   securityContext:
     runAsNonRoot: true
     runAsUser: 65532
     runAsGroup: 65532
     seccompProfile: {type: RuntimeDefault}
   containers:
-  - name: worker
+  - name: wormhole
     image: tenstorrent-dra-e2e:dev
     imagePullPolicy: IfNotPresent
     command: ["/bin/sh", "-ec"]
     args:
     - |
       devices="$(find /dev/tenstorrent -mindepth 1 -maxdepth 1 -type c -print | sort)"
-      test "$(printf '%s\n' "$devices" | sed '/^$/d' | wc -l)" -eq 1
-      printf 'devices=%s\n' "$devices"
-      # Keep the claim reserved across slow TCG upgrade and rollback rollouts.
-      sleep 1800
+      test "$devices" = /dev/tenstorrent/0
+      printf 'request=wormhole devices=%s\n' "$devices"
+      sleep 300
     resources:
       claims:
       - name: tenstorrent
-    securityContext:
+        request: wormhole
+    securityContext: &restricted
       allowPrivilegeEscalation: false
       capabilities: {drop: ["ALL"]}
       readOnlyRootFilesystem: true
       runAsNonRoot: true
+  - name: blackhole
+    image: tenstorrent-dra-e2e:dev
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/sh", "-ec"]
+    args:
+    - |
+      devices="$(find /dev/tenstorrent -mindepth 1 -maxdepth 1 -type c -print | sort)"
+      test "$devices" = /dev/tenstorrent/1
+      printf 'request=blackhole devices=%s\n' "$devices"
+      sleep 300
+    resources:
+      claims:
+      - name: tenstorrent
+        request: blackhole
+    securityContext: *restricted

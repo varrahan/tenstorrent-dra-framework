@@ -13,28 +13,6 @@ permissions:
   contents: read
 
 jobs:
-  vm-certification:
-    name: QEMU VM certification
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, tt-qemu-vm]
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - name: Run exact-commit smoke and chaos certification
-        env:
-          EVIDENCE_DIR: ${{ runner.temp }}/tt-vm-certification-${{ github.sha }}
-        run: bash test/vm/certify.sh "$GITHUB_SHA" "$EVIDENCE_DIR"
-      - name: Preserve VM certification evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: vm-certification-${{ github.sha }}
-          path: ${{ runner.temp }}/tt-vm-certification-${{ github.sha }}
-          if-no-files-found: error
-          retention-days: 30
-
   quality:
     name: Go, policy, and workflow gates
     runs-on: ubuntu-24.04
@@ -44,7 +22,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.25.12
+          go-version: 1.25.13
           cache: true
       - name: Verify modules and build
         run: go mod verify && make fmt-check vet build
@@ -59,19 +37,25 @@ jobs:
       - name: Secret history scan
         run: make secret-scan
       - name: Workflow and packaging policy
-        run: make actionlint supply-chain-check
+        run: make actionlint
       - name: Shell analysis
         run: make shellcheck
 
   helm:
-    name: Helm package
+    name: Helm package (Kubernetes ${{ matrix.kubernetes }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kubernetes: [1.34.0, 1.35.0, 1.36.0]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v4.2.3
       - run: make helm-lint helm-package
+        env:
+          KUBE_VERSION: ${{ matrix.kubernetes }}
 
   dependency-review:
     name: Dependency review

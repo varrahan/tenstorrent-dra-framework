@@ -76,6 +76,7 @@ spec:
         args:
         - controller
         - -topology-ttl={{ .Values.topologyTTL }}
+        - -node-agent-ttl={{ .Values.nodeAgentTTL }}
         - -placement-timeout={{ .Values.placementTimeout }}
         - -leader-elect=true
         - -leader-election-name={{ include "tenstorrent-dra.fullname" . }}-controller

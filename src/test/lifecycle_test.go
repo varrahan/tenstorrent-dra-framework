@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -143,10 +145,15 @@ func TestPrepareRejectsNilAndDuplicateAllocations(t *testing.T) {
 	}
 }
 
-// TestLifecycleManagerExcludesConcurrentAgents verifies the host lock has a single owner.
-func TestLifecycleManagerExcludesConcurrentAgents(t *testing.T) {
+// TestLifecycleManagerAllowsUpgradeOverlap verifies two agent versions can
+// coexist while serializing individual state transactions.
+func TestLifecycleManagerAllowsUpgradeOverlap(t *testing.T) {
 	root := t.TempDir()
 	snapshot := lifecycleSnapshot()
+	snapshot.Devices = append(snapshot.Devices, device.InventoryDevice{
+		StableID: "uuid-lifecycle-device-2", Node: device.Node{ID: "1", Path: "/dev/tenstorrent/1", ChipSeries: "wormhole", Major: 241, Minor: 1},
+		CharacterDevicePresent: true, Health: device.HealthHealthy, Eligible: true,
+	})
 	config := lifecycle.Config{
 		NodeName: "node-a", Driver: "dra.tenstorrent.com",
 		StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"),
@@ -158,9 +165,42 @@ func TestLifecycleManagerExcludesConcurrentAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer first.Close()
-	if second, err := lifecycle.NewManager(config); err == nil {
-		second.Close()
-		t.Fatal("second manager acquired the same lifecycle lock")
+	second, err := lifecycle.NewManager(config)
+	if err != nil {
+		t.Fatalf("upgrade peer could not open shared state: %v", err)
+	}
+	defer second.Close()
+	firstClaim := lifecycleClaim("upgrade-first")
+	secondClaim := lifecycleClaim("upgrade-second")
+	secondClaim.Status.Allocation.Devices.Results[0].Device = "tt-uuid-lifecycle-device-2"
+	var group sync.WaitGroup
+	group.Add(2)
+	errorsSeen := make(chan error, 2)
+	go func() {
+		defer group.Done()
+		result, err := first.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{firstClaim})
+		if err != nil {
+			errorsSeen <- err
+		} else if result[firstClaim.UID].Err != nil {
+			errorsSeen <- result[firstClaim.UID].Err
+		}
+	}()
+	go func() {
+		defer group.Done()
+		result, err := second.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{secondClaim})
+		if err != nil {
+			errorsSeen <- err
+		} else if result[secondClaim.UID].Err != nil {
+			errorsSeen <- result[secondClaim.UID].Err
+		}
+	}()
+	group.Wait()
+	close(errorsSeen)
+	for err := range errorsSeen {
+		t.Fatalf("overlapping transaction failed: %v", err)
+	}
+	if stats := first.SnapshotStats(); stats.Allocated != 2 {
+		t.Fatalf("overlapping state lost an allocation: %#v", stats)
 	}
 }
 
@@ -383,8 +423,101 @@ func TestLifecycleMigratesStateVersionTwo(t *testing.T) {
 	}
 	defer manager.Close()
 	state, err := os.ReadFile(filepath.Join(stateDir, "claims.json"))
-	if err != nil || !strings.Contains(string(state), `"version": 3`) || !strings.Contains(string(state), `"phase": "Prepared"`) {
+	if err != nil || !strings.Contains(string(state), `"version": 4`) || !strings.Contains(string(state), `"phase": "Recovered"`) {
 		t.Fatalf("legacy state was not migrated: %s, err=%v", state, err)
+	}
+}
+
+// TestPreparePreservesRequestsAndIgnoresOtherDrivers verifies the kubelet can
+// expose each device only to containers selecting its request in a mixed claim.
+func TestPreparePreservesRequestsAndIgnoresOtherDrivers(t *testing.T) {
+	root := t.TempDir()
+	snapshot := lifecycleSnapshot()
+	snapshot.Devices = append(snapshot.Devices, device.InventoryDevice{
+		StableID: "uuid-lifecycle-device-2", Node: device.Node{ID: "1", Path: "/dev/tenstorrent/1", ChipSeries: "wormhole", Major: 241, Minor: 1},
+		CharacterDevicePresent: true, Health: device.HealthHealthy, Eligible: true,
+	})
+	manager, err := lifecycle.NewManager(lifecycle.Config{
+		NodeName: "node-a", Driver: "dra.tenstorrent.com", StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"),
+		Resetter: lifecycle.NoopResetter{}, Inventory: func(context.Context) (device.InventorySnapshot, error) { return snapshot, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	claim := lifecycleClaim("mixed-uid")
+	claim.Status.Allocation.Devices.Results = []resourceapi.DeviceRequestAllocationResult{
+		{Request: "compile", Driver: "dra.tenstorrent.com", Pool: "node-a", Device: "tt-uuid-lifecycle-device"},
+		{Request: "network", Driver: "network.example.com", Pool: "node-a", Device: "nic-0"},
+		{Request: "execute/fast", Driver: "dra.tenstorrent.com", Pool: "node-a", Device: "tt-uuid-lifecycle-device-2"},
+	}
+	result, err := manager.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{claim})
+	if err != nil || result[claim.UID].Err != nil || len(result[claim.UID].Devices) != 2 {
+		t.Fatalf("mixed prepare = %#v, err=%v", result[claim.UID], err)
+	}
+	if got := result[claim.UID].Devices[0].Requests; len(got) != 1 || got[0] != "compile" {
+		t.Fatalf("first request association = %#v", got)
+	}
+	if got := result[claim.UID].Devices[1].Requests; len(got) != 1 || got[0] != "execute/fast" {
+		t.Fatalf("second request association = %#v", got)
+	}
+}
+
+// TestPrepareRejectsUnsupportedDriverSemantics verifies unsupported opaque
+// configuration and administrative access fail closed before device reset.
+func TestPrepareRejectsUnsupportedDriverSemantics(t *testing.T) {
+	root := t.TempDir()
+	manager, err := lifecycle.NewManager(lifecycle.Config{
+		NodeName: "node-a", Driver: "dra.tenstorrent.com", StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"),
+		Resetter: lifecycle.NoopResetter{}, Inventory: func(context.Context) (device.InventorySnapshot, error) { return lifecycleSnapshot(), nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	configured := lifecycleClaim("configured-uid")
+	configured.Status.Allocation.Devices.Config = []resourceapi.DeviceAllocationConfiguration{{
+		Source:              resourceapi.AllocationConfigSourceClaim,
+		DeviceConfiguration: resourceapi.DeviceConfiguration{Opaque: &resourceapi.OpaqueDeviceConfiguration{Driver: "dra.tenstorrent.com"}},
+	}}
+	result, err := manager.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{configured})
+	if err != nil || result[configured.UID].Err == nil || !strings.Contains(result[configured.UID].Err.Error(), "configuration") {
+		t.Fatalf("configured result = %#v, err=%v", result[configured.UID], err)
+	}
+	admin := lifecycleClaim("admin-uid")
+	adminAccess := true
+	admin.Status.Allocation.Devices.Results[0].AdminAccess = &adminAccess
+	result, err = manager.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{admin})
+	if err != nil || result[admin.UID].Err == nil || !strings.Contains(result[admin.UID].Err.Error(), "administrative") {
+		t.Fatalf("admin result = %#v, err=%v", result[admin.UID], err)
+	}
+}
+
+// TestHelperFatalErrorsAreEscalated verifies invalid publication errors stop
+// the process while retryable kubelet reconnects do not.
+func TestHelperFatalErrorsAreEscalated(t *testing.T) {
+	root := t.TempDir()
+	fatal := make(chan error, 1)
+	manager, err := lifecycle.NewManager(lifecycle.Config{
+		NodeName: "node-a", Driver: "dra.tenstorrent.com", StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"),
+		Resetter: lifecycle.NoopResetter{}, Inventory: func(context.Context) (device.InventorySnapshot, error) { return lifecycleSnapshot(), nil },
+		FatalError: func(err error, _ string) { fatal <- err },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	manager.HandleError(context.Background(), fmt.Errorf("temporary: %w", kubeletplugin.ErrRecoverable), "publish")
+	select {
+	case err := <-fatal:
+		t.Fatalf("recoverable error escalated: %v", err)
+	default:
+	}
+	manager.HandleError(context.Background(), errors.New("invalid ResourceSlice"), "publish")
+	select {
+	case <-fatal:
+	default:
+		t.Fatal("fatal helper error was not escalated")
 	}
 }
 

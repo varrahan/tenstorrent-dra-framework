@@ -13,8 +13,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// acquireLock prevents multiple node agents from sharing lifecycle and CDI state.
-func (m *Manager) acquireLock() error {
+// openLock opens the inter-process transaction lock used by overlapping node
+// agents during a seamless upgrade.
+func (m *Manager) openLock() error {
 	if err := os.MkdirAll(m.config.StateDir, 0o755); err != nil {
 		return err
 	}
@@ -22,20 +23,48 @@ func (m *Manager) acquireLock() error {
 	if err != nil {
 		return err
 	}
-	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		file.Close()
-		return fmt.Errorf("lock lifecycle state: %w", err)
-	}
 	m.lockFile = file
 	return nil
 }
 
-// Close releases the host-level lifecycle lock held by this manager.
-func (m *Manager) Close() error {
+// lockState serializes one complete state transaction across agent processes.
+func (m *Manager) lockState() error {
+	if m.lockFile == nil {
+		return errors.New("lifecycle state lock is closed")
+	}
+	if err := unix.Flock(int(m.lockFile.Fd()), unix.LOCK_EX); err != nil {
+		return fmt.Errorf("lock lifecycle state: %w", err)
+	}
+	return nil
+}
+
+// lockAndReload begins a state transaction from the latest durable state.
+func (m *Manager) lockAndReload() error {
+	if err := m.lockState(); err != nil {
+		return err
+	}
+	if err := m.load(); err != nil {
+		_ = m.unlockState()
+		return err
+	}
+	return nil
+}
+
+func (m *Manager) unlockState() error {
 	if m.lockFile == nil {
 		return nil
 	}
-	err := errors.Join(unix.Flock(int(m.lockFile.Fd()), unix.LOCK_UN), m.lockFile.Close())
+	return unix.Flock(int(m.lockFile.Fd()), unix.LOCK_UN)
+}
+
+// Close closes this process's transaction-lock descriptor.
+func (m *Manager) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lockFile == nil {
+		return nil
+	}
+	err := m.lockFile.Close()
 	m.lockFile = nil
 	return err
 }
@@ -85,8 +114,20 @@ func (m *Manager) reconcileStartup(ctx context.Context) error {
 		}
 	}
 	for uid, claim := range m.state.Claims {
+		live, hasLiveAllocation := allocated[uid]
+		if hasLiveAllocation {
+			requests := map[string][]string{}
+			for _, claimed := range live.Devices {
+				requests[claimed.Device] = claimed.Requests
+			}
+			for index := range claim.Devices {
+				if len(claim.Devices[index].Requests) == 0 {
+					claim.Devices[index].Requests = append([]string(nil), requests[claim.Devices[index].Device]...)
+				}
+			}
+		}
 		if m.config.Allocations != nil {
-			if _, found := allocated[uid]; !found {
+			if !hasLiveAllocation {
 				claim.Phase = ClaimReleasing
 				m.state.Claims[uid] = claim
 			}
@@ -110,6 +151,10 @@ func (m *Manager) reconcileStartup(ctx context.Context) error {
 			}
 			if claim.Phase != ClaimPrepared && reason == "" {
 				reason = "interrupted " + strings.ToLower(string(claim.Phase)) + " transition"
+			}
+			if len(claimed.Requests) == 0 && reason == "" {
+				claim.Phase = ClaimRecovered
+				reason = "persisted request association is unavailable"
 			}
 			if reason != "" {
 				reconcileErr = errors.Join(reconcileErr, m.quarantineLocked(claimed.Device, claimed.Path, reason, &claim, "startup-recovery"))
@@ -154,7 +199,7 @@ func (m *Manager) localAllocations(ctx context.Context, byName map[string]device
 			if allocation.Driver != m.config.Driver || allocation.Pool != m.config.NodeName {
 				continue
 			}
-			claimed := ClaimDevice{Pool: allocation.Pool, Device: allocation.Device, CDIID: cdiID(claim.UID, allocation.Device)}
+			claimed := ClaimDevice{Requests: []string{allocation.Request}, Pool: allocation.Pool, Device: allocation.Device, CDIID: cdiID(claim.UID, allocation.Device)}
 			if item, found := byName[allocation.Device]; found {
 				claimed.StableID, claimed.Path = item.StableID, item.Node.Path
 				claimed.Major, claimed.Minor = item.Node.Major, item.Node.Minor

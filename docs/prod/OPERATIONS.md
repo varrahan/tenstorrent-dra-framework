@@ -12,10 +12,10 @@ procedures do not assign an on-call owner by themselves.
 The Helm chart deploys two controller replicas with leader election, a
 `PodDisruptionBudget` with `minAvailable: 1`, preferred pod anti-affinity, and a
 hostname topology-spread constraint. Controller rollout uses zero unavailable
-replicas and one surge replica. The node DaemonSet rolls one node at a time;
-surge is deliberately disabled because two agents cannot hold the same host
-state lock. Persisted ownership and CDI files remain on the host across an
-agent restart.
+replicas and one surge replica. The node DaemonSet also uses zero unavailable
+and one surge Pod per node. Overlapping agents use distinct kubelet registration
+sockets and serialize durable state transactions with the host lock. Persisted
+ownership and CDI files remain on the host across an agent restart.
 
 The default resource envelope for each controller and node-agent container is
 100m CPU and 128Mi memory requested, with limits of 1 CPU and 512Mi. Controller
@@ -40,10 +40,13 @@ helm upgrade --install tt-dra deployments/helm/tenstorrent-dra \
   --atomic --wait --timeout=10m
 ```
 
-The startup probe succeeds after command initialization, readiness means the
-component can perform its Kubernetes role, and liveness means its HTTP serving
-loop remains alive. Accelerator health does not fail process liveness; it
-withdraws capacity, changes the node condition, and raises operational alerts.
+The startup probe succeeds after kubelet registration, readiness means the
+component can perform its Kubernetes role, and liveness covers HTTP serving,
+kubelet registration, and reconciliation progress. Accelerator health does not
+fail process liveness; it withdraws capacity, changes the node condition,
+streams health to kubelet, and raises operational alerts. The controller fences
+ResourceSlices and topology when the node-agent heartbeat exceeds
+`nodeAgentTTL`.
 Verify the release signature and attestations before installation, and record
 the resolved digest with the change ticket. The exact commands and immutable
 artifact policy are in [`RELEASE.md`](RELEASE.md).

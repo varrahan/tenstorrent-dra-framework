@@ -180,6 +180,7 @@ helm upgrade --install tt-dra "$repo_root/deployments/helm/tenstorrent-dra" \
   --set interval=2s \
   --set inventoryGracePeriod=6s \
   --set topologyTTL=12s \
+  --set nodeAgentTTL=8s \
   --set controller.minReadySeconds=0 \
   --set node.minReadySeconds=0 \
   --set resetMode=noop \
@@ -233,6 +234,16 @@ device_moved=false
 wait_for 'hot-plug recovery' node_health_is "$worker_b" True
 wait_for 'hot-plug republication' device_count_is "$worker_b" 1
 record 'hot-unplug\tPASS'
+
+kubectl --context "$kubectl_context" label node "$worker_b" tenstorrent.com/enabled-
+wait_for 'stale agent watchdog fencing' node_health_is "$worker_b" False
+wait_for 'stale agent watchdog withdrawal' device_count_is "$worker_b" 0
+snapshot_safety stale-node-agent
+kubectl --context "$kubectl_context" label node "$worker_b" tenstorrent.com/enabled=true --overwrite
+wait_for 'stale agent recovery readiness' driver_ready_on "$worker_b"
+wait_for 'stale agent recovery health' node_health_is "$worker_b" True
+wait_for 'stale agent recovery publication' device_count_is "$worker_b" 1
+record 'stale-node-agent-watchdog\tPASS'
 
 kubectl --context "$kubectl_context" apply -f "$script_dir/e2e-standard.yaml"
 kubectl --context "$kubectl_context" wait --for=condition=Ready pod/tt-e2e-standard --timeout=120s

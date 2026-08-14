@@ -4,7 +4,7 @@ This runbook starts the implemented DRA driver, node agents, topology
 controller, and Kubernetes resources in the supported QEMU `ttsim` environment.
 Run the hardware- and Kubernetes-dependent commands inside the Ubuntu guest.
 The guest must provide Docker, kind, kubectl, Helm v4.2.3, Kubernetes v1.34 or
-newer, `tt-kmd`, and the Go 1.25.12 toolchain for repository checks. The driver
+newer, `tt-kmd`, and the Go 1.25.13 toolchain for repository checks. The driver
 uses `/dev/tenstorrent`, `/sys/class/tenstorrent`, and PCI sysfs directly; it
 does not use `tt-smi`.
 
