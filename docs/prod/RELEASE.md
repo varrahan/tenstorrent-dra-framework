@@ -31,7 +31,7 @@ separate keyless image signature bound to the release workflow identity. No
 long-lived signing key is stored in repository secrets.
 
 Release binaries are CGO-disabled Linux executables built with the pinned Go
-1.25.12 toolchain. The release workflow verifies byte-for-byte AMD64 and ARM64
+1.25.13 toolchain. The release workflow verifies byte-for-byte AMD64 and ARM64
 binary reproducibility, independently rebuilds both platform images, and
 confirms that the ARM64 image contains an AArch64 executable. These fixed build
 policies are constants; version, commit, source timestamp, architecture,

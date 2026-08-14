@@ -28,7 +28,7 @@ ssh -i ~/.ssh/ttsim_vm_ed25519 -p 2222 ubuntu@127.0.0.1 \
 ```
 
 The provisioner installs kind v0.30.0, kubectl v1.34.8, Helm v4.2.3, Go
-v1.25.12, Docker, and validation utilities. Sync this repository into the
+v1.25.13, Docker, and validation utilities. Sync this repository into the
 guest at `/home/ubuntu/tt-device-plugin`, then run the commands below over SSH.
 The VM launch helper records the QEMU PID under `~/sim/ttsim-qemu/vm.pid` and
 the serial console at `/tmp/ttsim-qemu-serial.log`.

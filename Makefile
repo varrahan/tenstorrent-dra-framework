@@ -20,7 +20,7 @@ GOVULNCHECK_VERSION := v1.6.0
 LICHEN_VERSION := v0.3.0
 GITLEAKS_VERSION := v8.30.1
 ACTIONLINT_VERSION := v1.7.11
-override GO_TOOLCHAIN := go1.25.12
+override GO_TOOLCHAIN := go1.25.13
 SHELLCHECK_IMAGE := docker.io/koalaman/shellcheck-alpine@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
 
 GO_FILES := $(shell find src -type f -name '*.go' -print)

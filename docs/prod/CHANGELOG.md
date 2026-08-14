@@ -15,6 +15,8 @@ Versioning.
 
 ### Fixed
 
+- Updated repository and container Go toolchains to patched releases 1.25.13
+  and 1.26.6, resolving standard-library vulnerability scan failures.
 - Preserved allocation request names through state and kubelet prepare results,
   preventing multi-request claims from exposing devices to the wrong container.
 - Accepted mixed-driver claims by filtering unrelated allocation results and

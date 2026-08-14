@@ -34,7 +34,7 @@ for expected in \
   'maxSurge: 1' \
   '-node-agent-ttl=2m' \
   'tenstorrent_dra_claim_operation_failures_total'; do
-  grep -q "$expected" "$rendered"
+  grep -q -- "$expected" "$rendered"
 done
 
 if helm template unsafe "$chart" --kube-version "$kube_version" --set resetMode=noop >/dev/null 2>&1; then

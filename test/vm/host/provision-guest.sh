@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-go_version="${GO_VERSION:-1.25.12}"
+go_version="${GO_VERSION:-1.25.13}"
 kubectl_version="${KUBECTL_VERSION:-1.34.8}"
 kind_version="${KIND_VERSION:-0.30.0}"
 helm_version="${HELM_VERSION:-4.2.3}"
