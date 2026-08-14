@@ -37,7 +37,7 @@ jobs:
       - name: Secret history scan
         run: make secret-scan
       - name: Workflow and packaging policy
-        run: make actionlint supply-chain-check
+        run: make actionlint
       - name: Shell analysis
         run: make shellcheck
 

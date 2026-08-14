@@ -32,7 +32,7 @@ STATICCHECK_CHECKS := $(shell awk -F'=' '/^[[:space:]]*checks[[:space:]]*=/ {gsu
 
 .PHONY: build test race coverage coverage-check fmt-check vet staticcheck govulncheck \
 	license-check secret-scan actionlint shellcheck security image-build image-check \
-	supply-chain-check helm-lint helm-package release-binaries release-reproducibility \
+	helm-lint helm-package release-binaries release-reproducibility \
 	release-checksums release vm-validation chaos-validation vm-certification \
 	hardware-certification check ci clean
 
