@@ -81,9 +81,6 @@ shellcheck:
 		shellcheck test/coverage/check.sh test/hardware/certify.sh test/helm/validate.sh \
 		test/supply-chain/validate.sh test/vm/certify.sh test/vm/chaos.sh test/vm/validate.sh
 
-supply-chain-check:
-	bash test/supply-chain/validate.sh
-
 security: staticcheck govulncheck license-check secret-scan
 
 image-build:
