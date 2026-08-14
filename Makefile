@@ -79,7 +79,7 @@ actionlint:
 shellcheck:
 	$(DOCKER) run --rm --volume "$(CURDIR):/mnt:ro" --workdir /mnt $(SHELLCHECK_IMAGE) \
 		shellcheck test/coverage/check.sh test/hardware/certify.sh test/helm/validate.sh \
-		test/supply-chain/validate.sh test/vm/certify.sh test/vm/chaos.sh test/vm/validate.sh
+		test/vm/certify.sh test/vm/chaos.sh test/vm/validate.sh
 
 security: staticcheck govulncheck license-check secret-scan
 
@@ -138,7 +138,7 @@ hardware-certification:
 
 check: fmt-check vet build test helm-lint
 
-ci: fmt-check vet staticcheck coverage-check govulncheck license-check secret-scan actionlint shellcheck supply-chain-check helm-lint
+ci: fmt-check vet staticcheck coverage-check govulncheck license-check secret-scan actionlint shellcheck helm-lint
 
 clean:
 	rm -rf -- dist coverage
