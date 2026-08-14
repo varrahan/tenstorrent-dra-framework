@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
@@ -200,6 +201,24 @@ func runCleanup(args []string) error {
 	if err := dynamicClient.Resource(ttapi.FabricTopologyGVR).Delete(ctx, "cluster", metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("delete fabric topology: %w", err)
 	}
+	nodes, err := kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("list nodes for safety cleanup: %w", err)
+	}
+	for index := range nodes.Items {
+		managed := false
+		for _, condition := range nodes.Items[index].Status.Conditions {
+			if condition.Type == lifecycle.NodeConditionType {
+				managed = true
+				break
+			}
+		}
+		if managed {
+			if err := lifecycle.ClearNodeSafety(ctx, kube, nodes.Items[index].Name); err != nil {
+				return fmt.Errorf("clear node safety for %q: %w", nodes.Items[index].Name, err)
+			}
+		}
+	}
 	slog.Info("driver-generated cluster objects removed", "release", releaseName, "namespace", releaseNamespace, "resource_slices", deletedSlices)
 	return nil
 }
@@ -262,6 +281,7 @@ func runList(args []string) error {
 func runNode(args []string) error {
 	set, roots := inventoryFlags("node")
 	nodeName := os.Getenv("NODE_NAME")
+	podUID := os.Getenv("POD_UID")
 	resetMode := "ioctl"
 	requireIOMMU := true
 	interval, inventoryGrace := 30*time.Second, 60*time.Second
@@ -269,6 +289,7 @@ func runNode(args []string) error {
 	kubeAPIQPS, kubeAPIBurst := 20.0, 40
 	cdiDir, pluginDir, registrarDir := "/var/run/cdi", "/var/lib/kubelet/plugins/dra.tenstorrent.com", kubeletplugin.KubeletRegistryDir
 	set.StringVar(&nodeName, "node-name", nodeName, "Kubernetes node name")
+	set.StringVar(&podUID, "pod-uid", podUID, "node-agent Pod UID for seamless kubelet registration handoff")
 	set.DurationVar(&interval, "interval", interval, "inventory interval")
 	set.DurationVar(&inventoryGrace, "inventory-grace-period", inventoryGrace, "maximum age of a cached healthy inventory observation")
 	set.StringVar(&resetMode, "reset-mode", resetMode, "device reset mode: ioctl or noop")
@@ -325,14 +346,20 @@ func runNode(args []string) error {
 		return err
 	}
 	manager, err := lifecycle.NewManager(lifecycle.Config{
-		NodeName:        nodeName,
-		Driver:          dra.DefaultDriverName,
-		StateDir:        roots.StateDir,
-		CDIDir:          cdiDir,
-		Resetter:        resetter,
-		Metrics:         metrics,
-		Logger:          logger,
-		EventSink:       lifecycleEventSink(recorder, nodeName),
+		NodeName:  nodeName,
+		Driver:    dra.DefaultDriverName,
+		StateDir:  roots.StateDir,
+		CDIDir:    cdiDir,
+		Resetter:  resetter,
+		Metrics:   metrics,
+		Logger:    logger,
+		EventSink: lifecycleEventSink(recorder, nodeName),
+		FatalError: func(err error, operation string) {
+			health.SetReady(false)
+			health.SetLive(false)
+			logger.Error("stopping after fatal kubelet helper error", "operation", operation, "error", err)
+			stop()
+		},
 		RequireIOMMU:    requireIOMMU,
 		MaxInventoryAge: inventoryGrace,
 		Inventory: func(ctx context.Context) (device.InventorySnapshot, error) {
@@ -354,21 +381,33 @@ func runNode(args []string) error {
 		return err
 	}
 	defer manager.Close()
-	helper, err := kubeletplugin.Start(ctx, manager, kubeletplugin.DriverName(dra.DefaultDriverName), kubeletplugin.KubeClient(kube), kubeletplugin.NodeName(nodeName), kubeletplugin.PluginDataDirectoryPath(pluginDir), kubeletplugin.RegistrarDirectoryPath(registrarDir))
+	pluginOptions := []kubeletplugin.Option{
+		kubeletplugin.DriverName(dra.DefaultDriverName), kubeletplugin.KubeClient(kube), kubeletplugin.NodeName(nodeName),
+		kubeletplugin.PluginDataDirectoryPath(pluginDir), kubeletplugin.RegistrarDirectoryPath(registrarDir),
+	}
+	if podUID != "" {
+		pluginOptions = append(pluginOptions, kubeletplugin.RollingUpdate(types.UID(podUID)))
+	}
+	helper, err := kubeletplugin.Start(ctx, manager, pluginOptions...)
 	if err != nil {
 		return err
 	}
 	defer helper.Stop()
+	if err := waitForRegistration(ctx, helper, 30*time.Second); err != nil {
+		return err
+	}
 	node, err := kube.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 	health.MarkStarted()
+	health.SetProgressDeadline(max(3*interval, inventoryGrace+interval))
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	lastSafetyReason := ""
 	lastSuccessfulObservation := time.Time{}
 	for {
+		health.MarkProgress()
 		reconcileStarted := time.Now()
 		reconciliationID := fmt.Sprintf("inventory-%s-%d", nodeName, reconcileStarted.UnixNano())
 		snapshot, discoverErr := device.BuildSnapshot(ctx, source)
@@ -394,6 +433,17 @@ func runNode(args []string) error {
 			logger.Error("node topology publication failed", "reconciliation_id", reconciliationID, "error", topologyErr)
 			recorder.Eventf(node, corev1.EventTypeWarning, "TopologyPublicationFailed", "Node topology publication failed: %v", topologyErr)
 		}
+		registrationErr := registrationError(helper)
+		if registrationErr != nil {
+			logger.Error("kubelet plugin registration is unhealthy", "reconciliation_id", reconciliationID, "error", registrationErr)
+			health.SetLive(false)
+		}
+		if resourcesErr != nil || topologyErr != nil || registrationErr != nil {
+			safety = lifecycle.Safety{
+				Unsafe: true, Healthy: safety.Healthy, Total: safety.Total, Reason: "PublicationUnavailable",
+				Message: "Tenstorrent capacity, topology, or kubelet registration is unavailable",
+			}
+		}
 		safetyErr := lifecycle.UpdateNodeSafety(ctx, kube, nodeName, safety)
 		if safetyErr != nil {
 			logger.Error("node safety publication failed", "reconciliation_id", reconciliationID, "error", safetyErr)
@@ -415,9 +465,9 @@ func runNode(args []string) error {
 		}
 		stats := manager.SnapshotStats()
 		metrics.ObserveInventory(nodeName, lastSuccessfulObservation, inventoryGrace, published, stats.Allocated, stats.Quarantined)
-		reconcileErr := errors.Join(discoverErr, monitorErr, resourcesErr, topologyErr, safetyErr)
+		reconcileErr := errors.Join(discoverErr, monitorErr, resourcesErr, topologyErr, safetyErr, registrationErr)
 		metrics.ObserveReconcile("node", "inventory", time.Since(reconcileStarted), reconcileErr)
-		health.SetReady(discoverErr == nil && resourcesErr == nil && topologyErr == nil && safetyErr == nil)
+		health.SetReady(reconcileErr == nil)
 		logger.Info("inventory reconciliation completed",
 			"reconciliation_id", reconciliationID,
 			"duration_seconds", time.Since(reconcileStarted).Seconds(),
@@ -430,16 +480,66 @@ func runNode(args []string) error {
 		)
 		select {
 		case <-ctx.Done():
+			health.SetReady(false)
+			if podUID != "" {
+				// In rolling-update mode a successor may already own publication.
+				// The controller heartbeat watchdog fences true agent absence.
+				return nil
+			}
+			fenceCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			empty := device.InventorySnapshot{ObservedAt: time.Now().UTC()}
+			fenceErr := errors.Join(
+				helper.PublishResources(fenceCtx, dra.DriverResourcesAt(nodeName, empty, inventoryGrace, time.Now())),
+				topology.PublishNode(fenceCtx, dynamicClient, nodeName, node.UID, empty),
+				lifecycle.UpdateNodeSafety(fenceCtx, kube, nodeName, lifecycle.Safety{Unsafe: true, Reason: "AgentUnavailable", Message: "Tenstorrent DRA node agent is stopping"}),
+			)
+			if fenceErr != nil {
+				logger.Error("failed to fence node-agent capacity during shutdown", "error", fenceErr)
+			}
 			return nil
 		case <-ticker.C:
 		}
 	}
 }
 
+func waitForRegistration(ctx context.Context, helper *kubeletplugin.Helper, timeout time.Duration) error {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if status := helper.RegistrationStatus(); status != nil {
+			if !status.PluginRegistered {
+				return fmt.Errorf("kubelet rejected DRA plugin registration: %s", status.Error)
+			}
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return errors.New("timed out waiting for kubelet DRA plugin registration")
+		case <-ticker.C:
+		}
+	}
+}
+
+func registrationError(helper *kubeletplugin.Helper) error {
+	status := helper.RegistrationStatus()
+	if status == nil {
+		return errors.New("kubelet DRA plugin registration status is unavailable")
+	}
+	if !status.PluginRegistered {
+		return fmt.Errorf("kubelet DRA plugin registration failed: %s", status.Error)
+	}
+	return nil
+}
+
 // runController starts the cluster topology and workload reconciliation loop.
 func runController(args []string) error {
 	set := flag.NewFlagSet("controller", flag.ContinueOnError)
-	ttl, placementTimeout := 90*time.Second, 2*time.Second
+	ttl, nodeAgentTTL, placementTimeout := 90*time.Second, 2*time.Minute, 2*time.Second
 	httpAddress := ":8080"
 	kubeAPIQPS, kubeAPIBurst := 20.0, 40
 	leaderElect := true
@@ -453,6 +553,7 @@ func runController(args []string) error {
 		identity, _ = os.Hostname()
 	}
 	set.DurationVar(&ttl, "topology-ttl", ttl, "node topology TTL")
+	set.DurationVar(&nodeAgentTTL, "node-agent-ttl", nodeAgentTTL, "maximum node-agent condition heartbeat age before capacity fencing")
 	set.DurationVar(&placementTimeout, "placement-timeout", placementTimeout, "maximum placement solve time")
 	set.BoolVar(&leaderElect, "leader-elect", leaderElect, "run controller reconciliation under a Lease")
 	set.BoolVar(&disableWorkloadAppArmor, "synthetic-disable-workload-apparmor", disableWorkloadAppArmor, "omit workload AppArmor profiles for synthetic validation")
@@ -464,8 +565,8 @@ func runController(args []string) error {
 	if err := set.Parse(args); err != nil {
 		return err
 	}
-	if ttl <= 0 || placementTimeout <= 0 {
-		return fmt.Errorf("topology TTL and placement timeout must be positive")
+	if ttl <= 0 || nodeAgentTTL <= 0 || placementTimeout <= 0 {
+		return fmt.Errorf("topology TTL, node-agent TTL, and placement timeout must be positive")
 	}
 	if kubeAPIQPS <= 0 || kubeAPIBurst <= 0 {
 		return fmt.Errorf("Kubernetes API QPS and burst must be positive")
@@ -491,6 +592,7 @@ func runController(args []string) error {
 		DisableWorkloadAppArmor: disableWorkloadAppArmor, Metrics: metrics, Logger: logger, Recorder: recorder,
 	}
 	if !leaderElect {
+		go runNodeAgentWatchdog(ctx, kube, dynamicClient, nodeAgentTTL, metrics, logger)
 		return reconciler.Run(ctx)
 	}
 	result := make(chan error, 1)
@@ -511,6 +613,7 @@ func runController(args []string) error {
 			OnStartedLeading: func(leaderCtx context.Context) {
 				logger.Info("leader election acquired", "leader_identity", identity)
 				recorder.Event(podReference(identity, leaseNamespace), corev1.EventTypeNormal, "BecameLeader", "Controller acquired the leader lease")
+				go runNodeAgentWatchdog(leaderCtx, kube, dynamicClient, nodeAgentTTL, metrics, logger)
 				if err := reconciler.Run(leaderCtx); err != nil {
 					health.SetReady(false)
 					report(err)
@@ -534,6 +637,30 @@ func runController(args []string) error {
 		return err
 	case <-ctx.Done():
 		return nil
+	}
+}
+
+func runNodeAgentWatchdog(ctx context.Context, kube kubernetes.Interface, dynamicClient dynamic.Interface, ttl time.Duration, metrics *observability.Metrics, logger *slog.Logger) {
+	interval := min(30*time.Second, ttl/2)
+	if interval <= 0 {
+		interval = time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		started := time.Now()
+		fenced, err := lifecycle.FenceStaleAgents(ctx, kube, dynamicClient, dra.DefaultDriverName, ttl, time.Now())
+		metrics.ObserveReconcile("controller", "node-agent-watchdog", time.Since(started), err)
+		if err != nil {
+			logger.Error("node-agent watchdog reconciliation failed", "error", err)
+		} else if fenced > 0 {
+			logger.Warn("stale node-agent capacity fenced", "nodes", fenced)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 

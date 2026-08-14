@@ -61,6 +61,12 @@ metadata:
     {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "controller") | nindent 4 }}
 rules:
 - apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "update", "patch"]
+- apiGroups: [""]
+  resources: ["nodes/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list", "watch", "create", "delete"]
 - apiGroups: [""]

@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+	drahealthv1alpha1 "k8s.io/kubelet/pkg/apis/dra-health/v1alpha1"
 )
 
 // TestJanitorSanitizesBeforeAndAfterUse verifies resets and audit events bracket claim ownership.
@@ -219,6 +220,34 @@ func TestInventoryFailureFencesKnownCapacity(t *testing.T) {
 	}
 }
 
+// TestDRAHealthSnapshotTracksJanitorState verifies standard kubelet health
+// reporting follows the same fail-closed state used for ResourceSlices.
+func TestDRAHealthSnapshotTracksJanitorState(t *testing.T) {
+	root := t.TempDir()
+	snapshot := janitorSnapshot(device.HealthHealthy)
+	manager, err := lifecycle.NewManager(lifecycle.Config{
+		NodeName: "node-a", Driver: "dra.tenstorrent.com", StateDir: filepath.Join(root, "state"), CDIDir: filepath.Join(root, "cdi"),
+		Inventory: func(context.Context) (device.InventorySnapshot, error) { return snapshot, nil }, Resetter: lifecycle.NoopResetter{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	if _, _, err := manager.Monitor(context.Background(), snapshot); err != nil {
+		t.Fatal(err)
+	}
+	reported := manager.DeviceHealthSnapshot()
+	if len(reported.Devices) != 1 || reported.Devices[0].Health != drahealthv1alpha1.HealthStatus_HEALTHY {
+		t.Fatalf("healthy report = %#v", reported.Devices)
+	}
+	snapshot.Devices[0].Fault.Code = "OOM"
+	_, _, _ = manager.Monitor(context.Background(), snapshot)
+	reported = manager.DeviceHealthSnapshot()
+	if len(reported.Devices) != 1 || reported.Devices[0].Health != drahealthv1alpha1.HealthStatus_UNHEALTHY {
+		t.Fatalf("unhealthy report = %#v", reported.Devices)
+	}
+}
+
 // TestNodeSafetyConditionAndTaint verifies node fencing and health status follow the safety summary.
 func TestNodeSafetyConditionAndTaint(t *testing.T) {
 	ctx := context.Background()
@@ -246,6 +275,39 @@ func TestNodeSafetyConditionAndTaint(t *testing.T) {
 	}
 	if len(node.Spec.Taints) != 0 || conditionStatus(node) != corev1.ConditionTrue {
 		t.Fatalf("safe node was not restored: %#v", node)
+	}
+	if err := lifecycle.ClearNodeSafety(ctx, client, "node-a"); err != nil {
+		t.Fatal(err)
+	}
+	node, err = client.CoreV1().Nodes().Get(ctx, "node-a", metav1.GetOptions{})
+	if err != nil || len(node.Spec.Taints) != 0 || conditionStatus(node) != corev1.ConditionUnknown {
+		t.Fatalf("node safety cleanup failed: %#v, err=%v", node, err)
+	}
+}
+
+// TestNodeAgentWatchdogWithdrawsStaleCapacity verifies a hard-crashed agent
+// cannot leave schedulable ResourceSlices behind indefinitely.
+func TestNodeAgentWatchdogWithdrawsStaleCapacity(t *testing.T) {
+	ctx := context.Background()
+	nodeName := "node-a"
+	client := fake.NewSimpleClientset(
+		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type: lifecycle.NodeConditionType, Status: corev1.ConditionTrue, LastHeartbeatTime: metav1.NewTime(time.Now().Add(-5 * time.Minute)),
+		}}}},
+		&resourceapi.ResourceSlice{ObjectMeta: metav1.ObjectMeta{Name: "tenstorrent-stale"}, Spec: resourceapi.ResourceSliceSpec{
+			Driver: "dra.tenstorrent.com", NodeName: &nodeName, Pool: resourceapi.ResourcePool{Name: nodeName, Generation: 1, ResourceSliceCount: 1},
+		}},
+	)
+	fenced, err := lifecycle.FenceStaleAgents(ctx, client, nil, "dra.tenstorrent.com", 2*time.Minute, time.Now())
+	if err != nil || fenced != 1 {
+		t.Fatalf("watchdog fenced=%d, err=%v", fenced, err)
+	}
+	if slices, err := client.ResourceV1().ResourceSlices().List(ctx, metav1.ListOptions{}); err != nil || len(slices.Items) != 0 {
+		t.Fatalf("stale slices = %#v, err=%v", slices, err)
+	}
+	node, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil || len(node.Spec.Taints) != 1 || node.Spec.Taints[0].Key != lifecycle.NodeTaintKey {
+		t.Fatalf("stale node was not tainted: %#v, err=%v", node, err)
 	}
 }
 

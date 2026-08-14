@@ -36,6 +36,13 @@ plugin validates the allocation against local inventory and exposes only the
 allocated character devices through CDI. It resets and scrubs each device
 before CDI exposure and again before releasing claim ownership.
 
+For claims with multiple requests, the node plugin persists the request name
+from each allocation result and returns it to kubelet with the CDI device. A
+container that selects one request therefore receives only that request's
+devices. Allocation results owned by other DRA drivers are ignored. Opaque
+configuration for `dra.tenstorrent.com` and administrative access fail closed;
+neither feature has supported Tenstorrent semantics in this whole-card driver.
+
 ## Topology APIs
 
 Each node publishes `topology.tenstorrent.com/v1`

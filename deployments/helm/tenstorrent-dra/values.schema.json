@@ -31,6 +31,7 @@
     "interval": {"$ref": "#/definitions/duration"},
     "inventoryGracePeriod": {"$ref": "#/definitions/duration"},
     "topologyTTL": {"$ref": "#/definitions/duration"},
+    "nodeAgentTTL": {"$ref": "#/definitions/duration"},
     "placementTimeout": {"$ref": "#/definitions/duration"},
     "controllerReplicas": {"type": "integer", "minimum": 2, "maximum": 10},
     "resetMode": {"enum": ["ioctl", "noop"]},
@@ -86,7 +87,7 @@
       "required": ["resources", "terminationGracePeriodSeconds", "minReadySeconds", "rollout", "startupProbe", "readinessProbe", "livenessProbe", "tolerations", "podAnnotations"],
       "properties": {
         "resources": {"$ref": "#/definitions/resources"}, "terminationGracePeriodSeconds": {"type": "integer", "minimum": 10, "maximum": 600}, "minReadySeconds": {"type": "integer", "minimum": 0, "maximum": 300}, "progressDeadlineSeconds": {"type": "integer", "minimum": 60, "maximum": 3600},
-        "rollout": {"type": "object"}, "startupProbe": {"$ref": "#/definitions/probe"}, "readinessProbe": {"$ref": "#/definitions/probe"}, "livenessProbe": {"$ref": "#/definitions/probe"}, "tolerations": {"type": "array", "items": {"type": "object"}}, "podAnnotations": {"type": "object", "additionalProperties": {"type": "string"}}
+        "rollout": {"type": "object", "additionalProperties": false, "required": ["maxUnavailable", "maxSurge"], "properties": {"maxUnavailable": {"type": "integer", "minimum": 0, "maximum": 1}, "maxSurge": {"type": "integer", "minimum": 0, "maximum": 1}}, "anyOf": [{"properties": {"maxUnavailable": {"minimum": 1}}}, {"properties": {"maxSurge": {"minimum": 1}}}]}, "startupProbe": {"$ref": "#/definitions/probe"}, "readinessProbe": {"$ref": "#/definitions/probe"}, "livenessProbe": {"$ref": "#/definitions/probe"}, "tolerations": {"type": "array", "items": {"type": "object"}}, "podAnnotations": {"type": "object", "additionalProperties": {"type": "string"}}
       }
     },
     "priority": {"type": "object", "additionalProperties": false, "required": ["name", "value"], "properties": {"name": {"type": "string"}, "value": {"type": "integer", "minimum": 1000000, "maximum": 1000000000}}}

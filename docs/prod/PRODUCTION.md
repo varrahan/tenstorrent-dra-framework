@@ -46,7 +46,7 @@ the `Healthy` requirement, and prepare applies the same eligibility policy.
 
 ## Claim-state recovery
 
-State schema version 3 records each claim as `Preparing`, `Prepared`,
+State schema version 4 records each claim as `Preparing`, `Prepared`,
 `Releasing`, or `Recovered`. Prepare persists exclusive ownership before reset
 or CDI creation and commits `Prepared` only after reset, identity verification,
 CDI write, and audit success. Unprepare persists `Releasing` before post-use
@@ -54,8 +54,9 @@ reset and removes ownership only after scrub, audit, and CDI deletion succeed.
 State and CDI files use atomic rename and directory sync; audit records use a
 synced append-only log.
 
-`agent.lock` uses an exclusive host `flock`, so only one node agent can mutate a
-state/CDI directory. At startup the agent reconciles current inventory, live
+`agent.lock` uses an exclusive host `flock` around each state transaction, so
+overlapping upgrade agents cannot concurrently mutate a state/CDI directory.
+At startup each agent reconciles current inventory, live
 local ResourceClaim allocations, persisted claims, and driver-owned CDI files:
 
 - missing CDI for a valid prepared claim is regenerated exactly;
@@ -65,8 +66,14 @@ local ResourceClaim allocations, persisted claims, and driver-owned CDI files:
 - orphaned driver CDI files are removed after allocation reconciliation;
 - corrupt state is preserved as `claims.json.corrupt-<timestamp>`, all visible
   devices are quarantined, and recovery requires sanitization;
-- version 1 and 2 state migrates in place to version 3; unknown future versions
-  use the corrupt-state recovery path.
+- versions 1 through 3 migrate in place to version 4. Request associations are
+  recovered from the live allocation; a legacy claim without that evidence is
+  retained as `Recovered` and quarantined instead of being exposed to all
+  requests. Unknown future versions use the corrupt-state recovery path.
+
+Each state mutation uses an inter-process `flock` transaction and reloads the
+latest durable state. This permits old and new node-agent Pods to overlap during
+a kubelet seamless-upgrade handoff without stale in-memory ownership writes.
 
 These rules make node-agent and kubelet retries idempotent. A restart can leave
 a device safely owned or quarantined, never unowned while CDI access is being
@@ -132,6 +139,12 @@ Dynamic and typed informers feed a per-object exponentially rate-limited queue;
 API conflicts are retried. Fabric expiry is evaluated from the informer cache.
 Two controller replicas use a Lease, with only the leader reconciling.
 Per-workload failures do not block other keys.
+
+The elected controller also checks `TenstorrentAcceleratorsHealthy` heartbeat
+times. A heartbeat older than `nodeAgentTTL` withdraws the node's ResourceSlices
+and topology and applies the accelerator safety taint. Node-agent registration
+must succeed before readiness, fatal kubelet-helper errors terminate the
+process, and a reconcile-progress watchdog drives liveness.
 
 Workload phases are `Pending`, `Assigned`, `Running`, `Degraded`, `Failed`, and
 `Succeeded`. Status includes `observedGeneration` and preserves condition

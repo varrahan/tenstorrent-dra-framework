@@ -6,6 +6,20 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Standard kubelet DRA health streaming, registration and reconcile liveness,
+  and controller-side stale-node-agent capacity fencing.
+- Seamless node-agent surge upgrades with transaction-scoped shared state
+  locking and Kubernetes 1.34-1.36 chart validation.
+
+### Fixed
+
+- Preserved allocation request names through state and kubelet prepare results,
+  preventing multi-request claims from exposing devices to the wrong container.
+- Accepted mixed-driver claims by filtering unrelated allocation results and
+  failed closed on unsupported Tenstorrent opaque configuration and admin mode.
+
 ## [0.1.0] - 2026-08-04
 
 ### Added

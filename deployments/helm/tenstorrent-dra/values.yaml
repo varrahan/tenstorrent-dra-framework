@@ -23,6 +23,7 @@ registrarDir: /var/lib/kubelet/plugins_registry
 interval: 30s
 inventoryGracePeriod: 60s
 topologyTTL: 90s
+nodeAgentTTL: 2m
 placementTimeout: 2s
 controllerReplicas: 2
 resetMode: ioctl
@@ -70,7 +71,8 @@ node:
   terminationGracePeriodSeconds: 60
   minReadySeconds: 10
   rollout:
-    maxUnavailable: 1
+    maxUnavailable: 0
+    maxSurge: 1
   startupProbe:
     failureThreshold: 60
     periodSeconds: 2

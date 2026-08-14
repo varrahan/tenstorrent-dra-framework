@@ -14,12 +14,14 @@ import (
 // Kubernetes probes. Accelerator health is intentionally separate and is
 // represented by inventory metrics and the node condition.
 type Health struct {
-	component string
-	node      string
-	metrics   *Metrics
-	started   atomic.Bool
-	ready     atomic.Bool
-	live      atomic.Bool
+	component        string
+	node             string
+	metrics          *Metrics
+	started          atomic.Bool
+	ready            atomic.Bool
+	live             atomic.Bool
+	lastProgress     atomic.Int64
+	progressDeadline atomic.Int64
 }
 
 // NewHealth creates a live but not-yet-started component health state.
@@ -46,12 +48,31 @@ func (h *Health) SetReady(ready bool) {
 // SetLive records an unrecoverable serving failure.
 func (h *Health) SetLive(live bool) { h.live.Store(live) }
 
+// SetProgressDeadline makes liveness fail when the component's main
+// reconciliation loop has stopped making progress for longer than deadline.
+func (h *Health) SetProgressDeadline(deadline time.Duration) {
+	h.progressDeadline.Store(int64(deadline))
+	h.MarkProgress()
+}
+
+// MarkProgress records successful entry into or completion of a reconcile.
+func (h *Health) MarkProgress() { h.lastProgress.Store(time.Now().UnixNano()) }
+
+func (h *Health) isLive() bool {
+	if !h.live.Load() {
+		return false
+	}
+	deadline := time.Duration(h.progressDeadline.Load())
+	last := h.lastProgress.Load()
+	return deadline <= 0 || last == 0 || time.Since(time.Unix(0, last)) <= deadline
+}
+
 // Handler returns the health and Prometheus HTTP surface.
 func (h *Health) Handler(metrics http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/startupz", probe(h.started.Load))
 	mux.HandleFunc("/readyz", probe(h.ready.Load))
-	mux.HandleFunc("/livez", probe(h.live.Load))
+	mux.HandleFunc("/livez", probe(h.isLive))
 	if metrics != nil {
 		mux.Handle("/metrics", metrics)
 	}

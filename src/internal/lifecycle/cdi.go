@@ -62,6 +62,7 @@ func cdiResults(claim PreparedClaim) []kubeletplugin.Device {
 	result := make([]kubeletplugin.Device, 0, len(claim.Devices))
 	for _, item := range claim.Devices {
 		result = append(result, kubeletplugin.Device{
+			Requests: append([]string(nil), item.Requests...),
 			PoolName: item.Pool, DeviceName: item.Device, CDIDeviceIDs: []string{item.CDIID},
 		})
 	}

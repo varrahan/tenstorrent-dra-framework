@@ -32,6 +32,42 @@ func UpdateNodeSafety(ctx context.Context, client kubernetes.Interface, nodeName
 	return err
 }
 
+// ClearNodeSafety removes only this driver's taint and condition during a
+// guarded uninstall after all allocations have been released.
+func ClearNodeSafety(ctx context.Context, client kubernetes.Interface, nodeName string) error {
+	nodes := client.CoreV1().Nodes()
+	node, err := nodes.Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	taints := node.Spec.Taints[:0]
+	for _, taint := range node.Spec.Taints {
+		if taint.Key != NodeTaintKey {
+			taints = append(taints, taint)
+		}
+	}
+	specChanged := len(taints) != len(node.Spec.Taints)
+	node.Spec.Taints = taints
+	if specChanged {
+		node, err = nodes.Update(ctx, node, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+	}
+	conditions := node.Status.Conditions[:0]
+	for _, condition := range node.Status.Conditions {
+		if condition.Type != NodeConditionType {
+			conditions = append(conditions, condition)
+		}
+	}
+	if len(conditions) == len(node.Status.Conditions) {
+		return nil
+	}
+	node.Status.Conditions = conditions
+	_, err = nodes.UpdateStatus(ctx, node, metav1.UpdateOptions{})
+	return err
+}
+
 // setSafetyTaint adds or removes the NoSchedule taint and reports whether the node changed.
 func setSafetyTaint(node *corev1.Node, unsafe bool) bool {
 	for index, taint := range node.Spec.Taints {
