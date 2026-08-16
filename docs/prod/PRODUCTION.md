@@ -12,7 +12,7 @@ outside these limits fails closed and is not published as allocatable capacity.
 | `tt-kmd` ioctl ABI | 2 |
 | Firmware | 19.2.x |
 | Linux kernel | 5.4 through 6.18 |
-| Kubernetes | 1.34 or newer, DRA `resource.k8s.io/v1` |
+| Kubernetes | 1.34 exactly, DRA `resource.k8s.io/v1` |
 
 The public `GET_DRIVER_INFO` ioctl supplies the KMD and ABI versions when the
 device supports it. The simulator may supply `kmd_version` and
@@ -84,10 +84,13 @@ normal kubelet unprepare path; they must not edit `claims.json` or CDI files.
 
 The node agent and controller use separate ServiceAccounts and ClusterRoles.
 The node role cannot create Pods, workloads, or claims. It reads claims for
-startup reconciliation, owns ResourceSlices and node topology, and only uses
-the configured node name in node API calls. Kubernetes RBAC cannot express a
-dynamic “this DaemonSet Pod's node name” resource restriction, so code-level
-node-name binding is the additional boundary.
+startup reconciliation and owns ResourceSlices and node topology. Kubernetes
+RBAC cannot express a dynamic “this DaemonSet Pod's node name” restriction, so
+a fail-closed ValidatingAdmissionPolicy uses the node name from the Pod-bound
+ServiceAccount token to constrain node mutation, ResourceSlice publication,
+and node-topology publication to that Pod's node. ResourceSlices are further
+restricted to the `dra.tenstorrent.com` driver and a pool named for that node.
+Tokens without exactly one bound node identity are rejected.
 
 The controller must watch workloads and create children across namespaces, so
 those permissions are cluster-scoped. A fail-closed ValidatingAdmissionPolicy
@@ -139,6 +142,12 @@ Dynamic and typed informers feed a per-object exponentially rate-limited queue;
 API conflicts are retried. Fabric expiry is evaluated from the informer cache.
 Two controller replicas use a Lease, with only the leader reconciling.
 Per-workload failures do not block other keys.
+
+ResourceSlice publication is asynchronous. The node agent reads back the
+complete API pool after each publication request and requires its slice count,
+pool generation, devices, attributes, and capacities to match desired
+inventory before reporting readiness. A helper error or confirmation timeout
+marks publication unavailable and applies the node safety fence.
 
 The elected controller also checks `TenstorrentAcceleratorsHealthy` heartbeat
 times. A heartbeat older than `nodeAgentTTL` withdraws the node's ResourceSlices

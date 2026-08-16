@@ -22,6 +22,7 @@ candidate_image_args=(
 )
 kubectl_context="kind-$cluster"
 cluster_ready=false
+contained_kubeconfig=""
 
 # kind's Debian node image does not include apparmor_parser. Mounting the
 # guest's securityfs lets kubelet detect AppArmor, and this installs only the
@@ -166,6 +167,9 @@ label_node() {
 
 # cleanup_e2e removes only the validation-owned workloads and claims from this cluster.
 cleanup_e2e() {
+  if [[ -n "$contained_kubeconfig" ]]; then
+    rm -f "$contained_kubeconfig"
+  fi
   if [[ "$cluster_ready" != true ]]; then
     return
   fi
@@ -225,6 +229,49 @@ run_with_cluster_recovery helm upgrade --install tt-dra "$repo_root/deployments/
   --wait --timeout="$KUBE_WAIT_TIMEOUT"
 kubectl --context "$kubectl_context" rollout status deployment/tt-dra-controller --timeout="$KUBE_WAIT_TIMEOUT"
 kubectl --context "$kubectl_context" rollout status daemonset/tt-dra-node --timeout="$KUBE_WAIT_TIMEOUT"
+
+# A Pod-bound node-agent token must be unable to mutate another node or its
+# ResourceSlice even though the shared ClusterRole necessarily grants the API
+# verbs cluster-wide. Successful own-node publication above proves the positive
+# path; these requests prove admission containment fails closed across nodes.
+contained_node="${cluster}-worker"
+other_node="${cluster}-worker2"
+contained_pod="$(kubectl --context "$kubectl_context" get pods \
+  -l app.kubernetes.io/component=node \
+  --field-selector "spec.nodeName=$contained_node" \
+  -o jsonpath='{.items[0].metadata.name}')"
+contained_token="$(kubectl --context "$kubectl_context" create token tt-dra-node \
+  --bound-object-kind=Pod --bound-object-name="$contained_pod" --duration=10m)"
+contained_namespace="$(kubectl --context "$kubectl_context" get pod "$contained_pod" \
+  -o jsonpath='{.metadata.namespace}')"
+contained_kubeconfig="$(mktemp)"
+kind get kubeconfig --name "$cluster" >"$contained_kubeconfig"
+contained_user="$(KUBECONFIG="$contained_kubeconfig" kubectl config view --minify \
+  -o jsonpath='{.contexts[0].context.user}')"
+KUBECONFIG="$contained_kubeconfig" kubectl config unset \
+  "users.$contained_user.client-certificate-data" >/dev/null
+KUBECONFIG="$contained_kubeconfig" kubectl config unset \
+  "users.$contained_user.client-key-data" >/dev/null
+KUBECONFIG="$contained_kubeconfig" kubectl config set-credentials "$contained_user" \
+  --token="$contained_token" >/dev/null
+contained_kubectl=(kubectl --kubeconfig="$contained_kubeconfig" --context="$kubectl_context")
+test "$("${contained_kubectl[@]}" auth whoami -o jsonpath='{.status.userInfo.username}')" = \
+  "system:serviceaccount:$contained_namespace:tt-dra-node"
+if "${contained_kubectl[@]}" annotate node "$other_node" \
+  tenstorrent.com/containment-test=forbidden --overwrite; then
+  echo 'node-agent token mutated another node' >&2
+  exit 1
+fi
+other_slice="$(kubectl --context "$kubectl_context" get resourceslices \
+  --field-selector "spec.nodeName=$other_node,spec.driver=dra.tenstorrent.com" \
+  -o jsonpath='{.items[0].metadata.name}')"
+if "${contained_kubectl[@]}" annotate resourceslice "$other_slice" \
+  tenstorrent.com/containment-test=forbidden --overwrite; then
+  echo 'node-agent token mutated another node ResourceSlice' >&2
+  exit 1
+fi
+rm -f "$contained_kubeconfig"
+contained_kubeconfig=""
 for node in "${cluster}-worker" "${cluster}-worker2"; do
   docker exec "$node" sh -ec '
     test "$(find /var/lib/kubelet/plugins/dra.tenstorrent.com -maxdepth 1 -type s -name "dra-*.sock" | wc -l)" -eq 1
@@ -369,7 +416,11 @@ kubectl --context "$kubectl_context" get resourceslices
 kubectl --context "$kubectl_context" get tenstorrentnodetopologies
 kubectl --context "$kubectl_context" get tenstorrentfabrictopologies
 cleanup_e2e
-helm uninstall tt-dra --kube-context "$kubectl_context" --wait --timeout="$KUBE_WAIT_TIMEOUT"
+if ! helm uninstall tt-dra --kube-context "$kubectl_context" --wait --timeout="$KUBE_WAIT_TIMEOUT"; then
+  kubectl --context "$kubectl_context" logs job/tt-dra-cleanup --all-containers=true || true
+  kubectl --context "$kubectl_context" describe job tt-dra-cleanup || true
+  exit 1
+fi
 test -z "$(kubectl --context "$kubectl_context" get all,serviceaccounts,configmaps,roles,rolebindings,poddisruptionbudgets,leases,networkpolicies -l app.kubernetes.io/instance=tt-dra -o name)"
 test -z "$(kubectl --context "$kubectl_context" get clusterroles,clusterrolebindings,priorityclasses,deviceclasses,validatingadmissionpolicies,validatingadmissionpolicybindings -l app.kubernetes.io/instance=tt-dra -o name)"
 test -z "$(kubectl --context "$kubectl_context" get resourceslices -o name)"

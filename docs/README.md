@@ -1,7 +1,7 @@
 # Project Documentation
 
 This directory documents the implemented Tenstorrent DRA component. The
-operational target is the QEMU `ttsim` Ubuntu VM and Kubernetes v1.34 or newer.
+operational target is the QEMU `ttsim` Ubuntu VM and Kubernetes v1.34 exactly.
 
 Use `tt-kmd` sysfs under `/sys/class/tenstorrent`, backing PCI sysfs, and the
 Kubernetes DRA APIs as sources of truth. Mount discovered `/dev/tenstorrent`

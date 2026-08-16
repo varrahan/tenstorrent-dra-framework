@@ -29,7 +29,7 @@ spec:
           test "$(printf '%s\n' "$devices" | sed '/^$/d' | wc -l)" -eq 1
           test "$TT_WORLD_SIZE" -eq 2
           printf 'rank=%s world=%s devices=%s\n' "$TT_RANK" "$TT_WORLD_SIZE" "$devices"
-          sleep 300
+          sleep 1800
   ranks:
   - name: rank-0
     deviceClassName: tenstorrent-wormhole

@@ -9,6 +9,8 @@ evidence_dir="${3:-$repo_root/artifacts/chaos-$(date -u +%Y%m%dT%H%M%SZ)}"
 readonly IMAGE_REPOSITORY="tenstorrent-dra"
 readonly IMAGE_TAG="dev"
 readonly E2E_IMAGE="tenstorrent-dra-e2e:dev"
+readonly KUBE_WAIT_TIMEOUT="${KUBE_WAIT_TIMEOUT:-600s}"
+readonly CHAOS_WAIT_ATTEMPTS="${CHAOS_WAIT_ATTEMPTS:-600}"
 candidate_version="$(git -C "$repo_root" describe --tags --always --dirty 2>/dev/null || echo dev)"
 candidate_commit="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || echo unknown)"
 candidate_source_epoch="$(git -C "$repo_root" log -1 --format=%ct 2>/dev/null || echo 0)"
@@ -89,7 +91,7 @@ wait_for() {
   local description="$1"
   shift
   local attempt
-  for ((attempt = 0; attempt < 120; attempt++)); do
+  for ((attempt = 0; attempt < CHAOS_WAIT_ATTEMPTS; attempt++)); do
     if "$@"; then
       return
     fi
@@ -97,6 +99,104 @@ wait_for() {
   done
   printf 'timed out waiting for %s\n' "$description" >&2
   return 1
+}
+
+# Image imports and simultaneous kind-node bootstrap can starve kube-apiserver
+# under QEMU TCG. Require the API and every node to recover before issuing
+# mutating requests.
+wait_cluster_recovery() {
+  local attempt
+  for ((attempt = 0; attempt < 120; attempt++)); do
+    if kubectl --context "$kubectl_context" --request-timeout=15s get --raw=/readyz >/dev/null 2>&1 &&
+      kubectl --context "$kubectl_context" --request-timeout=15s wait \
+        --for=condition=Ready nodes --all --timeout=15s >/dev/null 2>&1; then
+      return
+    fi
+    sleep 5
+  done
+  return 1
+}
+
+# TCG can still delay an individual mutating request after the cluster reports
+# Ready. Retry Helm only after the API and every node recover again.
+run_with_cluster_recovery() {
+  local attempt
+  for ((attempt = 1; attempt <= 3; attempt++)); do
+    if "$@"; then
+      return
+    fi
+    if ((attempt == 3)); then
+      return 1
+    fi
+    echo "cluster operation failed (attempt $attempt/3); waiting for recovery" >&2
+    wait_cluster_recovery
+  done
+}
+
+# kind returns before kube-apiserver has necessarily completed its post-start
+# hooks. Temporarily reserve CPU for the API, then restore the control-plane
+# components and workers before requiring normal readiness.
+bootstrap_tcg_cluster() {
+  local worker
+  local attempt
+  local api_ready=false
+  local old_api_container
+  local new_api_container
+  local staging=/tmp/tt-static-pods
+
+  for worker in "$worker_a" "$worker_b"; do
+    docker update --cpus 0.25 "$worker" >/dev/null
+  done
+  docker exec "$control_plane" sh -ec "
+    mkdir -p '$staging'
+    mv /etc/kubernetes/manifests/kube-controller-manager.yaml '$staging/'
+    mv /etc/kubernetes/manifests/kube-scheduler.yaml '$staging/'
+  "
+
+  for ((attempt = 0; attempt < 120; attempt++)); do
+    if kubectl --context "$kubectl_context" --request-timeout=15s get --raw=/readyz >/dev/null 2>&1; then
+      api_ready=true
+      break
+    fi
+    sleep 5
+  done
+
+  if [[ "$api_ready" == true ]]; then
+    old_api_container="$(docker exec "$control_plane" crictl ps --quiet --name kube-apiserver | head -n 1)"
+    docker exec "$control_plane" sh -ec '
+      sed -i "/startupProbe:/,/volumeMounts:/ s/failureThreshold: 24/failureThreshold: 60/" \
+        /etc/kubernetes/manifests/kube-apiserver.yaml
+      sed -i "/livenessProbe:/,/readinessProbe:/ s/failureThreshold: 8/failureThreshold: 60/" \
+        /etc/kubernetes/manifests/kube-apiserver.yaml
+    '
+    api_ready=false
+    for ((attempt = 0; attempt < 120; attempt++)); do
+      new_api_container="$(docker exec "$control_plane" crictl ps --quiet --name kube-apiserver | head -n 1)"
+      if [[ -n "$new_api_container" && "$new_api_container" != "$old_api_container" ]] &&
+        kubectl --context "$kubectl_context" --request-timeout=15s get --raw=/readyz >/dev/null 2>&1; then
+        api_ready=true
+        break
+      fi
+      sleep 5
+    done
+  fi
+
+  if [[ "$api_ready" == true ]]; then
+    kubectl --context "$kubectl_context" --request-timeout=60s delete lease \
+      --namespace kube-system kube-controller-manager kube-scheduler \
+      --ignore-not-found >/dev/null
+  fi
+  docker exec "$control_plane" sh -ec "
+    mv '$staging/kube-controller-manager.yaml' /etc/kubernetes/manifests/
+    mv '$staging/kube-scheduler.yaml' /etc/kubernetes/manifests/
+  "
+  if [[ "$api_ready" != true ]]; then
+    return 1
+  fi
+  for worker in "$worker_a" "$worker_b"; do
+    docker update --cpus 0.75 "$worker" >/dev/null
+  done
+  wait_cluster_recovery
 }
 
 snapshot_safety() {
@@ -140,7 +240,7 @@ cleanup() {
   kubectl --context "$kubectl_context" delete tenstorrentworkload tt-e2e-topology --ignore-not-found --wait=false >/dev/null 2>&1
   kubectl --context "$kubectl_context" delete pod,resourceclaim tt-e2e-standard --ignore-not-found --wait=false >/dev/null 2>&1
   if [[ "$release_installed" == true ]]; then
-    helm uninstall tt-dra --kube-context "$kubectl_context" --wait --timeout=180s >/dev/null 2>&1
+    helm uninstall tt-dra --kube-context "$kubectl_context" --wait --timeout="$KUBE_WAIT_TIMEOUT" >/dev/null 2>&1
   fi
   if [[ "$cluster_created" == true ]]; then
     kind delete cluster --name "$cluster" >/dev/null 2>&1
@@ -165,11 +265,14 @@ docker build --provenance=false --tag "$IMAGE_REPOSITORY:$IMAGE_TAG" "${candidat
 docker build --platform linux/amd64 --provenance=false --file "$script_dir/e2e.Dockerfile" --tag "$E2E_IMAGE" "$script_dir"
 kind create cluster --name "$cluster" --config "$script_dir/$config"
 cluster_created=true
-kind load docker-image "$IMAGE_REPOSITORY:$IMAGE_TAG" --name "$cluster"
-kind load docker-image "$E2E_IMAGE" --name "$cluster"
+bootstrap_tcg_cluster
+worker_nodes="$worker_a,$worker_b"
+kind load docker-image "$IMAGE_REPOSITORY:$IMAGE_TAG" --name "$cluster" --nodes "$worker_nodes"
+kind load docker-image "$E2E_IMAGE" --name "$cluster" --nodes "$worker_nodes"
+wait_cluster_recovery
 kubectl --context "$kubectl_context" label node "$worker_a" tenstorrent.com/enabled=true --overwrite
 kubectl --context "$kubectl_context" label node "$worker_b" tenstorrent.com/enabled=true --overwrite
-helm upgrade --install tt-dra "$repo_root/deployments/helm/tenstorrent-dra" \
+run_with_cluster_recovery helm upgrade --install tt-dra "$repo_root/deployments/helm/tenstorrent-dra" \
   --kube-context "$kubectl_context" \
   --set image.repository="$IMAGE_REPOSITORY" \
   --set image.tag="$IMAGE_TAG" \
@@ -186,10 +289,10 @@ helm upgrade --install tt-dra "$repo_root/deployments/helm/tenstorrent-dra" \
   --set resetMode=noop \
   --set requireIOMMU=false \
   --set syntheticDisableWorkloadAppArmor=true \
-  --wait --timeout=180s
+  --wait --timeout="$KUBE_WAIT_TIMEOUT"
 release_installed=true
-kubectl --context "$kubectl_context" rollout status deployment/tt-dra-controller --timeout=120s
-kubectl --context "$kubectl_context" rollout status daemonset/tt-dra-node --timeout=120s
+kubectl --context "$kubectl_context" rollout status deployment/tt-dra-controller --timeout="$KUBE_WAIT_TIMEOUT"
+kubectl --context "$kubectl_context" rollout status daemonset/tt-dra-node --timeout="$KUBE_WAIT_TIMEOUT"
 wait_for 'worker A inventory' device_count_is "$worker_a" 2
 wait_for 'worker B inventory' device_count_is "$worker_b" 1
 snapshot_safety setup
@@ -246,7 +349,7 @@ wait_for 'stale agent recovery publication' device_count_is "$worker_b" 1
 record 'stale-node-agent-watchdog\tPASS'
 
 kubectl --context "$kubectl_context" apply -f "$script_dir/e2e-standard.yaml"
-kubectl --context "$kubectl_context" wait --for=condition=Ready pod/tt-e2e-standard --timeout=120s
+kubectl --context "$kubectl_context" wait --for=condition=Ready pod/tt-e2e-standard --timeout="$KUBE_WAIT_TIMEOUT"
 standard_node="$(kubectl --context "$kubectl_context" get pod tt-e2e-standard -o jsonpath='{.spec.nodeName}')"
 standard_uid="$(kubectl --context "$kubectl_context" get resourceclaim tt-e2e-standard -o jsonpath='{.metadata.uid}')"
 docker exec "$standard_node" test -f "/var/run/cdi/claim-$standard_uid.json"
@@ -262,7 +365,7 @@ record 'node-agent-restart-prepared\tPASS'
 
 docker exec "$standard_node" systemctl restart kubelet
 wait_for 'kubelet restart node readiness' node_health_is "$standard_node" True
-kubectl --context "$kubectl_context" wait --for=condition=Ready pod/tt-e2e-standard --timeout=120s
+kubectl --context "$kubectl_context" wait --for=condition=Ready pod/tt-e2e-standard --timeout="$KUBE_WAIT_TIMEOUT"
 docker exec "$standard_node" test -f "/var/run/cdi/claim-$standard_uid.json"
 snapshot_safety kubelet-restart
 record 'kubelet-restart-prepared\tPASS'
@@ -273,16 +376,16 @@ sleep 5
 docker exec "$standard_node" test -f "/var/run/cdi/claim-$standard_uid.json"
 docker unpause "$control_plane" >/dev/null
 api_paused=false
-kubectl --context "$kubectl_context" rollout status deployment/tt-dra-controller --timeout=120s
-kubectl --context "$kubectl_context" rollout status daemonset/tt-dra-node --timeout=120s
+kubectl --context "$kubectl_context" rollout status deployment/tt-dra-controller --timeout="$KUBE_WAIT_TIMEOUT"
+kubectl --context "$kubectl_context" rollout status daemonset/tt-dra-node --timeout="$KUBE_WAIT_TIMEOUT"
 snapshot_safety api-interruption
 record 'kubernetes-api-interruption\tPASS'
 
 docker restart "$standard_node" >/dev/null
-kubectl --context "$kubectl_context" wait --for=condition=Ready "node/$standard_node" --timeout=120s
+kubectl --context "$kubectl_context" wait --for=condition=Ready "node/$standard_node" --timeout="$KUBE_WAIT_TIMEOUT"
 wait_for 'node agent after node reboot' driver_ready_on "$standard_node"
 reboot_outcome=""
-for ((attempt = 0; attempt < 60; attempt++)); do
+for ((attempt = 0; attempt < CHAOS_WAIT_ATTEMPTS; attempt++)); do
   if pod_ready tt-e2e-standard && docker exec "$standard_node" test -f "/var/run/cdi/claim-$standard_uid.json"; then
     reboot_outcome=prepared
     break
@@ -303,7 +406,7 @@ if [[ "$reboot_outcome" == released ]]; then
   kubectl --context "$kubectl_context" delete pod tt-e2e-standard --force --grace-period=0 --ignore-not-found --wait=false
   kubectl --context "$kubectl_context" delete resourceclaim tt-e2e-standard --wait=true
   kubectl --context "$kubectl_context" apply -f "$script_dir/e2e-standard.yaml"
-  kubectl --context "$kubectl_context" wait --for=condition=Ready pod/tt-e2e-standard --timeout=120s
+  kubectl --context "$kubectl_context" wait --for=condition=Ready pod/tt-e2e-standard --timeout="$KUBE_WAIT_TIMEOUT"
   standard_node="$(kubectl --context "$kubectl_context" get pod tt-e2e-standard -o jsonpath='{.spec.nodeName}')"
   standard_uid="$(kubectl --context "$kubectl_context" get resourceclaim tt-e2e-standard -o jsonpath='{.metadata.uid}')"
 fi
@@ -351,7 +454,7 @@ record 'workload-delete-gc-delay-leader-failover\tPASS'
 
 kubectl --context "$kubectl_context" create namespace tt-chaos-delete
 kubectl --context "$kubectl_context" apply -n tt-chaos-delete -f "$script_dir/e2e-standard.yaml"
-kubectl --context "$kubectl_context" wait -n tt-chaos-delete --for=condition=Ready pod/tt-e2e-standard --timeout=120s
+kubectl --context "$kubectl_context" wait -n tt-chaos-delete --for=condition=Ready pod/tt-e2e-standard --timeout="$KUBE_WAIT_TIMEOUT"
 namespace_node="$(kubectl --context "$kubectl_context" get -n tt-chaos-delete pod tt-e2e-standard -o jsonpath='{.spec.nodeName}')"
 namespace_uid="$(kubectl --context "$kubectl_context" get -n tt-chaos-delete resourceclaim tt-e2e-standard -o jsonpath='{.metadata.uid}')"
 kubectl --context "$kubectl_context" delete namespace tt-chaos-delete --wait=false

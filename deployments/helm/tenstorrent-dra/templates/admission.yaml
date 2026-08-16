@@ -26,3 +26,124 @@ metadata:
 spec:
   policyName: {{ include "tenstorrent-dra.fullname" . }}-workload-authorizer
   validationActions: [Deny, Audit]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-node-object-containment
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["UPDATE"]
+      resources: ["nodes", "nodes/status"]
+  matchConditions:
+  - name: node-agent-only
+    expression: request.userInfo.username == {{ printf "system:serviceaccount:%s:%s-node" .Release.Namespace (include "tenstorrent-dra.fullname" .) | quote }}
+  validations:
+  - expression: >-
+      'authentication.kubernetes.io/node-name' in request.userInfo.extra &&
+      size(request.userInfo.extra['authentication.kubernetes.io/node-name']) == 1
+    message: the Tenstorrent node agent must authenticate with a Pod-bound ServiceAccount token containing exactly one node name
+    reason: Forbidden
+  - expression: >-
+      object.metadata.name == request.userInfo.extra['authentication.kubernetes.io/node-name'][0]
+    message: the Tenstorrent node agent may mutate only its own Node
+    reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-node-object-containment
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
+spec:
+  policyName: {{ include "tenstorrent-dra.fullname" . }}-node-object-containment
+  validationActions: [Deny, Audit]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-resourceslice-containment
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["resource.k8s.io"]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE", "DELETE"]
+      resources: ["resourceslices"]
+  matchConditions:
+  - name: node-agent-only
+    expression: request.userInfo.username == {{ printf "system:serviceaccount:%s:%s-node" .Release.Namespace (include "tenstorrent-dra.fullname" .) | quote }}
+  variables:
+  - name: target
+    expression: >-
+      request.operation == 'DELETE' ? oldObject : object
+  validations:
+  - expression: >-
+      'authentication.kubernetes.io/node-name' in request.userInfo.extra &&
+      size(request.userInfo.extra['authentication.kubernetes.io/node-name']) == 1
+    message: the Tenstorrent node agent must authenticate with a Pod-bound ServiceAccount token containing exactly one node name
+    reason: Forbidden
+  - expression: >-
+      variables.target.spec.nodeName == request.userInfo.extra['authentication.kubernetes.io/node-name'][0] &&
+      variables.target.spec.driver == 'dra.tenstorrent.com' &&
+      variables.target.spec.pool.name == request.userInfo.extra['authentication.kubernetes.io/node-name'][0]
+    message: the Tenstorrent node agent may publish only its own dra.tenstorrent.com ResourceSlice pool
+    reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-resourceslice-containment
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
+spec:
+  policyName: {{ include "tenstorrent-dra.fullname" . }}-resourceslice-containment
+  validationActions: [Deny, Audit]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-node-topology-containment
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["topology.tenstorrent.com"]
+      apiVersions: ["v1", "v1alpha1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["tenstorrentnodetopologies"]
+  matchConditions:
+  - name: node-agent-only
+    expression: request.userInfo.username == {{ printf "system:serviceaccount:%s:%s-node" .Release.Namespace (include "tenstorrent-dra.fullname" .) | quote }}
+  validations:
+  - expression: >-
+      'authentication.kubernetes.io/node-name' in request.userInfo.extra &&
+      size(request.userInfo.extra['authentication.kubernetes.io/node-name']) == 1
+    message: the Tenstorrent node agent must authenticate with a Pod-bound ServiceAccount token containing exactly one node name
+    reason: Forbidden
+  - expression: >-
+      object.metadata.name == request.userInfo.extra['authentication.kubernetes.io/node-name'][0] &&
+      object.spec.nodeName == request.userInfo.extra['authentication.kubernetes.io/node-name'][0]
+    message: the Tenstorrent node agent may publish only its own named topology object
+    reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "tenstorrent-dra.fullname" . }}-node-topology-containment
+  labels:
+    {{- include "tenstorrent-dra.componentLabels" (dict "root" . "component" "node") | nindent 4 }}
+spec:
+  policyName: {{ include "tenstorrent-dra.fullname" . }}-node-topology-containment
+  validationActions: [Deny, Audit]

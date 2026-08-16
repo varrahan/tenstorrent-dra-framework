@@ -55,7 +55,12 @@ does not depend on the fabric graph or the Tenstorrent workload controller.
    non-quarantined devices are published in ResourceSlices and node topology.
    If none remain, the node receives the
    `tenstorrent.com/accelerator-unhealthy:NoSchedule` taint and a false
-   `TenstorrentAcceleratorsHealthy` condition.
+   `TenstorrentAcceleratorsHealthy` condition. Because the upstream publisher
+   is asynchronous, the node reads the pool back from the API and confirms the
+   exact slice count, generation, devices, attributes, and capacities before
+   reporting readiness. Publication errors or confirmation timeouts fence the
+   node. Admission uses the Pod-bound ServiceAccount token's node identity to
+   limit node, ResourceSlice, and topology mutations to that agent's own node.
 2. **Validate the fabric graph.** The controller combines fresh node topology
    objects into the cluster-scoped `TenstorrentFabricTopology` named `cluster`.
    Duplicate endpoints, stale observations, missing peers, asymmetric links,

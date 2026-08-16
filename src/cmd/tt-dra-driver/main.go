@@ -37,7 +37,10 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+	"k8s.io/dynamic-resource-allocation/resourceslice"
 )
+
+const resourcePublicationTimeout = 30 * time.Second
 
 // These values are replaced with deterministic release metadata through
 // -ldflags. Defaults keep local development builds useful and explicit.
@@ -120,7 +123,7 @@ func runCleanup(args []string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	claims, err := kube.ResourceV1().ResourceClaims(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -401,7 +404,9 @@ func runNode(args []string) error {
 		return err
 	}
 	health.MarkStarted()
-	health.SetProgressDeadline(max(3*interval, inventoryGrace+interval))
+	// Allow a full confirmation timeout plus an equally slow reconciliation
+	// cycle before liveness declares publication stalled.
+	health.SetProgressDeadline(max(3*interval, inventoryGrace+interval, 2*resourcePublicationTimeout+interval))
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	lastSafetyReason := ""
@@ -423,7 +428,16 @@ func runNode(args []string) error {
 		if monitorErr != nil {
 			logger.Error("hardware janitor reconciliation failed", "reconciliation_id", reconciliationID, "error", monitorErr)
 		}
-		resourcesErr := helper.PublishResources(ctx, dra.DriverResourcesAt(nodeName, snapshot, inventoryGrace, time.Now()))
+		desiredResources := dra.DriverResourcesAt(nodeName, snapshot, inventoryGrace, time.Now())
+		resourcesErr := helper.PublishResources(ctx, desiredResources)
+		if resourcesErr == nil {
+			resourcesErr = waitForResourcePublication(ctx, kube, nodeName, desiredResources, resourcePublicationTimeout)
+			if resourcesErr == nil {
+				manager.ConfirmHelperRecovery()
+			} else {
+				resourcesErr = errors.Join(resourcesErr, manager.HelperError())
+			}
+		}
 		if resourcesErr != nil {
 			logger.Error("resource publication failed", "reconciliation_id", reconciliationID, "error", resourcesErr)
 			recorder.Eventf(node, corev1.EventTypeWarning, "ResourcePublicationFailed", "ResourceSlice publication failed: %v", resourcesErr)
@@ -498,6 +512,27 @@ func runNode(args []string) error {
 				logger.Error("failed to fence node-agent capacity during shutdown", "error", fenceErr)
 			}
 			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
+// waitForResourcePublication waits for the asynchronous ResourceSlice
+// controller to store one complete, exact generation of the desired pool.
+func waitForResourcePublication(ctx context.Context, kube kubernetes.Interface, nodeName string, desired resourceslice.DriverResources, timeout time.Duration) error {
+	confirmationCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	var lastErr error
+	for {
+		lastErr = dra.ConfirmResourcePublication(confirmationCtx, kube, nodeName, dra.DefaultDriverName, desired)
+		if lastErr == nil {
+			return nil
+		}
+		select {
+		case <-confirmationCtx.Done():
+			return fmt.Errorf("confirm ResourceSlice publication: %w: %v", confirmationCtx.Err(), lastErr)
 		case <-ticker.C:
 		}
 	}

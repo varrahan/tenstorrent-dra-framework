@@ -54,7 +54,7 @@ go test -race ./src/test -run 'Test(Janitor|Lifecycle|Prepare)'
 matrix. It covers Wormhole and Blackhole, single- and multi-ASIC nodes, the KMD
 and kernel compatibility boundaries, a mixed whole-card node, and a real
 multi-node Ethernet ring. Firmware is fixed to 19.2.x, the driver ABI to 2,
-Kubernetes to 1.34 or newer, Helm to 4.2.3, and the runtime to containerd 2.x
+Kubernetes to 1.34, Helm to 4.2.3, and the runtime to containerd 2.x
 with CDI enabled. Board product names are evidence metadata rather than device
 identity; each ASIC remains one whole-card device.
 
@@ -106,7 +106,6 @@ must reject evidence with missing phases, synthetic/noop settings, mutable
 images, edited state/CDI files outside a declared orphan-injection case, or
 failed SLOs.
 
-Chart rendering and schema validation run against Kubernetes 1.34, 1.35, and
-1.36 in CI. Runtime certification evidence must identify the exact Kubernetes
-minor; the physical matrix collectively must contain a passing entry for every
-minor claimed as supported by the release.
+Chart rendering and schema validation run against Kubernetes 1.34 in CI.
+Runtime and physical certification evidence must identify Kubernetes 1.34;
+evidence from another minor does not certify this release.
