@@ -1,7 +1,7 @@
 # QEMU `ttsim` Validation
 
 Run the validation from inside the QEMU Ubuntu guest. The guest must provide
-Docker, kind, kubectl, Helm v4.2.3, Kubernetes v1.34+, and `tt-kmd`. The driver
+Docker, kind, kubectl, Helm v4.2.3, Kubernetes v1.34, and `tt-kmd`. The driver
 reads the guest's `/dev/tenstorrent`, `/sys/class/tenstorrent`, and PCI sysfs
 paths.
 

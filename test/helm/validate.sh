@@ -32,10 +32,23 @@ for expected in \
   'path: /livez' \
   'fieldPath: metadata.uid' \
   'maxSurge: 1' \
+  'activeDeadlineSeconds: 360' \
   '-node-agent-ttl=2m' \
+  'authentication.kubernetes.io/node-name' \
+  'dra.tenstorrent.com ResourceSlice pool' \
   'tenstorrent_dra_claim_operation_failures_total'; do
   grep -q -- "$expected" "$rendered"
 done
+
+if grep -q -- 'ttlSecondsAfterFinished' "$rendered"; then
+  echo 'cleanup Job must retain failures until the next hook attempt' >&2
+  exit 1
+fi
+
+if helm template unsupported "$chart" --kube-version 1.35.0 >/dev/null 2>&1; then
+  echo 'unsupported Kubernetes 1.35 passed the chart version constraint' >&2
+  exit 1
+fi
 
 if helm template unsafe "$chart" --kube-version "$kube_version" --set resetMode=noop >/dev/null 2>&1; then
   echo 'unsafe noop reset and IOMMU combination passed values validation' >&2

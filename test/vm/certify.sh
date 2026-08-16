@@ -90,8 +90,8 @@ if [[ "$helm_version" != "v4.2.3"* ]]; then
   printf 'VM certification requires Helm 4.2.3; found %s\n' "$helm_version" >&2
   exit 1
 fi
-if [[ ! "$kubectl_version" =~ ^v1\.([3-9][4-9]|[4-9][0-9]|[1-9][0-9]{2,})\. ]]; then
-  printf 'VM certification requires kubectl 1.34 or newer; found %s\n' "$kubectl_version" >&2
+if [[ ! "$kubectl_version" =~ ^v1\.34\. ]]; then
+  printf 'VM certification requires kubectl 1.34; found %s\n' "$kubectl_version" >&2
   exit 1
 fi
 

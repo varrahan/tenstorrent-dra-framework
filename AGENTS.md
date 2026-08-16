@@ -62,13 +62,13 @@ Specifically, this system targets scale-out HPC and ML clusters. It transitions 
 | :--- | :--- | :--- |
 | **Host Environment** | QEMU-ttsim, Linux | Simulates the physical node and Tenstorrent ASIC hardware. Runs `tt-kmd` to expose simulated hardware paths. |
 | **Container Engine** | Docker | Hosts the Kubernetes nodes running via `kind` and allows for isolated compilation and testing of driver components. |
-| **Orchestration** | `kind`, Kubernetes v1.34+ | Kubernetes v1.34+ is strictly required, as the Dynamic Resource Allocation (DRA) API reached General Availability (GA). |
+| **Orchestration** | `kind`, Kubernetes v1.34 | Kubernetes v1.34 is the only supported release and provides the GA Dynamic Resource Allocation (DRA) API used by this project. |
 | **DRA Driver / Resource Allocator** | Go, C/C++ | Go is the industry standard for writing Kubernetes Custom Resource Definitions (CRDs) and operators. C/C++ is utilized for high-performance bindings to interface directly with `tt-kmd`. |
 | **Project & Context Management** | Obsidian | Used to structure project architecture, track custom K8s YAML manifests, and map out hardware topology definitions. |
 
 ## Key Implementation Phases
 
-* **Phase 1: Foundation (Kubernetes v1.34+)** Configure `kind` to mount the QEMU `/dev/tenstorrent` paths directly into the virtual nodes.
+* **Phase 1: Foundation (Kubernetes v1.34)** Configure `kind` to mount the QEMU `/dev/tenstorrent` paths directly into the virtual nodes.
 * **Phase 2: The DRA Driver (Go & C++)** The driver will publish `ResourceSlices` to the Kubernetes API server, detailing specific attributes of the Tenstorrent cards.
 
 ---

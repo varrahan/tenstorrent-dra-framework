@@ -11,7 +11,9 @@ Versioning.
 - Standard kubelet DRA health streaming, registration and reconcile liveness,
   and controller-side stale-node-agent capacity fencing.
 - Seamless node-agent surge upgrades with transaction-scoped shared state
-  locking and Kubernetes 1.34-1.36 chart validation.
+  locking and Kubernetes 1.34 chart validation.
+- Node-bound admission containment for node, ResourceSlice, and topology writes.
+- API-confirmed ResourceSlice publication feedback for readiness and fencing.
 
 ### Fixed
 

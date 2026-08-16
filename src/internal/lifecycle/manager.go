@@ -40,6 +40,8 @@ type Manager struct {
 	drahealthv1alpha1.UnimplementedDRAResourceHealthServer
 	config       Config
 	mu           sync.Mutex
+	helperErrMu  sync.Mutex
+	helperErr    error
 	state        persistedState
 	lastSnapshot device.InventorySnapshot
 	lockFile     *os.File
@@ -296,12 +298,16 @@ func (m *Manager) observeClaim(operation string, started time.Time, err error) {
 	}
 }
 
-// HandleError logs helper failures and terminates the process on errors that
-// cannot be repaired by retrying, such as invalid or field-dropped slices.
+// HandleError records asynchronous helper failures so node readiness and
+// capacity fencing cannot mistake an enqueued publication for a stored one.
+// Errors that the helper identifies as fatal also terminate the process.
 func (m *Manager) HandleError(_ context.Context, err error, msg string) {
 	if err == nil {
 		return
 	}
+	m.helperErrMu.Lock()
+	m.helperErr = fmt.Errorf("%s: %w", msg, err)
+	m.helperErrMu.Unlock()
 	if errors.Is(err, kubeletplugin.ErrRecoverable) {
 		m.config.Logger.Warn("recoverable kubelet helper error", "operation", msg, "error", err)
 		return
@@ -310,6 +316,21 @@ func (m *Manager) HandleError(_ context.Context, err error, msg string) {
 	if m.config.FatalError != nil {
 		m.config.FatalError(err, msg)
 	}
+}
+
+// HelperError returns the most recent asynchronous kubelet-helper failure.
+func (m *Manager) HelperError() error {
+	m.helperErrMu.Lock()
+	defer m.helperErrMu.Unlock()
+	return m.helperErr
+}
+
+// ConfirmHelperRecovery clears a helper failure after the desired ResourceSlice
+// pool has been read back successfully from the API server.
+func (m *Manager) ConfirmHelperRecovery() {
+	m.helperErrMu.Lock()
+	defer m.helperErrMu.Unlock()
+	m.helperErr = nil
 }
 
 // prepareOne validates one allocation, performs preflight sanitization, and writes its CDI spec.

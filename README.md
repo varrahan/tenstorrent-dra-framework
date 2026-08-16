@@ -1,6 +1,6 @@
 # Tenstorrent Kubernetes DRA
 
-This repository contains a Kubernetes 1.34+ Dynamic Resource Allocation driver
+This repository contains a Kubernetes 1.34 Dynamic Resource Allocation driver
 for Tenstorrent nodes. Each node publishes its locally observed
 `/dev/tenstorrent/<n>` devices as exclusive whole-card DRA devices. A node may
 contain any number of cards and may mix Wormhole or Blackhole series.

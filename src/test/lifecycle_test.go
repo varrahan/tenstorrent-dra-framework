@@ -508,6 +508,9 @@ func TestHelperFatalErrorsAreEscalated(t *testing.T) {
 	}
 	defer manager.Close()
 	manager.HandleError(context.Background(), fmt.Errorf("temporary: %w", kubeletplugin.ErrRecoverable), "publish")
+	if err := manager.HelperError(); err == nil || !strings.Contains(err.Error(), "temporary") {
+		t.Fatalf("recoverable helper error was not retained: %v", err)
+	}
 	select {
 	case err := <-fatal:
 		t.Fatalf("recoverable error escalated: %v", err)
@@ -518,6 +521,10 @@ func TestHelperFatalErrorsAreEscalated(t *testing.T) {
 	case <-fatal:
 	default:
 		t.Fatal("fatal helper error was not escalated")
+	}
+	manager.ConfirmHelperRecovery()
+	if err := manager.HelperError(); err != nil {
+		t.Fatalf("confirmed helper recovery retained an error: %v", err)
 	}
 }
 
